@@ -1,0 +1,16 @@
+/bin/ls.lua
+/bin/cat.lua
+/bin/echo.lua
+/bin/pwd.lua
+/bin/mkdir.lua
+/bin/rm.lua
+/bin/cp.lua
+/bin/mv.lua
+/bin/clear.lua
+/bin/uname.lua
+/bin/whoami.lua
+/bin/edit.lua
+/bin/help.lua
+/bin/neofetch.lua
+/bin/reboot.lua
+/bin/shutdown.lua

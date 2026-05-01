@@ -1,0 +1,3 @@
+# /etc/fstab - file system table (informational; mounts happen in kernel)
+# <addr-prefix>   <mount>      <type>   <opts>
+# auto             /            byteos   ro,boot

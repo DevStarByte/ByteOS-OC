@@ -1,0 +1,4 @@
+-- /etc/profile - sourced by ByteShell at login (executed via 'source')
+PATH=/bin:/usr/bin:/sbin
+PS1=archlike
+EDITOR=edit

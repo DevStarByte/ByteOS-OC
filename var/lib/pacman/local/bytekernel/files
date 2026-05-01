@@ -1,0 +1,5 @@
+/init.lua
+/boot/kernel.lua
+/sbin/init.lua
+/lib/term.lua
+/lib/shell.lua
