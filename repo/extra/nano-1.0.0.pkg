@@ -1,0 +1,55 @@
+return {
+  files = {
+    ["/usr/bin/nano.lua"] = [[
+-- nano: a tiny line-buffer editor for ByteOS.
+-- Usage: nano <file>
+-- Keys: type to add lines; ":w" save; ":q" quit; ":wq" save+quit; ":d" delete last line.
+local args = arg or {}
+local path = args[1]
+if not path then term.write("usage: nano <file>\n"); return 1 end
+if path:sub(1, 1) ~= "/" then path = (_G.PWD or "/") .. "/" .. path end
+
+local lines = {}
+if fs.exists(path) then
+  for line in (fs.readAll(path) or ""):gmatch("([^\n]*)\n?") do
+    lines[#lines + 1] = line
+  end
+  if lines[#lines] == "" then lines[#lines] = nil end
+end
+
+local function header()
+  term.clear()
+  term.setForeground(0x66CCFF)
+  term.write("  GNU nano-ish    " .. path .. "\n")
+  term.setForeground(0x666666)
+  term.write(string.rep("-", (term.size())) .. "\n")
+  term.setForeground(0xFFFFFF)
+  for i, l in ipairs(lines) do
+    term.setForeground(0x666666); term.write(("%3d "):format(i))
+    term.setForeground(0xFFFFFF); term.write(l .. "\n")
+  end
+  term.setForeground(0x666666)
+  term.write("\n  type a line to append, or :w :q :wq :d  > ")
+  term.setForeground(0xFFFFFF)
+end
+
+while true do
+  header()
+  local input = term.read() or ""
+  if input == ":q" then return 0
+  elseif input == ":w" then
+    fs.writeAll(path, table.concat(lines, "\n") .. "\n")
+    term.write("\n  saved " .. #lines .. " lines, press Enter\n")
+    term.read()
+  elseif input == ":wq" then
+    fs.writeAll(path, table.concat(lines, "\n") .. "\n")
+    return 0
+  elseif input == ":d" then
+    lines[#lines] = nil
+  else
+    lines[#lines + 1] = input
+  end
+end
+]],
+  },
+}

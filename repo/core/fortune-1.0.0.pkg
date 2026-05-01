@@ -1,0 +1,40 @@
+return {
+  files = {
+    ["/usr/share/fortune/quotes.txt"] = [[
+The early bird gets the worm, but the second mouse gets the cheese.
+There are only 10 types of people: those who understand binary and those who don't.
+A computer once beat me at chess, but it was no match for me at kick boxing.
+Programs must be written for people to read, and only incidentally for machines to execute.
+Any sufficiently advanced technology is indistinguishable from magic.
+There are two ways to write error-free programs; only the third works.
+In Lua, even errors are first-class citizens.
+A clever person solves a problem. A wise person avoids it.
+Walking on water and developing software from a specification are easy if both are frozen.
+Talk is cheap. Show me the code.
+The best error message is the one that never shows up.
+First, solve the problem. Then, write the code.
+Hardware: the parts of a computer that you can kick.
+There is no place like 127.0.0.1.
+The most likely way for the world to be destroyed, most experts agree, is by accident.
+The cheapest, fastest and most reliable components are those that aren't there.
+Real programmers don't comment their code. If it was hard to write, it should be hard to understand.
+Why do programmers prefer dark mode? Because light attracts bugs.
+A programmer's spouse asks: 'Get a loaf of bread, and if they have eggs, get a dozen.' He returned with 12 loaves.
+Computers are like air conditioners: they stop working when you open Windows.
+]],
+    ["/usr/bin/fortune.lua"] = [[
+local path = "/usr/share/fortune/quotes.txt"
+if not fs.exists(path) then term.write("fortune: missing data\n"); return 1 end
+local quotes = {}
+for line in (fs.readAll(path) or ""):gmatch("[^\n]+") do
+  if line:match("%S") then quotes[#quotes + 1] = line end
+end
+if #quotes == 0 then term.write("fortune: empty\n"); return 1 end
+math.randomseed(math.floor(_G.computer.uptime() * 1000) % 2147483647)
+term.setForeground(0xFFCC55)
+term.write("  " .. quotes[math.random(#quotes)] .. "\n")
+term.setForeground(0xFFFFFF)
+return 0
+]],
+  },
+}

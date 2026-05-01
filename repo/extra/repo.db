@@ -1,1 +1,7 @@
 vim 0.1.0 a not-quite-vim editor
+figlet 1.0.0 ascii-art big-letters renderer (demo bundle)
+sl 1.0.0 steam locomotive that chugs across the screen
+cmatrix 1.0.0 falling green matrix rain (any key to quit)
+nano 1.0.0 the worlds smallest line-buffer editor
+snake 1.0.0 classic snake game (arrows to move, q to quit)
+2048 1.0.0 slide-the-tiles puzzle game

@@ -1,0 +1,22 @@
+return {
+  files = {
+    ["/usr/bin/lolcat.lua"] = [[
+local args = arg or {}
+local msg  = table.concat(args, " ")
+if msg == "" then msg = "ByteOS forever! Type something after lolcat." end
+local pal = { 0xFF0000, 0xFF7F00, 0xFFFF00,
+              0x00FF00, 0x00FFFF, 0x0066FF, 0x9933FF }
+for i = 1, #msg do
+  local c = msg:sub(i, i)
+  if c == "\n" then
+    term.write("\n")
+  else
+    term.setForeground(pal[((i - 1) % #pal) + 1])
+    term.write(c)
+  end
+end
+term.setForeground(0xFFFFFF); term.write("\n")
+return 0
+]],
+  },
+}

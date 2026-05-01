@@ -1,2 +1,7 @@
 hello 1.0.0 a friendly greeter package
 cowsay 0.2.0 ascii-art talking cow
+lolcat 1.0.0 cycle terminal colors across text
+fortune 1.0.0 random pithy quotes from the data file
+tree 1.0.0 recursive coloured directory listing
+uptime 1.0.0 print how long the system has been running
+sudo 1.0.0 run a command as another user (wheel only)

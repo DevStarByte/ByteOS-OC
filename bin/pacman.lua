@@ -13,15 +13,23 @@
   Repo layout (very simple):
     A repo is a directory containing:
       repo.db          : "name version description url\n" per line
-      <name>-<ver>.pkg : a Lua table of {files = {["/path"] = "contents"}, scripts = {...}}
+      <name>-<ver>.pkg : a Lua table:
+          return {
+            files = { ["/path"] = "raw contents" },
+            post_install = function() ... end,   -- optional
+          }
+      <name>-<ver>.pkg.z : same, but with `format = "lzw1"` and each file
+        value is a base64-encoded LZW stream produced by lib/compress.lua.
+        The compressed form is preferred when both exist.
 
   Local DB:
     /var/lib/pacman/local/<name>/desc      version + meta
     /var/lib/pacman/local/<name>/files     newline-separated installed paths
 ]]--
 
-local fs   = k.fs
-local args = arg or {}
+local fs       = k.fs
+local args     = arg or {}
+local compress = require("compress")
 
 local CONF_PATH = "/etc/pacman.conf"
 local LOCAL_DIR = "/var/lib/pacman/local"
@@ -104,7 +112,13 @@ local function installPackage(pkg)
   if not meta then err("target not found: " .. pkg); return false end
   info("installing " .. pkg .. " (" .. meta.version .. ") from " .. meta.repo)
 
-  local data, e = fetch(meta.server, pkg .. "-" .. meta.version .. ".pkg")
+  -- Prefer the compressed package (.pkg.z), fall back to the plain .pkg.
+  local stem = pkg .. "-" .. meta.version
+  local data, e = fetch(meta.server, stem .. ".pkg.z")
+  local compressed = data ~= nil
+  if not data then
+    data, e = fetch(meta.server, stem .. ".pkg")
+  end
   if not data then err("download failed: " .. tostring(e)); return false end
 
   -- packages are Lua tables: return { files = {...}, post_install = function() ... end }
@@ -112,6 +126,18 @@ local function installPackage(pkg)
   if not fn then err("malformed package: " .. perr); return false end
   local ok, pkgtab = pcall(fn)
   if not ok or type(pkgtab) ~= "table" then err("invalid package payload"); return false end
+
+  -- Decompress file contents if the package declares a known format.
+  if pkgtab.format == "lzw1" then
+    if compressed then info("decompressing payload (" .. #data .. " B)") end
+    for path, content in pairs(pkgtab.files or {}) do
+      local plain, derr = compress.decode(content)
+      if not plain then err("decompress failed for " .. path .. ": " .. tostring(derr)); return false end
+      pkgtab.files[path] = plain
+    end
+  elseif pkgtab.format and pkgtab.format ~= "raw" then
+    err("unknown package format: " .. tostring(pkgtab.format)); return false
+  end
 
   local installed = {}
   for path, content in pairs(pkgtab.files or {}) do
@@ -123,7 +149,9 @@ local function installPackage(pkg)
 
   fs.makeDirectory(LOCAL_DIR .. "/" .. pkg)
   fs.writeAll(LOCAL_DIR .. "/" .. pkg .. "/desc",
-              "name=" .. pkg .. "\nversion=" .. meta.version .. "\ndesc=" .. meta.desc .. "\n")
+              "name=" .. pkg .. "\nversion=" .. meta.version ..
+              "\ndesc=" .. meta.desc ..
+              "\nformat=" .. (pkgtab.format or "raw") .. "\n")
   fs.writeAll(LOCAL_DIR .. "/" .. pkg .. "/files", table.concat(installed, "\n") .. "\n")
 
   if pkgtab.post_install then pcall(pkgtab.post_install) end

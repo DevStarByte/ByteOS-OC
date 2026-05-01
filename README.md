@@ -164,7 +164,8 @@ cowsay 0.2.0
 
 ## Writing your own packages
 
-A package is just a Lua file that returns a table:
+A package is just a Lua file that returns a table. The plain (uncompressed)
+form looks like this and lives at `<name>-<version>.pkg`:
 
 ```lua
 return {
@@ -177,6 +178,44 @@ return {
 
 Drop it into a repo directory next to `repo.db`, add a line
 `mytool 1.0.0 my cool tool`, and `pacman -Sy && pacman -S mytool`.
+
+### Compressed packages (`.pkg.z`)
+
+For larger payloads ByteOS supports a compressed package format. It's the
+same Lua-table layout, but each entry in `files` is a base64-encoded LZW
+stream and the table declares `format = "lzw1"`:
+
+```lua
+return {
+  format = "lzw1",
+  files = {
+    ["/usr/bin/figlet.lua"]            = "AAAAv1...base64...",
+    ["/usr/share/figlet/standard.flf"] = "AAA...base64...",
+  },
+}
+```
+
+`pacman` always prefers `<name>-<ver>.pkg.z` over `<name>-<ver>.pkg`, so you
+can ship both side by side without touching `repo.db`. Decompression happens
+in pure Lua via [`/lib/compress.lua`](lib/compress.lua) — no native zlib
+required.
+
+Build a compressed package from an existing plain one with `mkpkg`:
+
+```sh
+[root@byteos ~]# mkpkg /mnt/<repo>/extra/figlet-1.0.0.pkg
+::   /usr/bin/figlet.lua             145 ->   216  (149%)
+::   /usr/share/figlet/standard.flf  5627 ->  2916  (52%)
+:: wrote /mnt/<repo>/extra/figlet-1.0.0.pkg.z  payload 5772 -> 3132 (54%)
+
+[root@byteos ~]# mkpkg -d figlet-1.0.0.pkg.z   # round-trip back to plain
+```
+
+Tiny scripts (a few hundred bytes) actually grow because of the base64 +
+header overhead; compression starts to pay off above ~1 KiB and reaches
+roughly **35–55 %** of the original size on real Lua source and ASCII-art
+data files. The bundled [`repo/extra/figlet-1.0.0.pkg.z`](repo/extra/figlet-1.0.0.pkg.z)
+is a working example.
 
 ## Hacking on ByteOS
 
