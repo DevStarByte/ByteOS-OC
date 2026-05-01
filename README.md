@@ -56,62 +56,75 @@ You will need:
 - A managed hard disk drive
 - A screen + keyboard + GPU (any tier)
 
-### Easiest way: use the included installer
+### Easiest way: just copy the files onto a disk
 
-1. Boot any OpenOS computer (the standard Lua BIOS + the OpenOS floppy is fine).
-2. Insert a **second** disk/floppy that contains this repository (or copy the files
-   onto an existing data disk).
-3. Insert a **blank target HDD** for ByteOS.
+ByteOS now has a **first-boot setup wizard**. You don't need to run any installer
+script — just put the files on a disk and boot it.
+
+1. Flash `boot/eeprom.lua` onto your EEPROM (see "Flash the EEPROM" below).
+2. Copy the contents of this repository onto the target HDD so the disk root
+   contains `/init.lua`, `/boot/`, `/sbin/`, `/lib/`, `/bin/`, `/etc/`, `/home/`,
+   `/var/`. From outside Minecraft you can drop the files straight into
+   `saves/<world>/opencomputers/<disk-uuid>/`.
+3. Set the EEPROM's boot address to that disk (or just have it as the only
+   bootable FS).
+4. Power on. On the very first boot ByteOS notices `/etc/.installed` is missing
+   and runs the setup wizard:
+   ```
+   ==========================================
+           ByteOS First-Time Setup
+   ==========================================
+
+   No install detected. Let's configure your system.
+
+   Hostname [byteos]: my-rig
+   Username  [root]: thomas
+   Password: ********
+   Confirm:  ********
+
+   Setup complete. You can now log in as 'thomas'.
+   my-rig login: thomas
+   Password: ********
+   ```
+   Your answers are written to `/etc/hostname` and `/etc/passwd`, and a
+   `/etc/.installed` marker is created so the wizard never runs again.
+5. From now on every boot goes straight to the login prompt and verifies your
+   password.
+
+> Want to redo the setup? Just delete `/etc/.installed` and reboot.
+
+### Optional: use the bundled `install.lua` from OpenOS
+
+The old installer is still included for the case where you want to copy the
+files **from another disk** (e.g. a floppy under OpenOS) and optionally flash
+the EEPROM in one go:
+
+1. Boot any OpenOS computer.
+2. Insert a disk/floppy that contains this repository.
+3. Insert a blank target HDD for ByteOS.
 4. From the OpenOS shell run:
    ```
    lua /mnt/<id_of_byteos_disk>/install.lua
    ```
-5. The installer asks you which filesystem is the **source** and which is the
-   **target**, wipes the target, copies all ByteOS files, optionally flashes
-   ByteBIOS onto the EEPROM and sets the boot address. After it finishes:
-   ```
-   reboot
-   ```
-   You should see `ByteBIOS v1.0  ::  loading ByteOS...` and the systemd-style
-   boot output.
+5. The installer asks for source / target FS, wipes the target, copies all
+   ByteOS files and (optionally) flashes ByteBIOS. Reboot afterwards — the
+   first-boot wizard above takes care of the rest.
 
 > If you ever see `unrecoverable error init:4: /lib/core/boot.lua` after copying
-> ByteOS, that means OpenOS files are still on the disk. Re-run the installer
-> (it wipes the target) or manually delete `/lib/core`, `/boot/kernel.lua` etc.
-> from the old OpenOS install before copying.
+> ByteOS, that means OpenOS files are still on the disk. Wipe the disk (or
+> re-run `install.lua`) before copying ByteOS over it.
 
-### Manual installation
+### Flash the EEPROM
 
-1. **Flash the EEPROM.** From any working Lua prompt (e.g. an OpenOS install on a floppy):
-   ```lua
-   local f = io.open("/path/to/ByteOS/boot/eeprom.lua", "r")
-   local code = f:read("*a"); f:close()
-   component.eeprom.set(code)
-   component.eeprom.setLabel("ByteBIOS")
-   ```
-2. **Copy ByteOS onto a hard disk.** Format an HDD, then copy the contents of this
-   repository so the disk's root contains:
-   ```
-   /init.lua
-   /boot/...
-   /sbin/...
-   /lib/...
-   /bin/...
-   /etc/...
-   /home/...
-   /var/...
-   ```
-   On real OpenOS you can use `cp -r` from a floppy. From outside Minecraft, drop the
-   files into the world save under `opencomputers/<addr>/` for the disk you want to use.
-3. **(Optional) install the sample repo.** Put `repo/` on a second medium and let
-   ByteOS auto-mount it under `/mnt/<id>`. Adjust `Server = ` lines in
-   `/etc/pacman.conf` to match.
-4. **Boot.** Power the computer on. ByteBIOS finds `/init.lua`, the kernel boots,
-   and you are dropped at:
-   ```
-   byteos login: root
-   [root@byteos ~]#
-   ```
+From any working Lua prompt (e.g. an OpenOS install on a floppy):
+```lua
+local f = io.open("/path/to/ByteOS/boot/eeprom.lua", "r")
+local code = f:read("*a"); f:close()
+component.eeprom.set(code)
+component.eeprom.setLabel("ByteBIOS")
+-- Optional: pin the boot device
+-- component.eeprom.setData(component.<your-disk>.address)
+```
 
 ## A short tour
 
