@@ -143,7 +143,7 @@ end
 -- ---- Input widgets ---------------------------------------------------------
 
 -- Modal menu. items = { {label=..., value=..., hint=...}, ... }
--- Returns the selected item, or nil on Esc.
+-- Returns the selected item, or nil on Q / Backspace.
 local function menuBox(title, items, hint, startIdx)
   local sel = startIdx or 1
   local maxLabel = 0
@@ -153,7 +153,7 @@ local function menuBox(title, items, hint, startIdx)
 
   local function draw()
     frame()
-    statusBar(hint or " ↑/↓: move    Enter: select    Esc: back ")
+    statusBar(hint or " Up/Dn: move   Enter: select   Shift+Q: back ")
     local cx, cy, cw, ch = centeredWindow(w, h, title)
     -- viewport
     local view = ch
@@ -182,7 +182,7 @@ local function menuBox(title, items, hint, startIdx)
     elseif key == "home" then sel = 1
     elseif key == "end"  then sel = #items
     elseif key == "enter" then return items[sel], sel
-    elseif key == "escape" or key == "interrupt" then return nil
+    elseif key == "Q" or key == "interrupt" then return nil
     elseif tonumber(key) then
       local n = tonumber(key)
       if items[n] then sel = n; draw(); return items[sel], sel end
@@ -191,7 +191,7 @@ local function menuBox(title, items, hint, startIdx)
 end
 
 -- Modal text input. mask=true for password.
--- Returns the entered string, or nil on Esc.
+-- Returns the entered string. Enter always confirms.
 local function inputBox(title, label, default, mask)
   local buf = default or ""
   local w = math.max(40, math.min(W - 6, #label + 30))
@@ -199,7 +199,7 @@ local function inputBox(title, label, default, mask)
 
   local function draw()
     frame()
-    statusBar(" Type value    Enter: confirm    Esc: cancel ")
+    statusBar(" Type value    Backspace: erase    Enter: confirm ")
     local cx, cy, cw = centeredWindow(w, h, title)
     text(cx, cy, label, COL.fg, COL.win_bg)
     -- input field
@@ -216,7 +216,7 @@ local function inputBox(title, label, default, mask)
     draw()
     local key = term.readKey()
     if key == "enter" then return buf
-    elseif key == "escape" or key == "interrupt" then return nil
+    elseif key == "interrupt" then return nil
     elseif key == "backspace" then if #buf > 0 then buf = buf:sub(1, -2) end
     elseif type(key) == "string" and #key == 1 and key:byte() >= 32 and key:byte() < 127 then
       buf = buf .. key
@@ -241,7 +241,7 @@ local function passwordBox(title, label)
   end
 end
 
--- Yes/No confirmation. Returns boolean (Esc = false).
+-- Yes/No confirmation. Returns boolean (Q = false).
 local function confirmBox(title, message)
   local items = {
     { label = "  Yes  ", value = true  },
@@ -256,7 +256,7 @@ local function confirmBox(title, message)
 
   local function draw()
     frame()
-    statusBar(" ←/→: switch    Enter: confirm    Esc: No ")
+    statusBar(" L/R: switch   Y/N: shortcut   Enter: confirm   Shift+Q: No ")
     local cx, cy, cw = centeredWindow(w, h, title)
     for i, l in ipairs(lines) do text(cx, cy + i - 1, l, COL.fg, COL.win_bg) end
     local by = cy + #lines + 1
@@ -277,7 +277,7 @@ local function confirmBox(title, message)
     elseif key == "y" or key == "Y" then return true
     elseif key == "n" or key == "N" then return false
     elseif key == "enter" then return items[sel].value
-    elseif key == "escape" or key == "interrupt" then return false
+    elseif key == "Q" or key == "interrupt" then return false
     end
   end
 end
@@ -339,7 +339,7 @@ local function pressEnter(title, lines)
   text(cx, cy + #lines + 1, "[ Press Enter ]", COL.sel_fg, COL.sel_bg)
   while true do
     local key = term.readKey()
-    if key == "enter" or key == "escape" then return end
+    if key == "enter" then return end
   end
 end
 
@@ -364,7 +364,7 @@ local function runSetup()
       "  This wizard will configure your new ByteOS installation.",
       "",
       "  Use arrow keys (or 1-9) to navigate, Enter to confirm,",
-      "  and Esc to go back.",
+      "  and Shift+Q to go back.",
       "",
     })
 
@@ -450,7 +450,7 @@ local function runSetup()
     }
 
     local pick = menuBox("ByteOS Setup  -  Main Menu", items,
-      " ↑/↓: select   Enter: open   Esc: abort ")
+      " Up/Dn: select   Enter: open   Shift+Q: abort install ")
     if not pick or pick.key == "abort" then
       if confirmBox("Abort", "Reboot without installing?") then
         computer.shutdown(true)
