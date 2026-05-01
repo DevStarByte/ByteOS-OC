@@ -173,6 +173,6 @@ Just write a `.lua` file that uses them and `return` an exit code.
 
 ## License
 
-Public domain / CC0 — do whatever you want.
+MIT. See LICENSE.
 
 > Minecraft is a trademark of Mojang AB. OpenComputers © Sangar et al.
