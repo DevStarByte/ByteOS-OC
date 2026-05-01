@@ -104,4 +104,33 @@ function term.read(opts)
 end
 _G.read = term.read
 
+-- Read a single key. Returns:
+--   ch (string) for printable input,
+--   "enter", "backspace", "tab", "escape",
+--   "up","down","left","right","home","end","pageup","pagedown",
+--   or "interrupt".
+function term.readKey()
+  while true do
+    local ev, _, ch, code = k.event.pull(nil)
+    if ev == "interrupted" then return "interrupt" end
+    if ev == "key_down" then
+      if code == 28 then return "enter"
+      elseif code == 14 then return "backspace"
+      elseif code == 15 then return "tab"
+      elseif code == 1  then return "escape"
+      elseif code == 200 then return "up"
+      elseif code == 208 then return "down"
+      elseif code == 203 then return "left"
+      elseif code == 205 then return "right"
+      elseif code == 199 then return "home"
+      elseif code == 207 then return "end"
+      elseif code == 201 then return "pageup"
+      elseif code == 209 then return "pagedown"
+      elseif ch and ch >= 32 and ch < 127 then
+        return string.char(ch)
+      end
+    end
+  end
+end
+
 return term
