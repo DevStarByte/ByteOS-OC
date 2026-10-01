@@ -1,12 +1,6 @@
+Welcome to ByteOS, the Arch-flavoured OS for OpenComputers.
 
-   ____        _        ___  ____
-  | __ ) _   _| |_ ___ / _ \/ ___|
-  |  _ \| | | | __/ _ \ | | \___ \
-  | |_) | |_| | ||  __/ |_| |___) |
-  |____/ \__, |\__\___|\___/|____/
-         |___/
-
-  Welcome to ByteOS - the Arch-flavoured OS for OpenComputers.
-  Type `help` for a list of commands, `pacman -Syu` to update,
-  or `neofetch` to admire the system.
-
+  `help`          list commands
+  `neofetch`      admire the system
+  `pacman -Syu`   update everything
+  `edit <file>`   edit a file

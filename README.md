@@ -27,7 +27,15 @@ in the classic `[user@host pwd]$` style, an Arch-style **`pacman`** package mana
   Arch-coloured prompt, quoting, and a Lua execution environment per command.
 - **Coreutils** — `ls cat echo pwd mkdir rm cp mv clear uname whoami edit help neofetch reboot shutdown`.
 - **pacman** — `-S / -R / -Q / -Qi / -Sy / -Syu / -Ss` with a tiny on-disk repo format.
-- **/etc/os-release**, **/etc/motd**, **/etc/hostname**, **/etc/passwd**, **/etc/pacman.conf**, **/etc/profile**, **/etc/fstab**.
+- **edit** — full-screen editor with line numbers and Lua syntax highlighting
+  (`^S` save, `^Q` quit, `^K`/`^U` cut/paste line, `^G` go to line).
+- **One colour theme** ([`lib/theme.lua`](lib/theme.lua)) — 16 colours, loaded
+  into the GPU palette so Tier 2 and Tier 3 look identical; Tier 1 gets a
+  clean black/white fallback. Every screen adapts to 50×16 up to 160×50.
+- **Terminal** — UTF-8 output, blinking cursor, line editing with history
+  (`↑↓`, `←→`, `^A`/`^E`, `^U`, `^W`, `^C`, `^D`) and clipboard paste.
+- **Kernel panic screen** instead of the generic OpenComputers crash screen.
+- **/etc/os-release**, **/etc/issue**, **/etc/motd**, **/etc/hostname**, **/etc/passwd**, **/etc/pacman.conf**, **/etc/profile**, **/etc/fstab**.
 
 ## Repository Layout
 
@@ -69,25 +77,27 @@ script — just put the files on a disk and boot it.
 3. Set the EEPROM's boot address to that disk (or just have it as the only
    bootable FS).
 4. Power on. On the very first boot ByteOS notices `/etc/.installed` is missing
-   and runs the setup wizard:
+   and runs the full-screen setup wizard:
    ```
-   ==========================================
-           ByteOS First-Time Setup
-   ==========================================
-
-   No install detected. Let's configure your system.
-
-   Hostname [byteos]: my-rig
-   Username  [root]: thomas
-   Password: ********
-   Confirm:  ********
-
-   Setup complete. You can now log in as 'thomas'.
-   my-rig login: thomas
-   Password: ********
+    ByteOS Setup                                            Settings
+              ┌──────── Installation summary ────────┐
+              │ ✓ Hostname                    byteos │
+              │ ✓ Keyboard layout                 us │
+              │ ✓ Locale                 en_US.UTF-8 │
+              │ ✓ Timezone                       UTC │
+              │ • Root password             required │
+              │ ✓ User account             root only │
+              │ ──────────────────────────────────── │
+              │   Install ByteOS                     │
+              │   Abort and reboot                   │
+              └──────────────────────────────────────┘
+    ↑↓ move  Enter change  Shift+Q abort
    ```
-   Your answers are written to `/etc/hostname` and `/etc/passwd`, and a
+   Pick each entry with the arrow keys (or `1`-`9`) and Enter, set a root
+   password, then choose *Install ByteOS*. Your answers are written to
+   `/etc/hostname`, `/etc/passwd`, `/etc/shadow` and friends, and a
    `/etc/.installed` marker is created so the wizard never runs again.
+   (Escape closes the Minecraft screen, so *back* is `Shift+Q` or Backspace.)
 5. From now on every boot goes straight to the login prompt and verifies your
    password.
 
@@ -134,16 +144,23 @@ component.eeprom.setLabel("ByteBIOS")
 ByteOS byteos 1.0.0 (Iron) lua54 GNU/ByteOS
 
 [root@byteos ~]# pacman -Sy
-:: synchronized core
-:: synchronized extra
+:: Synchronizing package databases...
+ core                                   [##############################] 100%
+ extra                                  [##############################] 100%
 
 [root@byteos ~]# pacman -Ss cow
 core/cowsay 0.2.0
     ascii-art talking cow
 
 [root@byteos ~]# pacman -S cowsay
-:: installing cowsay (0.2.0) from core
-:: installed cowsay
+resolving dependencies...
+looking for conflicting packages...
+
+Packages (1) cowsay-0.2.0
+
+:: Proceed with installation? [Y/n]
+:: Processing package changes...
+ (1/1) installing cowsay                [##############################] 100%
 
 [root@byteos ~]# cowsay "I run Arch... ish."
  -------------------

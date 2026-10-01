@@ -28,20 +28,22 @@ local shell = require("shell")
 local star = {}
 
 -- ---- Colours -----------------------------------------------------------
+-- Mapped onto the shared theme (lib/theme.lua) so they fit the GPU palette.
+local T = term.theme
 local C = {
-  fg       = 0xFFFFFF,
-  dim      = 0x666666,
-  cmd_ok   = 0x55FF55,
-  cmd_bad  = 0xFF5555,
-  string   = 0x55FFFF,
-  flag     = 0xFFCC55,
-  number   = 0xCC99FF,
+  fg       = T.fg,
+  dim      = T.dim,
+  cmd_ok   = T.green,
+  cmd_bad  = T.red,
+  string   = T.cyan,
+  flag     = T.yellow,
+  number   = T.orange,
   -- prompt segments (fg / bg pairs)
-  seg_user_bg  = 0x66CCFF, seg_user_fg  = 0x000000,
-  seg_host_bg  = 0x4488CC, seg_host_fg  = 0xFFFFFF,
-  seg_dir_bg  = 0x333333, seg_dir_fg   = 0xFFCC55,
-  seg_arrow_ok  = 0x55FF55,
-  seg_arrow_bad = 0xFF5555,
+  seg_user_bg  = T.accent,  seg_user_fg  = T.on_accent,
+  seg_host_bg  = T.raised,  seg_host_fg  = T.bright,
+  seg_dir_bg   = T.surface, seg_dir_fg   = T.yellow,
+  seg_arrow_ok  = T.green,
+  seg_arrow_bad = T.red,
 }
 
 -- ---- History -----------------------------------------------------------
@@ -306,14 +308,14 @@ local function readLine(promptCol, lastStatus)
 
   while true do
     local sug = paint()
-    local key = term.readKey()
+    local key, pasted = term.readKey(true)
 
     if key == "enter" then
       term.setCursor(startX + #buf, startY)
       term.write("\n")
       return buf
 
-    elseif key == "interrupt" then
+    elseif key == "interrupt" or key == "ctrl+c" then
       term.setCursor(startX + #buf, startY); term.write("^C\n")
       return ""
 
@@ -376,6 +378,11 @@ local function readLine(promptCol, lastStatus)
           startX, startY = select(1, term.getCursor()), select(2, term.getCursor())
         end
       end
+
+    elseif key == "paste" then
+      local text = (pasted or ""):match("^[^\r\n]*")
+      buf = buf:sub(1, cur) .. text .. buf:sub(cur + 1)
+      cur = cur + #text
 
     elseif type(key) == "string" and #key == 1 then
       buf = buf:sub(1, cur) .. key .. buf:sub(cur + 1)

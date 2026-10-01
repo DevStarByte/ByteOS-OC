@@ -5,8 +5,16 @@
 local k    = _G.kernel
 local fs   = k.fs
 local term = require("term")
+local T    = term.theme
 
 local shell = {}
+shell.history = {}
+
+-- Print an error message: "<prog>: " in red, the message in the default colour.
+function shell.err(prog, msg)
+  term.cwrite(T.err, prog .. ": ")
+  term.cwrite(T.fg, tostring(msg) .. "\n")
+end
 
 -- ---- Path helpers --------------------------------------------------------
 function shell.normalize(path)
@@ -55,9 +63,10 @@ shell.builtins = {}
 
 function shell.builtins.cd(args)
   local target = args[1] or _G.HOME or "/"
+  if target == "~" or target:sub(1, 2) == "~/" then target = (_G.HOME or "/") .. target:sub(2) end
   local p = shell.normalize(target)
   if not fs.isDirectory(p) then
-    term.write("cd: not a directory: " .. target .. "\n")
+    shell.err("cd", "not a directory: " .. target)
     return 1
   end
   _G.PWD = p
@@ -75,8 +84,9 @@ function shell.builtins.export(args)
 end
 
 function shell.builtins.set()
-  for name, val in pairs({ PATH = _G.PATH, HOME = _G.HOME, USER = _G.USER, PWD = _G.PWD, SHELL = _G.SHELL }) do
-    term.write(name .. "=" .. tostring(val) .. "\n")
+  for _, name in ipairs({ "HOME", "HOSTNAME", "PATH", "PWD", "SHELL", "USER" }) do
+    term.cwrite(T.blue, name); term.cwrite(T.muted, "=")
+    term.cwrite(T.fg, tostring(_G[name]) .. "\n")
   end
   return 0
 end
@@ -95,44 +105,59 @@ function shell.execute(line)
 
   local path = shell.resolveBin(cmd)
   if not path then
-    term.write("byteshell: command not found: " .. cmd .. "\n")
+    shell.err("byteshell", "command not found: " .. cmd)
     return 127
   end
 
   local src, err = fs.readAll(path)
-  if not src then term.write("cannot read " .. path .. ": " .. tostring(err) .. "\n"); return 1 end
+  if not src then shell.err("byteshell", "cannot read " .. path .. ": " .. tostring(err)); return 1 end
 
   local env = setmetatable({ arg = args, shell = shell, term = term, fs = fs, k = k }, { __index = _G })
   local fn, perr = load(src, "=" .. path, "t", env)
-  if not fn then term.write("parse error: " .. perr .. "\n"); return 1 end
+  if not fn then shell.err("byteshell", "parse error: " .. perr); return 1 end
 
   local ok, rc = pcall(fn, table.unpack(args))
-  if not ok then term.write(cmd .. ": " .. tostring(rc) .. "\n"); return 1 end
+  -- programs may leave colours behind; reset to the defaults
+  term.setForeground(T.fg); term.setBackground(T.bg)
+  if not ok then shell.err(cmd, tostring(rc)); return 1 end
   return tonumber(rc) or 0
 end
 
 -- ---- REPL ----------------------------------------------------------------
+-- Arch-style prompt:  [user@host ~]$   (user and # in red when root)
 function shell.prompt()
   local user = _G.USER or "root"
   local host = _G.HOSTNAME or "byteos"
   local pwd  = _G.PWD or "/"
-  if pwd == _G.HOME then pwd = "~" elseif _G.HOME and pwd:sub(1, #_G.HOME) == _G.HOME then pwd = "~" .. pwd:sub(#_G.HOME + 1) end
-  term.setForeground(0x55FF55); term.write("[" .. user .. "@" .. host)
-  term.setForeground(0xFFFFFF); term.write(" ")
-  term.setForeground(0x55AAFF); term.write(pwd)
-  term.setForeground(0x55FF55); term.write("]")
-  term.setForeground(0xFFFFFF); term.write(user == "root" and "# " or "$ ")
+  local home = _G.HOME
+  if pwd == home then pwd = "~"
+  elseif home and pwd:sub(1, #home + 1) == home .. "/" then pwd = "~" .. pwd:sub(#home + 1) end
+  -- keep the prompt short enough to leave room for typing on small screens
+  local maxPwd = math.max(8, math.floor(term.width / 3))
+  if term.ulen(pwd) > maxPwd then pwd = "…" .. term.usub(pwd, -(maxPwd - 1)) end
+  local root = user == "root"
+  -- never start the prompt in the middle of a line left by a program
+  if term.getCursor() > 1 then term.write("\n") end
+  term.cwrite(T.muted, "[")
+  term.cwrite(root and T.red or T.green, user)
+  term.cwrite(T.muted, "@")
+  term.cwrite(T.fg, host .. " ")
+  term.cwrite(T.blue, pwd)
+  term.cwrite(T.muted, "]")
+  term.cwrite(root and T.red or T.fg, root and "# " or "$ ")
+  term.setForeground(T.bright)
 end
 
 function shell.repl()
   while true do
     shell.prompt()
-    local line = term.read()
-    if line == nil then term.write("\n"); return end
+    local line = term.read({ history = shell.history })
+    term.setForeground(T.fg)
+    if line == nil then return end
     local ok, err = pcall(shell.execute, line)
     if not ok then
       if err == "__exit__" then return end
-      term.write("error: " .. tostring(err) .. "\n")
+      shell.err("error", err)
     end
   end
 end

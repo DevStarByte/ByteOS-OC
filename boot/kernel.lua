@@ -225,4 +225,4 @@ end
 function kernel.uptime() return computer.uptime() end
 function kernel.shutdown(reboot) computer.shutdown(reboot) end
 
-_G.kprint("[    0.040] kernel ready :: " .. tostring(#kernel.fs.mounts()) .. " mount(s)")
+_G.kprint("kernel ready: " .. tostring(#kernel.fs.mounts()) .. " mount(s)")

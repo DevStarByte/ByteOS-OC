@@ -32,15 +32,23 @@ end
 local boot = findBootFs()
 _G.bootfs  = boot
 
--- Tiny early console
+-- Tiny early console (dmesg-style: dim timestamp, then the message)
 local gpu    = component.proxy(component.list("gpu")())
 local screen = component.list("screen")()
 if gpu and screen then gpu.bind(screen) end
 local W, H = gpu.getResolution()
+local T0 = computer.uptime()
 local cy = 1
+gpu.setBackground(0x000000)
+gpu.fill(1, 1, W, H, " ")
+
 local function kprint(msg, color)
-  if color then gpu.setForeground(color) end
-  gpu.set(1, cy, tostring(msg) .. string.rep(" ", W - #tostring(msg)))
+  msg = tostring(msg)
+  local stamp = ("[%8.3f] "):format(computer.uptime() - T0)
+  gpu.setForeground(0x8A96A8)
+  gpu.set(1, cy, stamp)
+  gpu.setForeground(color or 0xD8DEE9)
+  gpu.set(#stamp + 1, cy, msg)
   gpu.setForeground(0xFFFFFF)
   cy = cy + 1
   if cy > H then
@@ -51,8 +59,27 @@ local function kprint(msg, color)
 end
 _G.kprint = kprint
 
-kprint("[    0.000] " .. _G._OSVERSION .. " (" .. _G._OSCODENAME .. ")", 0x66CCFF)
-kprint("[    0.001] booting from " .. boot.address:sub(1, 8) .. "...")
+-- Like kprint, but without the timestamp: used for systemd-style status lines.
+-- `parts` is a list of { text, color } pairs drawn left to right.
+function _G.kstatus(parts)
+  local x = 1
+  gpu.fill(1, cy, W, 1, " ")
+  for _, p in ipairs(parts) do
+    gpu.setForeground(p[2] or 0xD8DEE9)
+    gpu.set(x, cy, p[1])
+    x = x + ((unicode and unicode.len(p[1])) or #p[1])
+  end
+  gpu.setForeground(0xFFFFFF)
+  cy = cy + 1
+  if cy > H then
+    gpu.copy(1, 2, W, H - 1, 0, -1)
+    gpu.fill(1, H, W, 1, " ")
+    cy = H
+  end
+end
+
+kprint(_G._OSVERSION .. " (" .. _G._OSCODENAME .. ")", 0x1793D1)
+kprint("booting from " .. boot.address:sub(1, 8) .. "...")
 
 -- Read a file from the boot filesystem
 local function readFile(path)
@@ -79,8 +106,43 @@ local function dofileBoot(path)
 end
 _G.dofileBoot = dofileBoot
 
-kprint("[    0.010] loading kernel...")
-dofileBoot("/boot/kernel.lua")
+-- Kernel panic screen: anything that escapes init ends up here instead of
+-- OpenComputers' generic crash screen.
+local function panic(trace)
+  gpu.setBackground(0x000000); gpu.fill(1, 1, W, H, " ")
+  gpu.setBackground(0xF0605A); gpu.setForeground(0xFFFFFF)
+  gpu.fill(1, 1, W, 1, " ")
+  local title = " KERNEL PANIC "
+  gpu.set(math.max(1, math.floor((W - #title) / 2) + 1), 1, title)
+  gpu.setBackground(0x000000)
+  local y = 3
+  local function line(s, color)
+    if y > H - 2 then return end
+    gpu.setForeground(color)
+    while #s > 0 and y <= H - 2 do
+      gpu.set(2, y, s:sub(1, W - 2)); s = s:sub(W - 1); y = y + 1
+    end
+  end
+  line(_G._OSVERSION .. " has stopped to protect your data.", 0xD8DEE9)
+  y = y + 1
+  for l in (trace .. "\n"):gmatch("([^\n]*)\n") do
+    line((l:gsub("\t", "  ")), y == 5 and 0xF0605A or 0x8A96A8)
+  end
+  gpu.setForeground(0x8A96A8)
+  gpu.set(2, H, "Press any key to reboot.")
+  while true do
+    local ev = computer.pullSignal()
+    if ev == "key_down" then computer.shutdown(true) end
+  end
+end
 
-kprint("[    0.050] starting init...")
-dofileBoot("/sbin/init.lua")
+local ok, err = xpcall(function()
+  kprint("loading kernel...")
+  dofileBoot("/boot/kernel.lua")
+  kprint("starting init...")
+  dofileBoot("/sbin/init.lua")
+end, function(e)
+  -- capture the traceback here, while the failing stack still exists
+  return (debug and debug.traceback) and debug.traceback(tostring(e), 2) or tostring(e)
+end)
+if not ok then panic(err) end

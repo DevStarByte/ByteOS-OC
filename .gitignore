@@ -1,0 +1,11 @@
+# Written by the first-boot setup wizard; machine-specific and, in the case
+# of etc/shadow, contains passwords. Never commit these.
+etc/.installed
+etc/shadow
+etc/group
+etc/hosts
+etc/locale.conf
+etc/timezone
+etc/vconsole.conf
+var/log/
+var/lib/pacman/sync/

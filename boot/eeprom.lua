@@ -29,14 +29,23 @@ computer.setBootAddress = setBootAddress
 -- Try to display something on screen (if available)
 local gpu = component.list("gpu")()
 local screen = component.list("screen")()
+local w, h = 0, 0
+local function g(m, ...) return component.invoke(gpu, m, ...) end
+-- centred line of text on row y (no-op without a screen)
+local function say(y, s, fg)
+  if w == 0 then return end
+  g("setForeground", fg)
+  g("fill", 1, y, w, 1, " ")
+  g("set", math.floor((w - #s) / 2) + 1, y, s)
+end
 if gpu and screen then
-  component.invoke(gpu, "bind", screen)
-  local w, h = component.invoke(gpu, "maxResolution")
-  component.invoke(gpu, "setResolution", w, h)
-  component.invoke(gpu, "setBackground", 0x000000)
-  component.invoke(gpu, "setForeground", 0xFFFFFF)
-  component.invoke(gpu, "fill", 1, 1, w, h, " ")
-  component.invoke(gpu, "set", 1, 1, "ByteBIOS v1.0  ::  loading ByteOS...")
+  g("bind", screen)
+  w, h = g("maxResolution")
+  g("setResolution", w, h)
+  g("setBackground", 0x000000)
+  g("fill", 1, 1, w, h, " ")
+  say(math.floor(h / 2) - 1, "ByteBIOS 1.0", 0x1793D1)
+  say(math.floor(h / 2) + 1, "Looking for a bootable disk...", 0x8A96A8)
 end
 
 -- Find a filesystem with /init.lua
@@ -69,7 +78,11 @@ if not init then
 end
 
 if not init then
-  error("no bootable medium found - insert a ByteOS disk", 0)
+  if w == 0 then error("no bootable medium found - insert a ByteOS disk", 0) end
+  say(math.floor(h / 2) + 1, "No bootable disk found.", 0xF0605A)
+  say(math.floor(h / 2) + 2, "Insert a ByteOS disk and press any key.", 0x8A96A8)
+  repeat until computer.pullSignal() == "key_down"
+  computer.shutdown(true)
 end
 
 -- Hand off control to /init.lua

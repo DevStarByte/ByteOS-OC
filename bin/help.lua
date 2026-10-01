@@ -1,14 +1,49 @@
 -- help - list available commands
-term.write("ByteOS - available commands:\n")
-local seen = {}
+local T = term.theme
+local W = term.size()
+
+local seen, names = {}, {}
 for dir in (_G.PATH or "/bin:/usr/bin:/sbin"):gmatch("[^:]+") do
   if k.fs.isDirectory(dir) then
     for _, e in ipairs(k.fs.list(dir)) do
-      local name = e:gsub("%.lua$", ""):gsub("/$", "")
-      if not seen[name] then seen[name] = true end
+      local name = e:gsub("/$", ""):gsub("%.lua$", "")
+      -- /sbin/init is PID 1, not something to run from the shell
+      if not seen[name] and not e:match("/$") and not (dir == "/sbin" and name == "init") then
+        seen[name] = true
+        names[#names + 1] = name
+      end
     end
   end
 end
-for name in pairs(seen) do term.write("  " .. name .. "\n") end
-term.write("\nBuilt-ins: cd, exit, export, set\n")
+table.sort(names)
+
+local function grid(list, color)
+  local maxlen = 0
+  for _, n in ipairs(list) do maxlen = math.max(maxlen, #n) end
+  local colw = maxlen + 3
+  local cols = math.max(1, math.floor((W - 2) / colw))
+  local rows = math.ceil(#list / cols)
+  for r = 1, rows do
+    term.write("  ")
+    for c = 1, cols do
+      local n = list[(c - 1) * rows + r]
+      if n then term.cwrite(color, term.pad(n, colw)) end
+    end
+    term.write("\n")
+  end
+end
+
+term.cwrite(T.accent, (_G._OSVERSION or "ByteOS"))
+term.cwrite(T.muted, ("  ·  %d commands\n\n"):format(#names))
+grid(names, T.green)
+term.write("\n")
+term.cwrite(T.bright, "Shell built-ins\n")
+grid({ "cd", "exit", "export", "set" }, T.yellow)
+term.write("\n")
+term.cwrite(T.muted, "Keys: ↑↓ history  ←→ move  ^A/^E start/end  ^U clear  ^C cancel\n")
+term.cwrite(T.muted, "More software: ")
+term.cwrite(T.blue, "pacman -Ss")
+term.cwrite(T.muted, " to search, ")
+term.cwrite(T.blue, "pacman -S <name>")
+term.cwrite(T.muted, " to install.\n")
 return 0

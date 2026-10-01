@@ -53,21 +53,53 @@ local function readRepos()
       section = line:match("%[(.-)%]")
       repos[section] = repos[section] or {}
     elseif section then
-      local k_, v = line:match("([^=]+)%s*=%s*(.+)")
+      local k_, v = line:match("^([^=]-)%s*=%s*(.+)$")
       if k_ then repos[section][k_] = v end
     end
   end
   return repos
 end
 
-local function info(msg, color)
-  term.setForeground(color or 0x55FF55); term.write(":: ")
-  term.setForeground(0xFFFFFF); term.write(msg .. "\n")
+local T = term.theme
+local W = term.size()
+
+-- pacman-style message helpers
+local function header(msg)          -- ":: Synchronizing package databases..."
+  term.cwrite(T.accent, ":: ")
+  term.cwrite(T.bright, msg .. "\n")
+end
+local function info(msg) term.cwrite(T.fg, msg .. "\n") end
+local function warn(msg)
+  term.cwrite(T.warn, "warning: ")
+  term.cwrite(T.fg, msg .. "\n")
+end
+local function err(msg)
+  term.cwrite(T.err, "error: ")
+  term.cwrite(T.fg, msg .. "\n")
 end
 
-local function err(msg)
-  term.setForeground(0xFF5555); term.write("error: ")
-  term.setForeground(0xFFFFFF); term.write(msg .. "\n")
+-- A full-width progress line: " label            [#########-----] 100%"
+local function progress(label, frac)
+  local barW = math.max(10, math.min(30, W - 30))
+  local labelW = W - barW - 9
+  local _, y = term.getCursor()
+  term.setCursor(1, y)
+  term.cwrite(T.fg, term.pad(" " .. label, labelW))
+  local filled = math.floor(barW * frac + 0.5)
+  term.cwrite(T.muted, " [")
+  term.cwrite(T.accent, string.rep("#", filled))
+  term.cwrite(T.dim, string.rep("-", barW - filled))
+  term.cwrite(T.muted, "]")
+  term.cwrite(T.fg, ("%4d%%"):format(math.floor(frac * 100 + 0.5)))
+end
+
+local NOCONFIRM = false
+local function confirm(question)
+  term.cwrite(T.accent, ":: ")
+  term.cwrite(T.bright, question .. " [Y/n] ")
+  if NOCONFIRM then term.write("\n"); return true end
+  local a = (term.read() or "n"):lower()
+  return a == "" or a == "y" or a == "yes"
 end
 
 -- Very small "downloader": copies files from a local-disk repo (e.g. /mnt/<id>/repo)
@@ -80,15 +112,23 @@ end
 
 local function syncRepo(rname, rconf)
   local data, e = fetch(rconf.Server, "repo.db")
-  if not data then err("failed to sync " .. rname .. ": " .. tostring(e)); return false end
+  if not data then
+    err("failed to synchronize " .. rname .. ": " .. tostring(e))
+    return false
+  end
   fs.makeDirectory(SYNC_DIR .. "/" .. rname)
-  fs.writeAll(SYNC_DIR .. "/" .. rname .. "/repo.db", data)
-  info("synchronized " .. rname)
+  local old = fs.readAll(SYNC_DIR .. "/" .. rname .. "/repo.db")
+  if old == data then
+    term.cwrite(T.fg, " " .. rname)
+    term.cwrite(T.muted, " is up to date\n")
+  else
+    fs.writeAll(SYNC_DIR .. "/" .. rname .. "/repo.db", data)
+    progress(rname, 1); term.write("\n")
+  end
   return true
 end
 
 local function findInRepos(pkg)
-  for _, name in ipairs({}) do end -- placeholder
   for _, fname in ipairs(fs.list(SYNC_DIR) or {}) do
     local rname = fname:gsub("/$", "")
     local dbp   = SYNC_DIR .. "/" .. rname .. "/repo.db"
@@ -106,11 +146,17 @@ end
 
 local function isInstalled(pkg) return fs.isDirectory(LOCAL_DIR .. "/" .. pkg) end
 
-local function installPackage(pkg)
-  if isInstalled(pkg) then info(pkg .. " is up to date -- reinstalling") end
-  local meta = findInRepos(pkg)
-  if not meta then err("target not found: " .. pkg); return false end
-  info("installing " .. pkg .. " (" .. meta.version .. ") from " .. meta.repo)
+local function installedVersion(pkg)
+  local d = fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/desc") or ""
+  return d:match("version=(%S+)")
+end
+
+-- Install one package. `meta` comes from findInRepos(); idx/total drive the
+-- "(1/3) installing foo" progress line.
+local function installPackage(pkg, meta, idx, total)
+  local label = ("(%d/%d) installing %s"):format(idx, total, pkg)
+  local function fail(msg) term.write("\n"); err(msg); return false end
+  progress(label, 0)
 
   -- Prefer the compressed package (.pkg.z), fall back to the plain .pkg.
   local stem = pkg .. "-" .. meta.version
@@ -119,25 +165,26 @@ local function installPackage(pkg)
   if not data then
     data, e = fetch(meta.server, stem .. ".pkg")
   end
-  if not data then err("download failed: " .. tostring(e)); return false end
+  if not data then return fail("download failed: " .. tostring(e)) end
+  progress(label, 0.3)
 
   -- packages are Lua tables: return { files = {...}, post_install = function() ... end }
   local fn, perr = load(data, "=" .. pkg, "t", { string = string, table = table, math = math })
-  if not fn then err("malformed package: " .. perr); return false end
+  if not fn then return fail("malformed package: " .. perr) end
   local ok, pkgtab = pcall(fn)
-  if not ok or type(pkgtab) ~= "table" then err("invalid package payload"); return false end
+  if not ok or type(pkgtab) ~= "table" then return fail("invalid package payload") end
 
   -- Decompress file contents if the package declares a known format.
   if pkgtab.format == "lzw1" then
-    if compressed then info("decompressing payload (" .. #data .. " B)") end
     for path, content in pairs(pkgtab.files or {}) do
       local plain, derr = compress.decode(content)
-      if not plain then err("decompress failed for " .. path .. ": " .. tostring(derr)); return false end
+      if not plain then return fail("decompress failed for " .. path .. ": " .. tostring(derr)) end
       pkgtab.files[path] = plain
     end
   elseif pkgtab.format and pkgtab.format ~= "raw" then
-    err("unknown package format: " .. tostring(pkgtab.format)); return false
+    return fail("unknown package format: " .. tostring(pkgtab.format))
   end
+  progress(label, 0.6)
 
   local installed = {}
   for path, content in pairs(pkgtab.files or {}) do
@@ -154,20 +201,21 @@ local function installPackage(pkg)
               "\nformat=" .. (pkgtab.format or "raw") .. "\n")
   fs.writeAll(LOCAL_DIR .. "/" .. pkg .. "/files", table.concat(installed, "\n") .. "\n")
 
+  progress(label, 1); term.write("\n")
   if pkgtab.post_install then pcall(pkgtab.post_install) end
-  info("installed " .. pkg)
   return true
 end
 
-local function removePackage(pkg)
-  if not isInstalled(pkg) then err("target not installed: " .. pkg); return false end
+local function removePackage(pkg, idx, total)
+  local label = ("(%d/%d) removing %s"):format(idx, total, pkg)
+  progress(label, 0)
   local files = fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/files") or ""
   for f in files:gmatch("[^\n]+") do if fs.exists(f) then fs.remove(f) end end
   for _, e_ in ipairs(fs.list(LOCAL_DIR .. "/" .. pkg) or {}) do
     fs.remove(LOCAL_DIR .. "/" .. pkg .. "/" .. e_)
   end
   fs.remove(LOCAL_DIR .. "/" .. pkg)
-  info("removed " .. pkg)
+  progress(label, 1); term.write("\n")
   return true
 end
 
@@ -176,14 +224,30 @@ local function queryAll()
     local n   = e_:gsub("/$", "")
     local d   = fs.readAll(LOCAL_DIR .. "/" .. n .. "/desc") or ""
     local ver = d:match("version=(%S+)") or "?"
-    term.write(n .. " " .. ver .. "\n")
+    term.cwrite(T.bright, n .. " ")
+    term.cwrite(T.green, ver .. "\n")
   end
 end
 
 local function queryInfo(pkg)
-  if not isInstalled(pkg) then err("not installed: " .. pkg); return end
-  term.write(fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/desc") or "")
-  term.write("Files:\n" .. (fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/files") or ""))
+  if not pkg then err("no targets specified"); return end
+  if not isInstalled(pkg) then err("package '" .. pkg .. "' was not found"); return end
+  local d = fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/desc") or ""
+  local fields = {}
+  for key, v in d:gmatch("(%w+)=([^\n]*)") do fields[key] = v end
+  local files = {}
+  for f in (fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/files") or ""):gmatch("[^\n]+") do files[#files + 1] = f end
+  local function row(label, value)
+    term.cwrite(T.bright, term.pad(label, 14))
+    term.cwrite(T.muted, ": ")
+    term.cwrite(T.fg, (value or "None") .. "\n")
+  end
+  row("Name", fields.name or pkg)
+  row("Version", fields.version)
+  row("Description", fields.desc)
+  row("Format", fields.format or "raw")
+  row("Files", tostring(#files))
+  for _, f in ipairs(files) do term.cwrite(T.muted, string.rep(" ", 16) .. f .. "\n") end
 end
 
 local function search(pat)
@@ -194,10 +258,12 @@ local function search(pat)
       for line in (fs.readAll(dbp) or ""):gmatch("[^\n]+") do
         local n, v, d = line:match("(%S+)%s+(%S+)%s+(.+)")
         if n and (not pat or n:find(pat) or (d or ""):find(pat)) then
-          term.setForeground(0x55FF55); term.write(rname .. "/")
-          term.setForeground(0xFFFFFF); term.write(n .. " ")
-          term.setForeground(0x55FF55); term.write(v .. "\n")
-          term.setForeground(0xFFFFFF); term.write("    " .. (d or "") .. "\n")
+          term.cwrite(T.magenta, rname .. "/")
+          term.cwrite(T.bright, n .. " ")
+          term.cwrite(T.green, v)
+          if isInstalled(n) then term.cwrite(T.cyan, " [installed]") end
+          term.write("\n")
+          term.cwrite(T.fg, "    " .. (d or "") .. "\n")
         end
       end
     end
@@ -205,26 +271,113 @@ local function search(pat)
 end
 
 -- ===== argument dispatch =====
-ensureDirs()
-local op = args[1]
-if not op then
-  term.write("usage: pacman <-S|-R|-Q|-Ss|-Syu> [targets...]\n")
-  return 1
+local function usage()
+  term.cwrite(T.bright, "usage: ")
+  term.write("pacman <operation> [...]\n")
+  term.cwrite(T.bright, "operations:\n")
+  local ops = {
+    { "-S <pkg>...", "install packages" },
+    { "-R <pkg>...", "remove packages" },
+    { "-Q",          "list installed packages" },
+    { "-Qi <pkg>",   "show package information" },
+    { "-Ss [regex]", "search the repositories" },
+    { "-Sy",         "synchronize package databases" },
+    { "-Syu",        "synchronize and upgrade" },
+  }
+  for _, o in ipairs(ops) do
+    term.cwrite(T.green, "    " .. term.pad(o[1], 14))
+    term.cwrite(T.fg, o[2] .. "\n")
+  end
+  term.cwrite(T.muted, "options: --noconfirm  do not ask for confirmation\n")
 end
 
-if op == "-Sy" or op == "-Syu" then
-  for name, conf in pairs(readRepos()) do if conf.Server then syncRepo(name, conf) end end
-  if op == "-Syu" then info("system fully up to date") end
+local function sync()
+  header("Synchronizing package databases...")
+  local repos, names = readRepos(), {}
+  for name, conf in pairs(repos) do if conf.Server then names[#names + 1] = name end end
+  table.sort(names)
+  for _, name in ipairs(names) do syncRepo(name, repos[name]) end
+end
+
+local function install(targets)
+  if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
+  local list = {}
+  for _, pkg in ipairs(targets) do
+    local meta = findInRepos(pkg)
+    if not meta then err("target not found: " .. pkg); return 1 end
+    if isInstalled(pkg) and installedVersion(pkg) == meta.version then
+      warn(pkg .. "-" .. meta.version .. " is up to date -- reinstalling")
+    end
+    list[#list + 1] = meta
+  end
+  info("resolving dependencies...")
+  info("looking for conflicting packages...")
+  term.write("\n")
+  local names = {}
+  for _, m in ipairs(list) do names[#names + 1] = m.name .. "-" .. m.version end
+  term.cwrite(T.bright, ("Packages (%d) "):format(#list))
+  term.cwrite(T.fg, table.concat(names, "  ") .. "\n\n")
+  if not confirm("Proceed with installation?") then return 1 end
+  header("Processing package changes...")
+  local ok = true
+  for i, m in ipairs(list) do ok = installPackage(m.name, m, i, #list) and ok end
+  return ok and 0 or 1
+end
+
+local function remove(targets)
+  if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
+  for _, pkg in ipairs(targets) do
+    if not isInstalled(pkg) then err("target not found: " .. pkg); return 1 end
+  end
+  local names = {}
+  for _, pkg in ipairs(targets) do names[#names + 1] = pkg .. "-" .. (installedVersion(pkg) or "?") end
+  info("checking dependencies...")
+  term.write("\n")
+  term.cwrite(T.bright, ("Packages (%d) "):format(#targets))
+  term.cwrite(T.fg, table.concat(names, "  ") .. "\n\n")
+  if not confirm("Do you want to remove these packages?") then return 1 end
+  header("Processing package changes...")
+  for i, pkg in ipairs(targets) do removePackage(pkg, i, #targets) end
+  return 0
+end
+
+ensureDirs()
+local rest = {}
+for _, a in ipairs(args) do
+  if a == "--noconfirm" then NOCONFIRM = true else rest[#rest + 1] = a end
+end
+local op = rest[1]
+local targets = { table.unpack(rest, 2) }
+
+if not op or op == "-h" or op == "--help" then
+  usage()
+  return op and 0 or 1
+elseif op == "-Sy" or op == "-Syu" then
+  sync()
+  if op == "-Syu" then
+    header("Starting full system upgrade...")
+    local outdated = {}
+    for _, e_ in ipairs(fs.list(LOCAL_DIR) or {}) do
+      local n = e_:gsub("/$", "")
+      local meta = findInRepos(n)
+      if meta and meta.version ~= installedVersion(n) then outdated[#outdated + 1] = n end
+    end
+    if #outdated == 0 then info(" there is nothing to do"); return 0 end
+    return install(outdated)
+  end
+  if #targets > 0 then return install(targets) end
   return 0
 elseif op == "-S" then
-  for i = 2, #args do installPackage(args[i]) end
+  return install(targets)
 elseif op == "-R" then
-  for i = 2, #args do removePackage(args[i]) end
+  return remove(targets)
 elseif op == "-Q" then
-  if args[2] == "-i" or args[2] == "i" then queryInfo(args[3]) else queryAll() end
+  if targets[1] == "-i" or targets[1] == "i" then queryInfo(targets[2]) else queryAll() end
+elseif op == "-Qi" then
+  queryInfo(targets[1])
 elseif op == "-Ss" then
-  search(args[2])
+  search(targets[1])
 else
-  err("unknown operation: " .. op); return 1
+  err("invalid option '" .. op .. "' (use -h for help)"); return 1
 end
 return 0
