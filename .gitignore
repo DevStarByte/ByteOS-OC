@@ -9,3 +9,7 @@ etc/timezone
 etc/vconsole.conf
 var/log/
 var/lib/pacman/sync/
+# sysupdate's local state, backups and download staging area
+var/lib/sysupdate/
+var/cache/
+ocelot-desktop-v1.14.2.jar

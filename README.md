@@ -50,9 +50,12 @@ ByteOS/
 ├── bin/                  ← user commands (.lua)
 ├── etc/                  ← system configuration
 ├── home/root/            ← root's home
-├── var/lib/pacman/       ← pacman local DB
-└── repo/                 ← sample pacman repo (mount as /mnt/repo)
+└── var/lib/pacman/       ← pacman local DB
 ```
+
+The pacman repositories (`core/`, `extra/`) live on the separate
+[`packages`](https://github.com/DevStarByte/ByteOS-OC/tree/packages) branch, so cloning the OS doesn't pull in
+every package. pacman downloads from there through the internet card.
 
 ## Installing inside Minecraft (OpenComputers)
 
@@ -179,6 +182,34 @@ pacman 1.0.0
 cowsay 0.2.0
 ```
 
+## Updating ByteOS over the internet
+
+With an **internet card** in the computer, `sysupdate` downloads the newest
+ByteOS straight from this GitHub repository and installs it in place:
+
+```sh
+[root@byteos ~]# sysupdate -c          # only check
+[root@byteos ~]# sysupdate             # download, show changes, install
+[root@byteos ~]# sysupdate --rollback  # go back to the previous version
+```
+
+It is built not to break the running system:
+
+- Only files that changed upstream are downloaded, into
+  `/var/cache/sysupdate/stage`. Every `.lua` file is compiled before
+  anything is installed; if a download or check fails, nothing is changed.
+- Only OS files are replaced (`/init.lua`, `/boot`, `/sbin`, `/lib`, `/bin`,
+  `/etc/os-release`, `/etc/issue`). `/home`, `/var`, user accounts, the
+  hostname and pacman packages are left alone.
+- `/etc` files you edited are kept; the new version is saved as `<file>.new`.
+- Replaced files are backed up to `/var/lib/sysupdate/backup`. If the new
+  version panics before reaching the login prompt, `/init.lua` restores the
+  backup by itself.
+
+To follow a fork or another branch, edit `/etc/sysupdate.conf`. The
+repository must be public. GitHub allows 60 unauthenticated API calls per
+hour; each update uses two.
+
 ## Writing your own packages
 
 A package is just a Lua file that returns a table. The plain (uncompressed)
@@ -193,7 +224,8 @@ return {
 }
 ```
 
-Drop it into a repo directory next to `repo.db`, add a line
+Drop it into a repo directory (on the `packages` branch, or a floppy) next
+to `repo.db`, add a line
 `mytool 1.0.0 my cool tool`, and `pacman -Sy && pacman -S mytool`.
 
 ### Compressed packages (`.pkg.z`)
@@ -231,7 +263,8 @@ Build a compressed package from an existing plain one with `mkpkg`:
 Tiny scripts (a few hundred bytes) actually grow because of the base64 +
 header overhead; compression starts to pay off above ~1 KiB and reaches
 roughly **35–55 %** of the original size on real Lua source and ASCII-art
-data files. The bundled [`repo/extra/figlet-1.0.0.pkg.z`](repo/extra/figlet-1.0.0.pkg.z)
+data files. The bundled [`extra/figlet-1.0.0.pkg.z`](https://github.com/DevStarByte/ByteOS-OC/blob/packages/extra/figlet-1.0.0.pkg.z)
+(on the `packages` branch)
 is a working example.
 
 ## Hacking on ByteOS

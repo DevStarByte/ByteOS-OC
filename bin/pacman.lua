@@ -45,8 +45,8 @@ local function readRepos()
   local repos = {}
   if not fs.exists(CONF_PATH) then return repos end
   local section
-  for line in (fs.readAll(CONF_PATH) or ""):gmatch("[^\n]+") do
-    line = line:gsub("^%s+", ""):gsub("%s+$", "")
+  for raw in (fs.readAll(CONF_PATH) or ""):gmatch("[^\n]+") do
+    local line = raw:gsub("^%s+", ""):gsub("%s+$", "")
     if line:sub(1,1) == "#" or line == "" then
       -- comment/blank
     elseif line:sub(1,1) == "[" then
@@ -102,12 +102,20 @@ local function confirm(question)
   return a == "" or a == "y" or a == "yes"
 end
 
--- Very small "downloader": copies files from a local-disk repo (e.g. /mnt/<id>/repo)
--- This works inside Minecraft (no real internet). A repo "Server" is just a path.
+-- Very small "downloader". A repo "Server" is either an http(s):// URL
+-- (fetched through the internet card) or a path on a mounted disk
+-- (e.g. /mnt/<id>/repo/core), which works without internet.
 local function fetch(server, name)
   local p = server .. "/" .. name
+  if p:match("^https?://") then
+    local internet = require("internet")
+    if not internet.available() then return nil, "no internet card for " .. p end
+    local data, e = internet.fetch(p)
+    if not data then return nil, e .. " " .. p end
+    return data
+  end
   if fs.exists(p) then return fs.readAll(p) end
-  return nil, "404 " .. p
+  return nil, "not found: " .. p
 end
 
 local function syncRepo(rname, rconf)

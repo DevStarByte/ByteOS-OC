@@ -106,6 +106,31 @@ local function dofileBoot(path)
 end
 _G.dofileBoot = dofileBoot
 
+-- If sysupdate just installed a new version and it cannot boot, put the
+-- previous files back from its backup (same journal format as the
+-- rollback in /bin/sysupdate.lua). Returns true if something was restored.
+local function rollbackUpdate()
+  local LIB = "/var/lib/sysupdate"
+  if not boot.exists(LIB .. "/pending") then return false end
+  local list = readFile(LIB .. "/backup.list")
+  if not list then return false end
+  for op, path in list:gmatch("(%S+) ([^\n]+)") do
+    local here, saved = "/" .. path, LIB .. "/backup/" .. path
+    if op == "remove" then
+      boot.remove(here)
+    elseif op == "restore" and boot.exists(saved) then
+      boot.remove(here)
+      local dir = here:match("^(.*)/[^/]*$")
+      if dir and dir ~= "" then boot.makeDirectory(dir) end
+      boot.rename(saved, here)
+    end
+  end
+  boot.remove(LIB .. "/pending")
+  boot.remove(LIB .. "/backup.list")
+  boot.remove(LIB .. "/backup")
+  return true
+end
+
 -- Kernel panic screen: anything that escapes init ends up here instead of
 -- OpenComputers' generic crash screen.
 local function panic(trace)
@@ -127,6 +152,11 @@ local function panic(trace)
   y = y + 1
   for l in (trace .. "\n"):gmatch("([^\n]*)\n") do
     line((l:gsub("\t", "  ")), y == 5 and 0xF0605A or 0x8A96A8)
+  end
+  local okRb, restored = pcall(rollbackUpdate)
+  if okRb and restored then
+    gpu.setForeground(0x5FD068)
+    gpu.set(2, H - 1, "The last update failed to boot; the previous version was restored.")
   end
   gpu.setForeground(0x8A96A8)
   gpu.set(2, H, "Press any key to reboot.")

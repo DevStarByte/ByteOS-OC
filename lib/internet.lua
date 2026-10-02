@@ -1,131 +1,85 @@
-local buffer = require("buffer")
-local component = require("component")
-local event = require("event")
+--[[
+  /lib/internet.lua - HTTP over the internet card
+
+    local internet = require("internet")
+    internet.available()                  -> true if an internet card is installed
+    internet.get(url, sink [, headers])   -> true | nil, reason
+        streams the body to sink(chunk); only HTTP 200 counts as success
+    internet.fetch(url [, headers])       -> body | nil, reason
+
+  (/bin/sysupdate.lua carries its own copy of this so it can still repair a
+  system whose /lib is outdated or broken.)
+]]--
 
 local internet = {}
 
--------------------------------------------------------------------------------
+local TIMEOUT = 20 -- seconds without progress before giving up
 
-function internet.request(url, data, headers, method)
-  checkArg(1, url, "string")
-  checkArg(2, data, "string", "table", "nil")
-  checkArg(3, headers, "table", "nil")
-  checkArg(4, method, "string", "nil")
+local function card()
+  local addr = component.list("internet")()
+  return addr and component.proxy(addr)
+end
 
-  if not component.isAvailable("internet") then
-    error("no primary internet card found", 2)
+function internet.available()
+  return card() ~= nil
+end
+
+function internet.get(url, sink, headers)
+  local inet = card()
+  if not inet then return nil, "no internet card installed" end
+  local hdrs = { ["User-Agent"] = "ByteOS" }
+  for k_, v in pairs(headers or {}) do hdrs[k_] = v end
+
+  local ok, h, reason = pcall(inet.request, url, nil, hdrs)
+  if not ok or not h then return nil, tostring(ok and reason or h) end
+
+  local deadline = computer.uptime() + TIMEOUT
+  while true do
+    local okc, done, why = pcall(h.finishConnect)
+    if not okc or done == nil then h.close(); return nil, tostring(okc and why or done) end
+    if done then break end
+    if computer.uptime() > deadline then h.close(); return nil, "connection timed out" end
+    kernel.event.pull(0.05)
   end
-  local inet = component.internet
 
-  local post
-  if type(data) == "string" then
-    post = data
-  elseif type(data) == "table" then
-    for k, v in pairs(data) do
-      post = post and (post .. "&") or ""
-      post = post .. tostring(k) .. "=" .. tostring(v)
+  local code, message
+  repeat
+    code, message = h.response()
+    if not code then
+      if computer.uptime() > deadline then h.close(); return nil, "no response" end
+      kernel.event.pull(0.05)
+    end
+  until code
+  if code ~= 200 then
+    h.close()
+    return nil, ("HTTP %d %s"):format(code, message or ""), code
+  end
+
+  local idle = computer.uptime()
+  while true do
+    local okr, chunk, rerr = pcall(h.read, 8192)
+    if not okr then h.close(); return nil, tostring(chunk) end
+    if chunk == nil then
+      h.close()
+      if rerr then return nil, tostring(rerr) end
+      return true
+    end
+    if #chunk > 0 then
+      sink(chunk)
+      idle = computer.uptime()
+    elseif computer.uptime() - idle > TIMEOUT then
+      h.close(); return nil, "download stalled"
+    else
+      kernel.event.pull(0.05)
     end
   end
-
-  local request, reason = inet.request(url, post, headers, method)
-  if not request then
-    error(reason, 2)
-  end
-
-  return setmetatable(
-  {
-    ["()"] = "function():string -- Tries to read data from the socket stream and return the read byte array.",
-    close = setmetatable({},
-    {
-      __call = request.close,
-      __tostring = function() return "function() -- closes the connection" end
-    })
-  },
-  {
-    __call = function()
-      while true do
-        local data, reason = request.read()
-        if not data then
-          request.close()
-          if reason then
-            error(reason, 2)
-          else
-            return nil -- eof
-          end
-        elseif #data > 0 then
-          return data
-        end
-        -- else: no data, block
-        os.sleep(0)
-      end
-    end,
-    __index = request,
-  })
 end
 
--------------------------------------------------------------------------------
-
-local socketStream = {}
-
-function socketStream:close()
-  if self.socket then
-    self.socket.close()
-    self.socket = nil
-  end
+function internet.fetch(url, headers)
+  local parts = {}
+  local ok, e, code = internet.get(url, function(c) parts[#parts + 1] = c end, headers)
+  if not ok then return nil, e, code end
+  return table.concat(parts)
 end
-
-function socketStream:seek()
-  return nil, "bad file descriptor"
-end
-
-function socketStream:read(n)
-  if not self.socket then
-    return nil, "connection is closed"
-  end
-  return self.socket.read(n)
-end
-
-function socketStream:write(value)
-  if not self.socket then
-    return nil, "connection is closed"
-  end
-  while #value > 0 do
-    local written, reason = self.socket.write(value)
-    if not written then
-      return nil, reason
-    end
-    value = string.sub(value, written + 1)
-  end
-  return true
-end
-
-function internet.socket(address, port)
-  checkArg(1, address, "string")
-  checkArg(2, port, "number", "nil")
-  if port then
-    address = address .. ":" .. port
-  end
-
-  local inet = component.internet
-  local socket, reason = inet.connect(address)
-  if not socket then
-    return nil, reason
-  end
-
-  local stream = {inet = inet, socket = socket}
-  local metatable = {__index = socketStream,
-                     __metatable = "socketstream"}
-  return setmetatable(stream, metatable)
-end
-
-function internet.open(address, port)
-  local stream, reason = internet.socket(address, port)
-  if not stream then
-    return nil, reason
-  end
-  return buffer.new("rwb", stream)
-end
-
--------------------------------------------------------------------------------
 
 return internet

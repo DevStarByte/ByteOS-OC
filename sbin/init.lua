@@ -53,6 +53,12 @@ end
 local shell = require("shell")
 _G.shell = shell
 status("Started ByteShell.")
+-- Booting this far means a fresh sysupdate works; stop init.lua from
+-- rolling it back on a later panic.
+if fs.exists("/var/lib/sysupdate/pending") then
+  fs.remove("/var/lib/sysupdate/pending")
+  status("Finished applying system update.")
+end
 status("Reached target Multi-User System.")
 k.event.pull(0.5) -- let the boot log be read before it is cleared
 
