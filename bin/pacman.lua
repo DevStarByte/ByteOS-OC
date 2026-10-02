@@ -159,6 +159,49 @@ local function installedVersion(pkg)
   return d:match("version=(%S+)")
 end
 
+-- ---- ByteBIOS --------------------------------------------------------------
+-- "bytebios" is ByteBIOS on the EEPROM (see /lib/bytebios.lua). The library
+-- arrives with byteos, so a system that was not upgraded yet may lack it.
+local function bios()
+  local ok, mod = pcall(require, "bytebios")
+  return ok and mod or nil
+end
+
+local function biosStatus()
+  local b = bios()
+  if not b then return "unknown", {} end
+  return b.status()
+end
+
+local function flashBios()
+  local label = "flashing bytebios to the EEPROM"
+  progress(label, 0)
+  local ok, e = bios().flash()
+  if not ok then term.write("\n"); err("bytebios: " .. e); return false end
+  progress(label, 1); term.write("\n")
+  return true
+end
+
+local function biosHint()
+  term.cwrite(T.muted, " ByteBIOS is not on the EEPROM yet; install it with ")
+  term.cwrite(T.blue, "pacman -S bytebios\n")
+end
+
+local function queryBios()
+  local st, i = biosStatus()
+  if st ~= "current" and st ~= "outdated" then err("package 'bytebios' was not found"); return end
+  local function row(label, value)
+    term.cwrite(T.bright, term.pad(label, 14))
+    term.cwrite(T.muted, ": ")
+    term.cwrite(T.fg, (value or "None") .. "\n")
+  end
+  row("Name", "bytebios")
+  row("Version", i.installed)
+  row("Description", "ByteBIOS bootloader on the EEPROM")
+  row("Source", "/boot/eeprom.lua" .. (st == "outdated" and " (newer, run pacman -S bytebios)" or ""))
+  row("Can restore", bios().canRestore() and "yes, pacman -R bytebios" or "no")
+end
+
 -- Install one package. `meta` comes from findInRepos(); idx/total drive the
 -- "(1/3) installing foo" progress line.
 local function installPackage(pkg, meta, idx, total)
@@ -235,10 +278,16 @@ local function queryAll()
     term.cwrite(T.bright, n .. " ")
     term.cwrite(T.green, ver .. "\n")
   end
+  local st, i = biosStatus()
+  if st == "current" or st == "outdated" then
+    term.cwrite(T.bright, "bytebios ")
+    term.cwrite(T.green, i.installed .. "\n")
+  end
 end
 
 local function queryInfo(pkg)
   if not pkg then err("no targets specified"); return end
+  if pkg == "bytebios" then return queryBios() end
   if not isInstalled(pkg) then err("package '" .. pkg .. "' was not found"); return end
   local d = fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/desc") or ""
   local fields = {}
@@ -292,6 +341,7 @@ local function usage()
     { "-Sy",         "synchronize package databases" },
     { "-Syu",        "upgrade packages and the byteos base system" },
     { "--rollback",  "undo the last byteos upgrade" },
+    { "-S bytebios", "flash ByteBIOS to the EEPROM" },
   }
   for _, o in ipairs(ops) do
     term.cwrite(T.green, "    " .. term.pad(o[1], 14))
@@ -372,14 +422,35 @@ end
 
 local function install(targets)
   if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
-  local list = resolve(targets)
-  if not list then return 1 end
+  local wantBios, rest = false, {}
+  for _, t in ipairs(targets) do
+    if t == "bytebios" then wantBios = true else rest[#rest + 1] = t end
+  end
+  local names = {}
+  if wantBios then
+    local st, i = biosStatus()
+    if st == "unknown" then err("bytebios needs a newer byteos; run pacman -Syu first"); return 1 end
+    if st == "none" then err("this computer has no EEPROM"); return 1 end
+    if st == "current" then warn("bytebios-" .. i.installed .. " is up to date -- reinstalling") end
+    if st == "foreign" then info("the current BIOS is kept; pacman -R bytebios puts it back") end
+    names[1] = "bytebios-" .. (i.available or "?")
+  end
+  local list = {}
+  if #rest > 0 then
+    list = resolve(rest)
+    if not list then return 1 end
+  end
   info("resolving dependencies...")
   info("looking for conflicting packages...")
-  local names = {}
   for _, m in ipairs(list) do names[#names + 1] = m.name .. "-" .. m.version end
   if not confirmPackages(names, "Proceed with installation?") then return 1 end
-  return installAll(list) and 0 or 1
+  local ok = true
+  if wantBios then
+    header("Flashing ByteBIOS...")
+    ok = flashBios()
+  end
+  if #list > 0 then ok = installAll(list) and ok end
+  return ok and 0 or 1
 end
 
 -- ---- Base system -----------------------------------------------------------
@@ -437,20 +508,38 @@ local function upgrade()
     local meta = findInRepos(n)
     if meta and meta.version ~= installedVersion(n) then outdated[#outdated + 1] = meta end
   end
-  if not base and #outdated == 0 then info(" there is nothing to do"); return 0 end
+  -- ByteBIOS is only reflashed if it is already on the EEPROM; another
+  -- BIOS is never replaced without an explicit `pacman -S bytebios`.
+  local biosState, biosInfo = biosStatus()
+  local biosNow = not base and biosState == "outdated"
+  if not base and #outdated == 0 and not biosNow then
+    info(" there is nothing to do")
+    if biosState == "foreign" then biosHint() end
+    return 0
+  end
 
   local names = {}
   if base then names[1] = "byteos-" .. base.version end
+  if biosNow then names[#names + 1] = "bytebios-" .. (biosInfo.available or "?") end
   for _, m in ipairs(outdated) do names[#names + 1] = m.name .. "-" .. m.version end
   if not confirmPackages(names, "Proceed with installation?") then return 1 end
 
   local ok = true
-  if base then ok = upgradeBase(base) end
+  if base then
+    ok = upgradeBase(base)
+    -- the upgrade may have brought a new /boot/eeprom.lua
+    if ok and biosState ~= "foreign" and biosStatus() == "outdated" then biosNow = true end
+  end
+  if ok and biosNow then
+    header("Updating ByteBIOS on the EEPROM...")
+    ok = flashBios()
+  end
   if ok and #outdated > 0 then ok = installAll(outdated) end
   if base and ok then
     term.cwrite(T.accent, ":: ")
     term.cwrite(T.bright, "byteos was upgraded; reboot to start the new version\n")
   end
+  if ok and biosState == "foreign" then biosHint() end
   return ok and 0 or 1
 end
 
@@ -473,20 +562,41 @@ end
 local function remove(targets)
   if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
   local hold = held()
+  local names = {}
   for _, pkg in ipairs(targets) do
-    if not isInstalled(pkg) then err("target not found: " .. pkg); return 1 end
-    if hold[pkg] then
+    if pkg == "bytebios" then
+      local st, i = biosStatus()
+      if st ~= "current" and st ~= "outdated" then err("target not found: bytebios"); return 1 end
+      if not bios().canRestore() then
+        err("the BIOS from before ByteBIOS was not saved, so bytebios cannot be removed")
+        return 1
+      end
+      names[#names + 1] = "bytebios-" .. i.installed
+    elseif not isInstalled(pkg) then
+      err("target not found: " .. pkg); return 1
+    elseif hold[pkg] then
       err(pkg .. " is part of the base system and cannot be removed (HoldPkg)")
       return 1
+    else
+      names[#names + 1] = pkg .. "-" .. (installedVersion(pkg) or "?")
     end
   end
-  local names = {}
-  for _, pkg in ipairs(targets) do names[#names + 1] = pkg .. "-" .. (installedVersion(pkg) or "?") end
   info("checking dependencies...")
   if not confirmPackages(names, "Do you want to remove these packages?") then return 1 end
   header("Processing package changes...")
-  for i, pkg in ipairs(targets) do removePackage(pkg, i, #targets) end
-  return 0
+  local ok = true
+  for i, pkg in ipairs(targets) do
+    if pkg == "bytebios" then
+      local label = ("(%d/%d) restoring the previous BIOS"):format(i, #targets)
+      progress(label, 0)
+      local done, e = bios().restore()
+      if done then progress(label, 1); term.write("\n")
+      else term.write("\n"); err("bytebios: " .. e); ok = false end
+    else
+      removePackage(pkg, i, #targets)
+    end
+  end
+  return ok and 0 or 1
 end
 
 ensureDirs()

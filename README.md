@@ -129,7 +129,21 @@ the EEPROM in one go:
 
 ### Flash the EEPROM
 
-From any working Lua prompt (e.g. an OpenOS install on a floppy):
+ByteOS boots with the stock Lua BIOS too, so this is optional. To get
+ByteBIOS, run this inside ByteOS:
+
+```sh
+[root@byteos ~]# pacman -S bytebios   # flash ByteBIOS (the old BIOS is saved)
+[root@byteos ~]# pacman -R bytebios   # put the old BIOS back
+```
+
+Once ByteBIOS is on the EEPROM, `pacman -Syu` keeps it current. Another BIOS
+is never replaced unless you ask for it. Before flashing, pacman compiles
+ByteBIOS and checks that it fits; afterwards it reads the EEPROM back and
+puts the old code back on a mismatch. If an EEPROM ever ends up unbootable,
+craft a fresh Lua BIOS (EEPROM + manual) and swap it in.
+
+Without ByteOS, from any working Lua prompt (e.g. OpenOS on a floppy):
 ```lua
 local f = io.open("/path/to/ByteOS/boot/eeprom.lua", "r")
 local code = f:read("*a"); f:close()
