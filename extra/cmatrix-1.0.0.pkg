@@ -1,0 +1,54 @@
+return {
+  files = {
+    ["/usr/bin/cmatrix.lua"] = [[
+-- Matrix-style falling rain. Press any key to quit.
+local gpu = term.gpu
+local W, H = term.size()
+
+local glyphs = "01@#$%&*+=<>{}[]ABCDEFGHJKLMNPQRSTUVWXYZ"
+local function ch() return glyphs:sub(math.random(#glyphs), math.random(#glyphs)) end
+
+math.randomseed(math.floor(_G.computer.uptime() * 1000) % 2147483647)
+
+local cols = {}
+for x = 1, W do cols[x] = math.random(-H, 0) end
+
+gpu.setBackground(0x000000)
+gpu.fill(1, 1, W, H, " ")
+
+local quit = false
+local function pollKey()
+  while _G.computer.pullSignal(0) do quit = true end
+end
+-- prefer kernel.event.pull with tiny timeout to remain cooperative
+local pull = (k and k.event and k.event.pull) or function(t) _G.computer.pullSignal(t or 0) end
+
+for frame = 1, 1000 do
+  for x = 1, W do
+    local y = cols[x]
+    if y >= 1 and y <= H then
+      gpu.setForeground(0xCCFFCC); gpu.set(x, y, ch())
+    end
+    if y - 1 >= 1 and y - 1 <= H then
+      gpu.setForeground(0x33CC33); gpu.set(x, y - 1, ch())
+    end
+    if y - 6 >= 1 and y - 6 <= H then
+      gpu.setForeground(0x006600); gpu.set(x, y - 6, ch())
+    end
+    if y - 12 >= 1 and y - 12 <= H then
+      gpu.set(x, y - 12, " ")
+    end
+    cols[x] = y + 1
+    if cols[x] - 12 > H then cols[x] = math.random(-H, 0) end
+  end
+  -- quit check: any key press
+  local ev = pull(0.05)
+  if ev == "key_down" or ev == "interrupted" then break end
+end
+
+gpu.setForeground(0xFFFFFF); gpu.setBackground(0x000000)
+term.clear()
+return 0
+]],
+  },
+}

@@ -1,0 +1,107 @@
+return {
+  files = {
+    ["/usr/bin/snake.lua"] = [[
+-- snake: classic snake game. Arrow keys to move, Q to quit.
+local gpu = term.gpu
+local W, H = term.size()
+local PLAY_H = H - 2  -- leave bottom row for status
+
+local KEY = { up = 200, down = 208, left = 203, right = 205, q = 16, w = 17, a = 30, s = 31, d = 32 }
+
+local C_BG    = 0x000000
+local C_BORDER= 0x444444
+local C_SNAKE = 0x33CC33
+local C_HEAD  = 0xCCFFCC
+local C_FOOD  = 0xFF5555
+local C_TEXT  = 0xFFFFFF
+
+local function draw_frame()
+  gpu.setBackground(C_BG); gpu.fill(1, 1, W, H, " ")
+  gpu.setForeground(C_BORDER)
+  gpu.fill(1, 1, W, 1, "-"); gpu.fill(1, PLAY_H, W, 1, "-")
+  for y = 2, PLAY_H - 1 do gpu.set(1, y, "|"); gpu.set(W, y, "|") end
+end
+
+local snake = {}
+local dir   = { x = 1, y = 0 }
+local pending = nil
+local cx, cy = math.floor(W / 2), math.floor(PLAY_H / 2)
+for i = 0, 4 do snake[#snake + 1] = { x = cx - i, y = cy } end
+
+math.randomseed(math.floor(_G.computer.uptime() * 1000) % 2147483647)
+local food = { x = 0, y = 0 }
+local function place_food()
+  while true do
+    food.x = math.random(2, W - 1)
+    food.y = math.random(2, PLAY_H - 1)
+    local clash = false
+    for _, s in ipairs(snake) do
+      if s.x == food.x and s.y == food.y then clash = true; break end
+    end
+    if not clash then return end
+  end
+end
+place_food()
+
+local score = 0
+local alive = true
+
+local function status(msg)
+  gpu.setBackground(C_BG); gpu.setForeground(C_TEXT)
+  gpu.fill(1, H, W, 1, " ")
+  gpu.set(2, H, ("score: %d   %s"):format(score, msg or "arrows=move  q=quit"))
+end
+
+draw_frame()
+gpu.setForeground(C_FOOD); gpu.set(food.x, food.y, "*")
+
+while alive do
+  local ev, _, _, code = _G.computer.pullSignal(0.12)
+  if ev == "key_down" then
+    if     code == KEY.up    or code == KEY.w then pending = { x =  0, y = -1 }
+    elseif code == KEY.down  or code == KEY.s then pending = { x =  0, y =  1 }
+    elseif code == KEY.left  or code == KEY.a then pending = { x = -1, y =  0 }
+    elseif code == KEY.right or code == KEY.d then pending = { x =  1, y =  0 }
+    elseif code == KEY.q                     then alive = false; break end
+  elseif ev == "interrupted" then alive = false; break end
+
+  if pending and not (pending.x == -dir.x and pending.y == -dir.y) then
+    dir = pending
+  end
+  pending = nil
+
+  local head = snake[1]
+  local nx, ny = head.x + dir.x, head.y + dir.y
+
+  if nx <= 1 or nx >= W or ny <= 1 or ny >= PLAY_H then alive = false; break end
+  for _, s in ipairs(snake) do
+    if s.x == nx and s.y == ny then alive = false; break end
+  end
+  if not alive then break end
+
+  table.insert(snake, 1, { x = nx, y = ny })
+  if nx == food.x and ny == food.y then
+    score = score + 1
+    place_food()
+    gpu.setForeground(C_FOOD); gpu.set(food.x, food.y, "*")
+  else
+    local tail = table.remove(snake)
+    gpu.setBackground(C_BG); gpu.set(tail.x, tail.y, " ")
+  end
+
+  gpu.setForeground(C_SNAKE)
+  if snake[2] then gpu.set(snake[2].x, snake[2].y, "o") end
+  gpu.setForeground(C_HEAD); gpu.set(nx, ny, "@")
+
+  status()
+end
+
+status("GAME OVER  -  press any key")
+_G.computer.pullSignal()
+gpu.setBackground(0x000000); gpu.setForeground(0xFFFFFF)
+term.clear()
+term.write(("snake: final score %d\n"):format(score))
+return 0
+]],
+  },
+}

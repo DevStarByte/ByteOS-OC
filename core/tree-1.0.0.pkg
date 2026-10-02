@@ -1,0 +1,43 @@
+return {
+  files = {
+    ["/usr/bin/tree.lua"] = [[
+local args = arg or {}
+local root = args[1] or _G.PWD or "/"
+if root:sub(1, 1) ~= "/" then root = (_G.PWD or "/") .. "/" .. root end
+root = root:gsub("//+", "/")
+
+local C_DIR  = 0x66CCFF
+local C_FILE = 0xFFFFFF
+local C_PIPE = 0x666666
+
+local count = { dirs = 0, files = 0 }
+
+local function walk(path, prefix)
+  local list = fs.list(path) or {}
+  table.sort(list)
+  for i, name in ipairs(list) do
+    local clean = name:gsub("/$", "")
+    local full  = path .. "/" .. clean
+    local last  = i == #list
+    local elbow = last and "`-- " or "|-- "
+    local cont  = last and "    " or "|   "
+    term.setForeground(C_PIPE); term.write(prefix .. elbow)
+    if fs.isDirectory(full) then
+      term.setForeground(C_DIR); term.write(clean .. "/\n")
+      count.dirs = count.dirs + 1
+      walk(full, prefix .. cont)
+    else
+      term.setForeground(C_FILE); term.write(clean .. "\n")
+      count.files = count.files + 1
+    end
+  end
+end
+
+term.setForeground(C_DIR); term.write(root .. "\n")
+walk(root, "")
+term.setForeground(0xFFFFFF)
+term.write(("\n%d directories, %d files\n"):format(count.dirs, count.files))
+return 0
+]],
+  },
+}

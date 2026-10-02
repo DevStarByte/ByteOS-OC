@@ -1,0 +1,18 @@
+return {
+  files = {
+    ["/usr/bin/uptime.lua"] = [[
+local up = _G.computer.uptime()
+local d = math.floor(up / 86400);  up = up - d * 86400
+local h = math.floor(up / 3600);   up = up - h * 3600
+local m = math.floor(up / 60);     local s = math.floor(up - m * 60)
+local parts = {}
+if d > 0 then parts[#parts + 1] = d .. "d" end
+if h > 0 then parts[#parts + 1] = h .. "h" end
+parts[#parts + 1] = m .. "m"
+parts[#parts + 1] = s .. "s"
+term.write(("up %s,  user: %s,  host: %s\n"):format(
+  table.concat(parts, " "), _G.USER or "?", _G.HOSTNAME or "byteos"))
+return 0
+]],
+  },
+}

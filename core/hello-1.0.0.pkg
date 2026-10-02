@@ -1,0 +1,9 @@
+return {
+  files = {
+    ["/usr/bin/hello.lua"] = [[
+term.write("Hello from ByteOS! Greetings, " .. (_G.USER or "stranger") .. ".\n")
+return 0
+]],
+  },
+  post_install = function() end,
+}
