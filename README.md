@@ -176,39 +176,51 @@ Packages (1) cowsay-0.2.0
                 ||     ||
 
 [root@byteos ~]# pacman -Q
-bytekernel 1.0.0
-coreutils 1.0.0
-pacman 1.0.0
+byteos 1.0.0
 cowsay 0.2.0
 ```
 
-## Updating ByteOS over the internet
+## Updating ByteOS
 
-With an **internet card** in the computer, `sysupdate` downloads the newest
-ByteOS straight from this GitHub repository and installs it in place:
+Like on Arch, `pacman -Syu` upgrades everything, including the OS itself.
+The base system is the package `byteos`; with an **internet card** pacman
+pulls its newest version straight from this GitHub repository:
 
 ```sh
-[root@byteos ~]# sysupdate -c          # only check
-[root@byteos ~]# sysupdate             # download, show changes, install
-[root@byteos ~]# sysupdate --rollback  # go back to the previous version
+[root@byteos ~]# pacman -Syu
+:: Synchronizing package databases...
+:: Starting full system upgrade...
+
+Packages (2) byteos-1.0.0.ga98d83c  cowsay-0.3.0
+
+:: Proceed with installation? [Y/n]
+:: Retrieving byteos 1.0.0.ga98d83c from DevStarByte/ByteOS-OC...
+:: Upgrading byteos...
+warning: /etc/motd installed as /etc/motd.new
+:: Processing package changes...
+:: byteos was upgraded; reboot to start the new version
+
+[root@byteos ~]# pacman --rollback   # undo the last byteos upgrade
 ```
 
-It is built not to break the running system:
+Upgrading byteos is built not to break the running system:
 
 - Only files that changed upstream are downloaded, into
-  `/var/cache/sysupdate/stage`. Every `.lua` file is compiled before
-  anything is installed; if a download or check fails, nothing is changed.
+  `/var/cache/pacman/byteos`. Every `.lua` file is compiled before anything
+  is installed; if a download or check fails, nothing is changed.
 - Only OS files are replaced (`/init.lua`, `/boot`, `/sbin`, `/lib`, `/bin`,
   `/etc/os-release`, `/etc/issue`). `/home`, `/var`, user accounts, the
-  hostname and pacman packages are left alone.
+  hostname and your packages are left alone.
 - `/etc` files you edited are kept; the new version is saved as `<file>.new`.
-- Replaced files are backed up to `/var/lib/sysupdate/backup`. If the new
+- Replaced files are backed up to `/var/lib/pacman/byteos/backup`. If the new
   version panics before reaching the login prompt, `/init.lua` restores the
   backup by itself.
+- `byteos` is in `HoldPkg`, so `pacman -R byteos` refuses to delete the OS.
 
-To follow a fork or another branch, edit `/etc/sysupdate.conf`. The
-repository must be public. GitHub allows 60 unauthenticated API calls per
-hour; each update uses two.
+To follow a fork or another branch, change `BaseRepo` / `BaseBranch` in
+`/etc/pacman.conf`. The repository must be public. GitHub allows 60
+unauthenticated API calls per hour; each `-Syu` uses one, plus one more
+when there is a new version.
 
 ## Writing your own packages
 

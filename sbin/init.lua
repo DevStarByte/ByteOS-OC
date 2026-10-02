@@ -53,10 +53,10 @@ end
 local shell = require("shell")
 _G.shell = shell
 status("Started ByteShell.")
--- Booting this far means a fresh sysupdate works; stop init.lua from
+-- Booting this far means a fresh byteos upgrade works; stop init.lua from
 -- rolling it back on a later panic.
-if fs.exists("/var/lib/sysupdate/pending") then
-  fs.remove("/var/lib/sysupdate/pending")
+if fs.exists("/var/lib/pacman/byteos/pending") then
+  fs.remove("/var/lib/pacman/byteos/pending")
   status("Finished applying system update.")
 end
 status("Reached target Multi-User System.")

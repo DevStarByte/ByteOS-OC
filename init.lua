@@ -106,11 +106,11 @@ local function dofileBoot(path)
 end
 _G.dofileBoot = dofileBoot
 
--- If sysupdate just installed a new version and it cannot boot, put the
+-- If `pacman -Syu` just upgraded byteos and it cannot boot, put the
 -- previous files back from its backup (same journal format as the
--- rollback in /bin/sysupdate.lua). Returns true if something was restored.
+-- rollback in /lib/sysupgrade.lua). Returns true if something was restored.
 local function rollbackUpdate()
-  local LIB = "/var/lib/sysupdate"
+  local LIB = "/var/lib/pacman/byteos"
   if not boot.exists(LIB .. "/pending") then return false end
   local list = readFile(LIB .. "/backup.list")
   if not list then return false end

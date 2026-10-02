@@ -6,9 +6,6 @@
     internet.get(url, sink [, headers])   -> true | nil, reason
         streams the body to sink(chunk); only HTTP 200 counts as success
     internet.fetch(url [, headers])       -> body | nil, reason
-
-  (/bin/sysupdate.lua carries its own copy of this so it can still repair a
-  system whose /lib is outdated or broken.)
 ]]--
 
 local internet = {}

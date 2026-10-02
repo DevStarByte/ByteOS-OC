@@ -290,7 +290,8 @@ local function usage()
     { "-Qi <pkg>",   "show package information" },
     { "-Ss [regex]", "search the repositories" },
     { "-Sy",         "synchronize package databases" },
-    { "-Syu",        "synchronize and upgrade" },
+    { "-Syu",        "upgrade packages and the byteos base system" },
+    { "--rollback",  "undo the last byteos upgrade" },
   }
   for _, o in ipairs(ops) do
     term.cwrite(T.green, "    " .. term.pad(o[1], 14))
@@ -307,7 +308,7 @@ local function sync()
   local ok = #names > 0
   for _, name in ipairs(names) do ok = syncRepo(name, repos[name]) and ok end
   if not ok then
-    -- the usual cause: an old pacman.conf that sysupdate kept next to a new one
+    -- the usual cause: an old pacman.conf that -Syu kept next to a new one
     if fs.exists(CONF_PATH .. ".new") then
       warn("a newer config was saved as " .. CONF_PATH .. ".new; to use it run")
       term.cwrite(T.blue, "    mv " .. CONF_PATH .. ".new " .. CONF_PATH .. "\n")
@@ -326,8 +327,9 @@ local function synced()
   return true
 end
 
-local function install(targets)
-  if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
+-- Look every target up in the synced databases. Returns the list of
+-- package metadata, or nil after printing why a target is missing.
+local function resolve(targets)
   if not synced() then sync() end
   local list = {}
   for _, pkg in ipairs(targets) do
@@ -343,39 +345,145 @@ local function install(targets)
         term.cwrite(T.blue, "pacman -Ss " .. pkg)
         term.cwrite(T.muted, " to search\n")
       end
-      return 1
+      return nil
     end
     if isInstalled(pkg) and installedVersion(pkg) == meta.version then
       warn(pkg .. "-" .. meta.version .. " is up to date -- reinstalling")
     end
     list[#list + 1] = meta
   end
-  info("resolving dependencies...")
-  info("looking for conflicting packages...")
+  return list
+end
+
+-- "Packages (2) foo-1.0  bar-2.0" followed by the confirmation prompt.
+local function confirmPackages(names, question)
   term.write("\n")
-  local names = {}
-  for _, m in ipairs(list) do names[#names + 1] = m.name .. "-" .. m.version end
-  term.cwrite(T.bright, ("Packages (%d) "):format(#list))
+  term.cwrite(T.bright, ("Packages (%d) "):format(#names))
   term.cwrite(T.fg, table.concat(names, "  ") .. "\n\n")
-  if not confirm("Proceed with installation?") then return 1 end
+  return confirm(question)
+end
+
+local function installAll(list)
   header("Processing package changes...")
   local ok = true
   for i, m in ipairs(list) do ok = installPackage(m.name, m, i, #list) and ok end
+  return ok
+end
+
+local function install(targets)
+  if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
+  local list = resolve(targets)
+  if not list then return 1 end
+  info("resolving dependencies...")
+  info("looking for conflicting packages...")
+  local names = {}
+  for _, m in ipairs(list) do names[#names + 1] = m.name .. "-" .. m.version end
+  if not confirmPackages(names, "Proceed with installation?") then return 1 end
+  return installAll(list) and 0 or 1
+end
+
+-- ---- Base system -----------------------------------------------------------
+-- The OS itself is the "byteos" package. It is not in a repo.db: pacman
+-- upgrades it file by file from the git repository named in pacman.conf.
+local function baseRepo()
+  local o = readRepos().options or {}
+  return o.BaseRepo or "DevStarByte/ByteOS-OC", o.BaseBranch or "master"
+end
+
+-- Returns the pending base upgrade, or nil if there is none / it cannot
+-- be checked right now (the reason is printed).
+local function checkBase()
+  if not require("internet").available() then
+    info(" no internet card: skipping the byteos base system")
+    return nil
+  end
+  local repo, branch = baseRepo()
+  local up, e = require("sysupgrade").check(repo, branch)
+  if not up then warn("cannot check byteos for updates: " .. e); return nil end
+  if up.uptodate then return nil end
+  return up
+end
+
+local function upgradeBase(up)
+  local sysupgrade = require("sysupgrade")
+  header("Retrieving byteos " .. up.version .. " from " .. up.repo .. "...")
+  local ok, e = sysupgrade.download(up, progress)
+  if not ok then
+    term.write("\n")
+    err("failed to retrieve byteos: " .. e)
+    info("the base system was not changed")
+    return false
+  end
+  progress(("downloaded %d file%s"):format(up.downloaded, up.downloaded == 1 and "" or "s"), 1)
+  term.write("\n")
+  header("Upgrading byteos...")
+  ok, e = sysupgrade.apply(up, function(label, frac) progress("upgrading " .. label, frac) end)
+  if not ok then term.write("\n"); err(e); return false end
+  progress(("upgraded byteos to %s"):format(up.version), 1)
+  term.write("\n")
+  for _, path in ipairs(up.pacnew) do
+    warn(path .. " installed as " .. path .. ".new")
+  end
+  return true
+end
+
+local function upgrade()
+  sync()
+  header("Starting full system upgrade...")
+  local base = checkBase()
+  local outdated = {}
+  for _, e_ in ipairs(fs.list(LOCAL_DIR) or {}) do
+    local n = e_:gsub("/$", "")
+    local meta = findInRepos(n)
+    if meta and meta.version ~= installedVersion(n) then outdated[#outdated + 1] = meta end
+  end
+  if not base and #outdated == 0 then info(" there is nothing to do"); return 0 end
+
+  local names = {}
+  if base then names[1] = "byteos-" .. base.version end
+  for _, m in ipairs(outdated) do names[#names + 1] = m.name .. "-" .. m.version end
+  if not confirmPackages(names, "Proceed with installation?") then return 1 end
+
+  local ok = true
+  if base then ok = upgradeBase(base) end
+  if ok and #outdated > 0 then ok = installAll(outdated) end
+  if base and ok then
+    term.cwrite(T.accent, ":: ")
+    term.cwrite(T.bright, "byteos was upgraded; reboot to start the new version\n")
+  end
   return ok and 0 or 1
+end
+
+local function rollback()
+  local sysupgrade = require("sysupgrade")
+  if not sysupgrade.canRollback() then err("there is no byteos upgrade to roll back"); return 1 end
+  if not confirm("Restore byteos from before the last upgrade?") then return 1 end
+  sysupgrade.rollback()
+  info("previous byteos restored; reboot to use it")
+  return 0
+end
+
+-- Packages that -R refuses to remove (HoldPkg in pacman.conf).
+local function held()
+  local set = { byteos = true }
+  for n in ((readRepos().options or {}).HoldPkg or ""):gmatch("%S+") do set[n] = true end
+  return set
 end
 
 local function remove(targets)
   if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
+  local hold = held()
   for _, pkg in ipairs(targets) do
     if not isInstalled(pkg) then err("target not found: " .. pkg); return 1 end
+    if hold[pkg] then
+      err(pkg .. " is part of the base system and cannot be removed (HoldPkg)")
+      return 1
+    end
   end
   local names = {}
   for _, pkg in ipairs(targets) do names[#names + 1] = pkg .. "-" .. (installedVersion(pkg) or "?") end
   info("checking dependencies...")
-  term.write("\n")
-  term.cwrite(T.bright, ("Packages (%d) "):format(#targets))
-  term.cwrite(T.fg, table.concat(names, "  ") .. "\n\n")
-  if not confirm("Do you want to remove these packages?") then return 1 end
+  if not confirmPackages(names, "Do you want to remove these packages?") then return 1 end
   header("Processing package changes...")
   for i, pkg in ipairs(targets) do removePackage(pkg, i, #targets) end
   return 0
@@ -392,21 +500,14 @@ local targets = { table.unpack(rest, 2) }
 if not op or op == "-h" or op == "--help" then
   usage()
   return op and 0 or 1
-elseif op == "-Sy" or op == "-Syu" then
+elseif op == "-Syu" or op == "-Su" then
+  return upgrade()
+elseif op == "-Sy" then
   sync()
-  if op == "-Syu" then
-    header("Starting full system upgrade...")
-    local outdated = {}
-    for _, e_ in ipairs(fs.list(LOCAL_DIR) or {}) do
-      local n = e_:gsub("/$", "")
-      local meta = findInRepos(n)
-      if meta and meta.version ~= installedVersion(n) then outdated[#outdated + 1] = n end
-    end
-    if #outdated == 0 then info(" there is nothing to do"); return 0 end
-    return install(outdated)
-  end
   if #targets > 0 then return install(targets) end
   return 0
+elseif op == "--rollback" then
+  return rollback()
 elseif op == "-S" then
   return install(targets)
 elseif op == "-R" then
