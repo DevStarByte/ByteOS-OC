@@ -304,15 +304,47 @@ local function sync()
   local repos, names = readRepos(), {}
   for name, conf in pairs(repos) do if conf.Server then names[#names + 1] = name end end
   table.sort(names)
-  for _, name in ipairs(names) do syncRepo(name, repos[name]) end
+  local ok = #names > 0
+  for _, name in ipairs(names) do ok = syncRepo(name, repos[name]) and ok end
+  if not ok then
+    -- the usual cause: an old pacman.conf that sysupdate kept next to a new one
+    if fs.exists(CONF_PATH .. ".new") then
+      warn("a newer config was saved as " .. CONF_PATH .. ".new; to use it run")
+      term.cwrite(T.blue, "    mv " .. CONF_PATH .. ".new " .. CONF_PATH .. "\n")
+    else
+      warn("check the Server lines in " .. CONF_PATH)
+    end
+  end
+  return ok
+end
+
+-- True once every configured repo has a synced database.
+local function synced()
+  for name, conf in pairs(readRepos()) do
+    if conf.Server and not fs.exists(SYNC_DIR .. "/" .. name .. "/repo.db") then return false end
+  end
+  return true
 end
 
 local function install(targets)
   if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
+  if not synced() then sync() end
   local list = {}
   for _, pkg in ipairs(targets) do
     local meta = findInRepos(pkg)
-    if not meta then err("target not found: " .. pkg); return 1 end
+    if not meta then
+      err("target not found: " .. pkg)
+      if not synced() then
+        term.cwrite(T.muted, "  the package databases could not be synchronized (see above)\n")
+      else
+        term.cwrite(T.muted, "  try ")
+        term.cwrite(T.blue, "pacman -Sy")
+        term.cwrite(T.muted, " to refresh, or ")
+        term.cwrite(T.blue, "pacman -Ss " .. pkg)
+        term.cwrite(T.muted, " to search\n")
+      end
+      return 1
+    end
     if isInstalled(pkg) and installedVersion(pkg) == meta.version then
       warn(pkg .. "-" .. meta.version .. " is up to date -- reinstalling")
     end
