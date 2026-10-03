@@ -1,0 +1,33 @@
+#!/bin/sh
+# ByteOS pre-commit hook: runs the test suite (tools/test/run.lua) and stops
+# the commit when a test fails.
+#
+#   enable it once per clone:   git config core.hooksPath tools/hooks
+#   skip it for one commit:     git commit --no-verify
+#
+# Commits that only touch files the tests do not cover (README, docs) are
+# let through without running them. The tests run on the working tree, so
+# changes you have not staged are tested too.
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+if git diff --cached --quiet -- init.lua install.lua boot sbin lib bin etc home var usr tools; then
+  exit 0
+fi
+
+if ! command -v lua >/dev/null 2>&1; then
+  echo "pre-commit: 'lua' not found, the tests were skipped" >&2
+  exit 0
+fi
+
+echo "pre-commit: running the test suite (git commit --no-verify skips it)..."
+log=$(mktemp)
+if lua tools/test/run.lua >"$log" 2>&1; then
+  tail -n 1 "$log"
+  rm -f "$log"
+  exit 0
+fi
+grep -v "^[a-z]* *[0-9]* passed$" "$log"
+rm -f "$log"
+echo "pre-commit: tests failed, the commit was stopped" >&2
+exit 1

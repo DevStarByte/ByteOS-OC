@@ -624,8 +624,17 @@ end)
 
 The helpers (`run`, `as`, `answers`, `keys`, `signals`, `disk`,
 `useDatacard`, `file`, `put`, `eq`, `has`, ...) are described at the top of
-[`tools/test/boot.lua`](tools/test/boot.lua). Run the suite before every
-commit.
+[`tools/test/boot.lua`](tools/test/boot.lua).
+
+A pre-commit hook runs the suite before every commit and stops the commit
+when a test fails. Turn it on once per clone:
+
+```sh
+git config core.hooksPath tools/hooks
+```
+
+Commits that only touch files the tests don't cover (like this README) skip
+it, and `git commit --no-verify` skips it once.
 
 ## License
 
