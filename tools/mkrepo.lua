@@ -1,25 +1,36 @@
 --[[
   tools/mkrepo.lua - build every package and the repo databases on a PC
 
-    lua tools/mkrepo.lua <packages-checkout>
+    lua tools/mkrepo.lua [--key <private.pem>] <packages-checkout>
 
   Reads the package sources in <checkout>/pkgs/<repo>/<name>/ (layout: see
   lib/bpk.lua) and writes, for every repo:
     <checkout>/<repo>/<name>-<version>.bpk
     <checkout>/<repo>/<repo>.db
+    <checkout>/<repo>/<repo>.db.sig   with --key: the database's signature
+                                      (openssl, ECDSA P-256 + SHA-256)
   .bpk files in <checkout>/<repo>/ without a source are deleted. Nothing is
   written for a repo in which any package fails to build.
 
-  Needs Lua 5.3 or newer and a POSIX shell (for listing directories).
+  Needs Lua 5.3 or newer, a POSIX shell (for listing directories) and, to
+  sign, openssl. Make a key pair once with tools/repokey.sh.
 ]]--
 
 local here = (arg[0]:match("^(.*)/tools/[^/]*$")) or "."
 package.path = here .. "/lib/?.lua;" .. package.path
 local bpk = require("bpk")
+local sha256 = require("sha256")
 
-local root = arg[1]
+local key, root
+do
+  local i = 1
+  while arg[i] do
+    if arg[i] == "--key" then i = i + 1; key = arg[i] else root = arg[i] end
+    i = i + 1
+  end
+end
 if not root then
-  io.stderr:write("usage: lua tools/mkrepo.lua <packages-checkout>\n")
+  io.stderr:write("usage: lua tools/mkrepo.lua [--key <private.pem>] <packages-checkout>\n")
   os.exit(2)
 end
 
@@ -66,6 +77,7 @@ for _, repoEntry in ipairs(fsx.list(root .. "/pkgs")) do
           info.filename = bpk.filename(info)
           info.csize = #blob
           info.crc32 = bpk.hex(bpk.crc32(blob))
+          info.sha256 = sha256.hex(blob)
           db[#db + 1] = info
           keep[info.filename] = blob
         end
@@ -81,8 +93,15 @@ for _, repoEntry in ipairs(fsx.list(root .. "/pkgs")) do
       for _, f in ipairs(fsx.list(outDir)) do
         if f:match("%.bpk$") and not keep[f] then os.remove(outDir .. "/" .. f) end
       end
-      local f = assert(io.open(outDir .. "/" .. repo .. ".db", "wb"))
+      local dbPath = outDir .. "/" .. repo .. ".db"
+      local f = assert(io.open(dbPath, "wb"))
       f:write(bpk.formatDb(db)); f:close()
+      if key then
+        if not os.execute("openssl dgst -sha256 -sign " .. q(key) .. " -out " .. q(dbPath .. ".sig") .. " " .. q(dbPath)) then
+          io.stderr:write("error: could not sign " .. dbPath .. "\n")
+          failed = true
+        end
+      end
       for _, info in ipairs(db) do
         print(("%-8s %-28s %6d -> %6d bytes"):format(repo, info.filename, info.isize, info.csize))
       end

@@ -27,6 +27,7 @@
 local fs   = k.fs
 local args = arg or {}
 local bpk  = require("bpk")
+local sha256 = require("sha256")
 
 local CONF_PATH = "/etc/pacman.conf"
 local LOCAL_DIR = "/var/lib/pacman/local"
@@ -153,6 +154,70 @@ local function download(server, name, dest, onBytes)
   return size, crc
 end
 
+-- ---- Signatures ------------------------------------------------------------
+-- A repo's database may be signed (<repo>.db.sig, ECDSA P-256 + SHA-256 by
+-- tools/mkrepo.lua). Checking needs a tier 3 data card; SigLevel in
+-- pacman.conf ([options] or per repo) says what happens:
+--   Never     signatures are not looked at
+--   Optional  checked when a data card is there; unsigned databases pass
+--   Required  only correctly signed databases are used
+local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local function b64decode(s)
+  local map = {}
+  for i = 1, 64 do map[B64:sub(i, i)] = i - 1 end
+  local out, bits, n = {}, 0, 0
+  for c in s:gsub("[^%w%+/]", ""):gmatch(".") do
+    bits, n = (bits << 6) | map[c], n + 6
+    if n >= 8 then
+      n = n - 8
+      out[#out + 1] = string.char((bits >> n) & 0xFF)
+      bits = bits & ((1 << n) - 1)
+    end
+  end
+  return table.concat(out)
+end
+
+-- true, or nil and "nocard" or a reason the signature does not hold
+local function verifySignature(data, sig, keyPath)
+  local addr = component.list("data")()
+  local dc = addr and component.proxy(addr)
+  if not (dc and dc.ecdsa and dc.deserializeKey) then return nil, "nocard" end
+  local pub = readIf(keyPath)
+  if not pub then return nil, "no trusted key at " .. keyPath end
+  local okKey, key = pcall(dc.deserializeKey, b64decode(pub), "ec-public")
+  if not okKey or not key then return nil, "cannot read the trusted key " .. keyPath end
+  local okV, valid = pcall(dc.ecdsa, data, key, sig)
+  if okV and valid == true then return true end
+  return nil, "the signature is invalid; the database may have been tampered with"
+end
+
+local warnedNoCard = false
+local function checkSignature(name, conf, dbPath)
+  local opts = readRepos().options or {}
+  local level = ((conf.SigLevel or opts.SigLevel or "Optional"):match("%a+")) or "Optional"
+  if level == "Never" then return true end
+  local sigPath = dbPath .. ".sig"
+  if not download(conf.Server, name .. ".db.sig", sigPath) then
+    if level == "Required" then return nil, "the database is not signed (SigLevel = Required)" end
+    return true
+  end
+  local ok, why = verifySignature(readIf(dbPath) or "", readIf(sigPath) or "",
+    opts.TrustedKey or "/etc/pacman.d/byteos.pub")
+  fs.remove(sigPath)
+  if ok then return true end
+  if why == "nocard" then
+    if level == "Required" then
+      return nil, "signatures need a tier 3 data card to be checked (SigLevel = Required)"
+    end
+    if not warnedNoCard then
+      warn("package signatures are not checked: no tier 3 data card")
+      warnedNoCard = true
+    end
+    return true
+  end
+  return nil, why
+end
+
 local function syncRepo(name, conf)
   local dest = SYNC_DIR .. "/" .. name .. ".db"
   -- databases from before .bpk lived in <sync>/<repo>/repo.db
@@ -161,6 +226,12 @@ local function syncRepo(name, conf)
   if not size then
     err("failed to synchronize " .. name .. ": " .. e)
     return false
+  end
+  local signed, why = checkSignature(name, conf, dest .. ".part")
+  if not signed then
+    fs.remove(dest .. ".part")
+    err(name .. ": " .. why)
+    return false, "signature"
   end
   if readIf(dest) == readIf(dest .. ".part") then
     fs.remove(dest .. ".part")
@@ -179,10 +250,13 @@ local dbs -- name -> repo package info, loaded on first use
 local function sync()
   header("Synchronizing package databases...")
   local names, repos = repoNames()
-  local ok = #names > 0
-  for _, name in ipairs(names) do ok = syncRepo(name, repos[name]) and ok end
+  local ok, onlySignatures = #names > 0, true
+  for _, name in ipairs(names) do
+    local done, why = syncRepo(name, repos[name])
+    if not done then ok = false; onlySignatures = onlySignatures and why == "signature" end
+  end
   dbs = nil
-  if not ok then
+  if not ok and not onlySignatures then
     -- the usual cause: an old pacman.conf that -Syu kept next to a new one
     if fs.exists(CONF_PATH .. ".new") then
       warn("a newer config was saved as " .. CONF_PATH .. ".new; to use it run")
@@ -258,6 +332,27 @@ local function backupCrcs(i)
 end
 
 local function depName(d) return d:match("^[^<>=%s]+") end
+
+-- "foo>=1.2" -> "foo", ">=", "1.2"; a plain "foo" has no operator.
+local function parseDep(d)
+  local name, op, want = d:match("^([^<>=%s]+)%s*([<>=]*)%s*(%S*)$")
+  if not name then return d end
+  if op == "" or want == "" then return name end
+  return name, op, want
+end
+
+-- Does `version` meet "op want" (as in foo>=1.2)? No operator: any version.
+local function satisfies(version, op, want)
+  if not op then return version ~= nil end
+  if not version then return false end
+  local c = bpk.vercmp(version, want)
+  if op == "=" or op == "==" then return c == 0
+  elseif op == ">=" then return c >= 0
+  elseif op == "<=" then return c <= 0
+  elseif op == ">" then return c > 0
+  elseif op == "<" then return c < 0 end
+  return false
+end
 
 -- Run hook `fn` from a package's install script, if it defines one.
 local function runHook(code, fn, ...)
@@ -338,24 +433,55 @@ local function resolve(targets, provided)
   if not synced() then sync() end
   local db = syncdb()
   local order, seen = {}, {}
-  local function visit(name, by)
-    if seen[name] then return true end
-    seen[name] = true
+  local function visit(name, by, op, want)
     local p = db[name]
     if not p then notFound(name, by); return false end
+    if not satisfies(p.version, op, want) then
+      err(("unresolvable dependency '%s%s%s'%s: the repositories have %s-%s"):format(
+        name, op, want, by and (" (required by " .. by .. ")") or "", name, p.version))
+      return false
+    end
+    if seen[name] then return true end
+    seen[name] = true
     for _, d in ipairs(p.depend) do
-      local dn = depName(d)
-      if dn and not isInstalled(dn) and not (provided and provided[dn]) then
-        if not visit(dn, name) then return false end
+      local dn, dop, dwant = parseDep(d)
+      local have = provided and provided[dn]
+      if not have then
+        local i = localInfo(dn)
+        have = i and i.version
+      end
+      if not satisfies(have, dop, dwant) then
+        if not visit(dn, name, dop, dwant) then return false end
       end
     end
     order[#order + 1] = p
     return true
   end
   for _, t in ipairs(targets) do
-    if not visit(t) then return nil end
+    local name, op, want = parseDep(t)
+    if not visit(name, nil, op, want) then return nil end
   end
   return order
+end
+
+-- Would installing these versions break what installed packages need
+-- (bar: depend = foo<2 while foo-2.0 comes in)? Prints each case.
+local function noBreaks(infos)
+  local incoming = {}
+  for _, p in ipairs(infos) do incoming[p.name] = p.version end
+  local ok = true
+  for _, n in ipairs(installedNames()) do
+    if not incoming[n] then
+      for _, d in ipairs((localInfo(n) or {}).depend or {}) do
+        local dn, op, want = parseDep(d)
+        if incoming[dn] and not satisfies(incoming[dn], op, want) then
+          err(("installing %s (%s) breaks dependency '%s' required by %s"):format(dn, incoming[dn], d, n))
+          ok = false
+        end
+      end
+    end
+  end
+  return ok
 end
 
 -- "Packages (2) foo-1.0  bar-2.0", sizes, then the confirmation prompt.
@@ -381,18 +507,20 @@ end
 -- needs, so it runs before the confirmation prompt.
 local function pkgConflicts(infos)
   local problems, names = {}, {}
-  for _, p in ipairs(infos) do names[p.name] = true end
+  for _, p in ipairs(infos) do names[p.name] = p.version end
   for _, p in ipairs(infos) do
     for _, c in ipairs(p.conflict or {}) do
-      local cn = depName(c)
-      if cn and cn ~= p.name and (isInstalled(cn) or names[cn]) then
+      local cn, op, want = parseDep(c)
+      local other = names[cn] or (localInfo(cn) or {}).version
+      if cn ~= p.name and other and satisfies(other, op, want) then
         problems[#problems + 1] = ("%s and %s are in conflict"):format(p.name, cn)
       end
     end
     for _, n in ipairs(installedNames()) do
       if n ~= p.name and not names[n] then
         for _, c in ipairs((localInfo(n) or {}).conflict or {}) do
-          if depName(c) == p.name then
+          local cn, op, want = parseDep(c)
+          if cn == p.name and satisfies(p.version, op, want) then
             problems[#problems + 1] = ("%s and %s are in conflict"):format(p.name, n)
           end
         end
@@ -407,7 +535,7 @@ local function noConflicts(infos)
   local problems = pkgConflicts(infos)
   for _, p in ipairs(problems) do err(p) end
   if #problems > 0 then err("unresolvable package conflicts detected") end
-  return #problems == 0
+  return #problems == 0 and noBreaks(infos)
 end
 
 -- Every problem that stops the transaction, checked before anything is
@@ -550,7 +678,8 @@ local function commit(items)
       end)
       if not size then term.write("\n"); err("failed retrieving " .. p.filename .. ": " .. crc); return false end
       progress(label, 1); term.write("\n")
-      if size ~= csize or bpk.hex(crc) ~= p.crc32 then
+      if size ~= csize or bpk.hex(crc) ~= p.crc32
+          or (p.sha256 and sha256.hex(readIf(dest) or "") ~= p.sha256) then
         fs.remove(dest)
         err(p.filename .. " is corrupted (size or checksum mismatch); try pacman -Sy")
         return false
@@ -665,15 +794,16 @@ local function installFiles(paths)
     if not pkg then err("'" .. p .. "': " .. e); return 1 end
     items[#items + 1] = { path = path }
     infos[#infos + 1] = pkg.info
-    provided[pkg.info.name] = true
+    provided[pkg.info.name] = pkg.info.version
     labels[#labels + 1] = pkg.info.name .. "-" .. pkg.info.version
     ins = ins + (tonumber(pkg.info.isize) or 0)
-    for _, d in ipairs(pkg.info.depend) do missing[#missing + 1] = depName(d) end
+    for _, d in ipairs(pkg.info.depend) do missing[#missing + 1] = d end
   end
   info("resolving dependencies...")
   local need = {}
   for _, d in ipairs(missing) do
-    if d and not isInstalled(d) and not provided[d] then need[#need + 1] = d end
+    local dn, op, want = parseDep(d)
+    if not satisfies(provided[dn] or (localInfo(dn) or {}).version, op, want) then need[#need + 1] = d end
   end
   local deps = {}
   if #need > 0 then
@@ -933,6 +1063,68 @@ local function queryInfo(pkg)
   return 0
 end
 
+-- -Ql [pkg...]: the files of installed packages (all without names)
+local function queryFiles(targets)
+  local list = #targets > 0 and targets or installedNames()
+  local rc = 0
+  for _, n in ipairs(list) do
+    if not isInstalled(n) then
+      err("package '" .. n .. "' was not found"); rc = 1
+    else
+      for _, f in ipairs(localFiles(n)) do
+        term.cwrite(T.bright, n .. " ")
+        term.write(f .. "\n")
+      end
+    end
+  end
+  return rc
+end
+
+-- -Qo <file...>: which installed package owns a file
+local function queryOwner(paths)
+  if #paths == 0 then err("no file was specified for --owns"); return 1 end
+  local rc = 0
+  for _, a in ipairs(paths) do
+    local path = shell.normalize(a)
+    local owner
+    for _, n in ipairs(installedNames()) do
+      for _, f in ipairs(localFiles(n)) do
+        if f == path then owner = n break end
+      end
+      if owner then break end
+    end
+    if owner then
+      term.write(path .. " is owned by ")
+      term.cwrite(T.bright, owner .. " ")
+      term.cwrite(T.green, (localInfo(owner).version or "?") .. "\n")
+    else
+      err("No package owns " .. path); rc = 1
+    end
+  end
+  return rc
+end
+
+-- -Sc: empty the package cache (downloads left behind by failed installs)
+-- and leftovers of interrupted database syncs.
+local function cleanCache()
+  local files, bytes = {}, 0
+  for _, f in ipairs(fs.list(CACHE_DIR) or {}) do
+    if not f:match("/$") then files[#files + 1] = CACHE_DIR .. "/" .. f end
+  end
+  for _, f in ipairs(fs.list(SYNC_DIR) or {}) do
+    if f:match("%.part$") or f:match("%.sig$") or f:match("/$") then
+      files[#files + 1] = SYNC_DIR .. "/" .. f:gsub("/$", "")
+    end
+  end
+  for _, f in ipairs(files) do bytes = bytes + (fs.size(f) or 0) end
+  info("Cache directory: " .. CACHE_DIR .. "/")
+  if #files == 0 then info(" the cache is already empty"); return 0 end
+  if not confirm(("Remove %d cached file%s (%s)?"):format(#files, #files == 1 and "" or "s", kib(bytes))) then return 1 end
+  for _, f in ipairs(files) do fs.remove(f) end
+  info(" removed " .. #files .. " file" .. (#files == 1 and "" or "s"))
+  return 0
+end
+
 local function search(pat)
   if not synced() then
     if k.user() == "root" then
@@ -974,6 +1166,9 @@ local function usage()
     { "-R <pkg>...",  "remove packages" },
     { "-Q",           "list installed packages" },
     { "-Qi <pkg>",    "show package information" },
+    { "-Ql [pkg]",    "list the files of a package" },
+    { "-Qo <file>",   "which package owns a file" },
+    { "-Sc",          "clean the package cache" },
     { "-Ss [pattern]", "search the repositories" },
     { "-Sy",          "synchronize package databases" },
     { "-Syu",         "upgrade packages and the byteos base system" },
@@ -995,7 +1190,8 @@ local op = rest[1]
 local targets = { table.unpack(rest, 2) }
 
 -- Everything that changes the system needs root; queries work for anyone.
-local QUERY = { ["-Q"] = true, ["-Qi"] = true, ["-Ss"] = true, ["-h"] = true, ["--help"] = true }
+local QUERY = { ["-Q"] = true, ["-Qi"] = true, ["-Ql"] = true, ["-Qo"] = true, ["-Ss"] = true,
+                ["-h"] = true, ["--help"] = true }
 if op and not QUERY[op] and k.user() ~= "root" then
   err("you cannot perform this operation unless you are root.")
   term.cwrite(T.muted, "  run it with ")
@@ -1024,6 +1220,12 @@ elseif op == "-R" then
 elseif op == "-Q" then
   if targets[1] == "-i" or targets[1] == "i" then return queryInfo(targets[2]) end
   queryAll()
+elseif op == "-Ql" then
+  return queryFiles(targets)
+elseif op == "-Qo" then
+  return queryOwner(targets)
+elseif op == "-Sc" then
+  return cleanCache()
 elseif op == "-Qi" then
   return queryInfo(targets[1])
 elseif op == "-Ss" then

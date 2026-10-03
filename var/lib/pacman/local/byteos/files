@@ -63,6 +63,7 @@
 /lib/compress.lua
 /lib/internet.lua
 /lib/lineedit.lua
+/lib/sha256.lua
 /lib/shell.lua
 /lib/starshell.lua
 /lib/systemd.lua

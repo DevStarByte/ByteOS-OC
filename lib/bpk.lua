@@ -25,11 +25,16 @@
       backup = /etc/hello.conf    (list) config files: user edits survive
       isize = 196                 installed size in bytes
 
+    depend and conflict may carry a version: foo>=1.2, foo<2, foo=1.0-1.
+
     A repository database (<repo>.db) is one such block per package,
-    separated by blank lines, with three more fields:
+    separated by blank lines, with more fields:
       filename = hello-1.0.0-1.bpk
       csize = 312                 archive size in bytes
       crc32 = 1a2b3c4d            CRC-32 of the archive
+      sha256 = ...                SHA-256 of the archive
+    <repo>.db.sig, when present, is an ECDSA (P-256, SHA-256) signature of
+    the database made with the repository's private key.
 
   ---- Package source (built by makepkg / tools/mkrepo.lua) -------------------
       <dir>/PKGBUILD.lua          return { name, version, rel, desc, url,
@@ -115,7 +120,7 @@ end
 -- ---- Package info ----------------------------------------------------------
 local LISTS  = { depend = true, conflict = true, backup = true }
 local FIELDS = { "name", "version", "desc", "url", "depend", "conflict", "backup",
-                 "isize", "filename", "csize", "crc32" }
+                 "isize", "filename", "csize", "crc32", "sha256" }
 
 function bpk.parseInfo(text)
   local info = { depend = {}, conflict = {}, backup = {} }

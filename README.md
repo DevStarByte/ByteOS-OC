@@ -165,7 +165,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.7.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.8.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -197,7 +197,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.7.0
+byteos 1.8.0
 cowsay 0.2.0
 ```
 
@@ -427,10 +427,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.7.0.g3b4fc03  cowsay-0.3.0
+Packages (2) byteos-1.8.0.gf8c4c1c  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.7.0.g3b4fc03 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.8.0.gf8c4c1c from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...
@@ -479,7 +479,8 @@ return {
   version   = "1.0.0",
   rel       = 1,                       -- bump when only the packaging changes
   desc      = "my cool tool",
-  depends   = { "lolcat" },            -- installed automatically
+  depends   = { "lolcat", "figlet>=1.0" }, -- installed automatically; a
+                                           -- version may be given: >= <= = < >
   conflicts = { },
   backup    = { "/etc/mytool.conf" },  -- user edits survive upgrades (.pacnew)
   install   = "mytool.install",
@@ -508,11 +509,35 @@ To publish it, put the directory into `pkgs/<repo>/` on the
 and rebuild the repo on a PC (Lua 5.3+):
 
 ```sh
-lua tools/mkrepo.lua <checkout of the packages branch>
+lua tools/mkrepo.lua --key ~/.config/byteos/repo-key.pem <checkout of the packages branch>
 ```
 
-That writes `<repo>/<name>-<version>.bpk` and the database `<repo>/<repo>.db`
-which `pacman -Sy` downloads.
+That writes `<repo>/<name>-<version>.bpk`, the database `<repo>/<repo>.db`
+which `pacman -Sy` downloads, and with `--key` its signature `<repo>.db.sig`.
+
+### Signed repositories
+
+The database lists the SHA-256 of every package, so signing the database
+vouches for every package in it (as on Arch). The signature is ECDSA (P-256,
+SHA-256), made with `openssl` on a PC; ByteOS checks it against
+`/etc/pacman.d/byteos.pub`. Make the key pair once:
+
+```sh
+tools/repokey.sh     # private key: ~/.config/byteos/repo-key.pem (keep it, never commit it)
+                     # public key:  etc/pacman.d/byteos.pub (ships with ByteOS)
+```
+
+Checking a signature needs a **tier 3 data card** in the computer.
+`SigLevel` in `/etc/pacman.conf` decides what happens:
+
+| SigLevel | Behaviour |
+|---|---|
+| `Never` | signatures are ignored |
+| `Optional` (default) | checked when a data card is there; otherwise a warning, and unsigned repos are fine |
+| `Required` | only correctly signed databases are used |
+
+Downloaded packages are always checked against the SHA-256 in the database,
+with or without a data card.
 
 ### The `.bpk` format
 
@@ -533,15 +558,21 @@ Entries are raw bytes, so any content works, including binary data. `flag` is
 `-` for stored or `z` for LZW-compressed (pure Lua,
 [`lib/compress.lua`](lib/compress.lua)); entries of 512 bytes or more are
 compressed when that saves at least 10 %. pacman streams packages to disk
-instead of holding them in memory, and checks size and CRC-32 against the
-repo database before installing anything.
+instead of holding them in memory, and checks size, CRC-32 and SHA-256
+against the repo database before installing anything.
 
 Before a package is installed, pacman checks:
 
-- dependencies, which it installs from the repos first
-- conflicts with installed packages
+- dependencies, which it installs from the repos first, including version
+  requirements (`foo>=1.2`); it refuses an upgrade that would break what an
+  installed package needs (`bar: depend = foo<2`)
+- conflicts with installed packages (also with versions: `conflicts = { "foo<2" }`)
 - files that another package or the base system already owns, or that
   already exist on disk
+
+Handy queries: `pacman -Ql <pkg>` lists a package's files, `pacman -Qo <file>`
+tells which package owns a file, and `sudo pacman -Sc` empties the download
+cache.
 
 Files the package lists under `backup` that you changed are kept. The new
 version is saved as `.pacnew` on upgrade, and your copy as `.pacsave` on
