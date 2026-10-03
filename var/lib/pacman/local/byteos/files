@@ -62,6 +62,7 @@
 /lib/bpk.lua
 /lib/bytebios.lua
 /lib/compress.lua
+/lib/files.lua
 /lib/internet.lua
 /lib/lineedit.lua
 /lib/sha256.lua

@@ -20,6 +20,7 @@
                                  rootpw / alicepw / bobpw
     answers{...}  keys{...}      queue input for term.read / readKey
     signals{...}                 queue signals for computer.pullSignal
+    deliver{...}                 the same, and have the kernel handle them now
     disk(dir, addr, label)       a filesystem component on a host dir
     useDatacard(true|false)      put a tier 3 data card in (or take it out)
     file(path)  put(path, data)  read/write the fake disk directly
@@ -204,6 +205,8 @@ end
 function answers(list) term.answers(list) end
 function keys(list) term.feed(list) end
 function signals(list) for _, s in ipairs(list) do SIGNALS[#SIGNALS + 1] = s end end
+-- queue signals and let the kernel handle all of them now
+function deliver(list) signals(list); while #SIGNALS > 0 do kernel.event.pull(1) end end
 function screen() return term.screen() end
 function useDatacard(on) COMPONENTS["datacard-0000"] = on and { "data", datacard } or nil end
 

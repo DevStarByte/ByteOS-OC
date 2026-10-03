@@ -53,6 +53,8 @@ BUILT-IN COMMANDS
   set, export              variables (see above)
   jobs                     this session's background jobs
   wait [%job|pid]          until background jobs have finished
+  fg [%job]                wait for a job in the foreground (the newest
+                           one without an argument); Ctrl+C stops it
   exit [n]                 leave the shell (or a script, with status n)
   logout                   back to the login prompt
   not cmd                  run cmd and invert its status

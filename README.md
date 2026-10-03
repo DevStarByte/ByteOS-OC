@@ -210,7 +210,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.9.1 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.10.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -242,7 +242,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.9.1
+byteos 1.10.0
 cowsay 0.2.0
 ```
 
@@ -401,6 +401,7 @@ root@byteos ~# jobs                         # this session's jobs
 root@byteos ~# ps                           # every process
 root@byteos ~# kill %1                      # or: kill 4 (yours, or any as root)
 root@byteos ~# wait                         # until the jobs have finished
+root@byteos ~# fg                           # wait for the newest job; Ctrl+C stops it
 ```
 
 **Services** are described in `/etc/systemd/system/<name>.service`
@@ -472,10 +473,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.9.1.gf14f720  cowsay-0.3.0
+Packages (2) byteos-1.10.0.g2c5aad0  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.9.1.gf14f720 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.10.0.g2c5aad0 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...

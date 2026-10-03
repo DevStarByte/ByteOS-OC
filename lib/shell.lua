@@ -648,6 +648,37 @@ function shell.builtins.wait(args)
   return 0
 end
 
+-- fg [%job]: wait for a background job in the foreground (the newest one
+-- without an argument); Ctrl+C stops it. A job never reads the keyboard,
+-- so this is waiting with the option to cancel.
+function shell.builtins.fg(args)
+  local job, idx
+  local want = args[1] and tonumber((args[1]:gsub("^%%", "")))
+  for i, j in ipairs(shell.jobs) do
+    if (want and j.id == want) or (not want and i == #shell.jobs) then job, idx = j, i end
+  end
+  if not job then shell.err("fg", args[1] and (args[1] .. ": no such job") or "no current job"); return 1 end
+  out.write(job.cmd .. "\n")
+  local ev = k.event
+  ev.interruptible = ev.interruptible + 1
+  local ok, err = pcall(function()
+    while (k.process.info(job.pid) or {}).state == "running" do k.event.pull(0.25) end
+  end)
+  ev.interruptible = ev.interruptible - 1
+  table.remove(shell.jobs, idx)
+  contexts[job.pid] = nil
+  if not ok then
+    if err ~= "interrupted" then error(err, 0) end
+    k.process.kill(job.pid)
+    term.cwrite(T.muted, "^C\n")
+    return 130
+  end
+  local info = k.process.info(job.pid) or {}
+  if info.state == "killed" then return 143 end
+  if info.state == "failed" then return 1 end
+  return tonumber(info.result) or 0
+end
+
 -- ---- Scripts ---------------------------------------------------------------
 -- Run a script: every line as if typed, with $0 = the script and $1... its
 -- arguments. `exit n` ends it with status n; Ctrl+C stops it.
