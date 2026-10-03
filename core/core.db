@@ -30,14 +30,6 @@ filename = lolcat-1.0.0-1.bpk
 csize = 591
 crc32 = d8ac361b
 
-name = sudo
-version = 1.0.0-1
-desc = run a command as another user (wheel only)
-isize = 1266
-filename = sudo-1.0.0-1.bpk
-csize = 1403
-crc32 = d4f4d978
-
 name = tree
 version = 1.0.0-1
 desc = recursive coloured directory listing

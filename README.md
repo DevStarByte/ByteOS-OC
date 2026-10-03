@@ -21,7 +21,6 @@ Small, everyday tools. Always enabled.
 | [fortune](pkgs/core/fortune) | 1.0.0 | Random pithy programmer quotes (ships its own data file). |
 | [tree](pkgs/core/tree)       | 1.0.0 | Recursive coloured directory listing. `tree /etc` |
 | [uptime](pkgs/core/uptime)   | 1.0.0 | Print how long the system has been running. |
-| [sudo](pkgs/core/sudo)       | 1.0.0 | Run a command as root. Checks `wheel` in `/etc/group` and the password in `/etc/shadow`. |
 
 ## extra/
 
@@ -44,7 +43,7 @@ pacman -Sy
 pacman -Ss                        # browse everything
 pacman -S lolcat fortune tree     # core picks
 pacman -S sl cmatrix figlet       # extra fun
-sudo pacman -S nano               # via the new sudo
+sudo pacman -S nano               # as a wheel user; sudo comes with byteos
 fortune
 tree /etc
 sl
