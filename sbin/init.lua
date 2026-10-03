@@ -622,8 +622,11 @@ local function runSetup()
           table.insert(passwd,
             ("%s:x:1000:1000:%s:/home/%s:/bin/sh"):format(cfg.user, cfg.user, cfg.user))
           table.insert(shadow, ("%s:%s:::::::"):format(cfg.user, cfg.userpw))
-          if not fs.exists("/home/" .. cfg.user) then
-            fs.makeDirectory("/home/" .. cfg.user)
+          local home = "/home/" .. cfg.user
+          if not fs.exists(home) then fs.makeDirectory(home) end
+          -- like /etc/skel on Linux: the new user starts with the default .shrc
+          if fs.exists("/etc/skel/.shrc") and not fs.exists(home .. "/.shrc") then
+            fs.writeAll(home .. "/.shrc", fs.readAll("/etc/skel/.shrc"))
           end
         end
         fs.writeAll("/etc/passwd", table.concat(passwd, "\n") .. "\n")

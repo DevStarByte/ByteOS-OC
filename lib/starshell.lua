@@ -74,11 +74,12 @@ local function pushHistory(line)
 end
 
 -- ---- Helpers -----------------------------------------------------------
-local BUILTINS = { cd=true, exit=true, logout=true, export=true, set=true, help=true }
+local BUILTINS = { cd=true, exit=true, logout=true, export=true, set=true, help=true,
+                   alias=true, unalias=true, source=true, ["."]=true }
 
 local function commandExists(name)
   if name == nil or name == "" then return false end
-  if BUILTINS[name] then return true end
+  if BUILTINS[name] or shell.aliases[name] then return true end
   return shell.resolveBin(name) ~= nil
 end
 
@@ -216,6 +217,9 @@ local function pathsForCompletion(prefix, isFirstWord)
     -- Complete commands from PATH + builtins
     for b in pairs(BUILTINS) do
       if b:sub(1, #prefix) == prefix then results[#results+1] = b end
+    end
+    for a in pairs(shell.aliases) do
+      if a:sub(1, #prefix) == prefix then results[#results+1] = a end
     end
     for dir in (_G.PATH or "/bin"):gmatch("[^:]+") do
       for _, name in ipairs(listDir(dir)) do

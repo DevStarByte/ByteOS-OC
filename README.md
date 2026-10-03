@@ -159,7 +159,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 [root@byteos ~]# neofetch
 [root@byteos ~]# uname -a
-ByteOS byteos 1.1.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.2.0 (Iron) lua54 GNU/ByteOS
 
 [root@byteos ~]# pacman -Sy
 :: Synchronizing package databases...
@@ -191,7 +191,7 @@ Packages (1) cowsay-0.2.0
                 ||     ||
 
 [root@byteos ~]# pacman -Q
-byteos 1.1.0
+byteos 1.2.0
 cowsay 0.2.0
 ```
 
@@ -216,6 +216,27 @@ To switch users, type `logout` (or press Ctrl+D on an empty line) to get
 back to the login prompt. It also works from inside StarShell, and sudo
 forgets the remembered password.
 
+## Aliases and ~/.shrc
+
+At every login ByteShell runs `/etc/profile` and then your `~/.shrc`, so
+that is the place for aliases and variables. New users get a copy of
+`/etc/skel/.shrc` with a few defaults (`ll`, `la`, `l`, `..`, `cls`):
+
+```sh
+[root@byteos ~]# alias up='sudo pacman -Syu'
+[root@byteos ~]# alias
+alias ..='cd ..'
+alias ll='ls -l'
+alias up='sudo pacman -Syu'
+[root@byteos ~]# unalias up
+[root@byteos ~]# source ~/.shrc        # or: . ~/.shrc
+```
+
+The shell understands `'single'` and `"double"` quotes (also mid-word, as in
+`ll='ls -l'`), `\` escapes, `$VAR`/`${VAR}` and `~`. `NAME=value` sets a
+variable, `export` too, and `set` lists them. Variable names are UPPERCASE
+because they share the global namespace with Lua.
+
 ## Updating ByteOS
 
 Like on Arch, `pacman -Syu` upgrades everything, including the OS itself.
@@ -227,10 +248,10 @@ pulls its newest version straight from this GitHub repository:
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.1.0.g2577c8d  cowsay-0.3.0
+Packages (2) byteos-1.2.0.gfb46153  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.1.0.g2577c8d from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.2.0.gfb46153 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...

@@ -1,4 +1,4 @@
--- /etc/profile - sourced by ByteShell at login (executed via 'source')
+# /etc/profile - run by ByteShell at every login, before ~/.shrc
+# System-wide variables and aliases go here; personal ones in ~/.shrc.
 PATH=/bin:/usr/bin:/sbin
-PS1=archlike
 EDITOR=edit
