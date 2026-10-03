@@ -211,7 +211,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.13.3 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.14.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -243,7 +243,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.13.3
+byteos 1.14.0
 cowsay 0.2.0
 ```
 
@@ -615,10 +615,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.13.3.g1dc7068  cowsay-0.3.0
+Packages (2) byteos-1.14.0.g35a565a  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.13.3.g1dc7068 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.14.0.g35a565a from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...
@@ -765,6 +765,21 @@ cache.
 Files the package lists under `backup` that you changed are kept. The new
 version is saved as `.pacnew` on upgrade, and your copy as `.pacsave` on
 removal.
+
+**Removing with everything that came along**, as on Arch: pacman remembers
+whether you installed a package yourself or it came as a dependency
+(`pacman -Qi` shows the *Install Reason*).
+
+```sh
+root@byteos ~# pacman -Rns hyprbyte        # also its unneeded dependencies (-s) and config files (-n)
+root@byteos ~# pacman -Qdt                 # orphans: dependencies nothing needs any more
+root@byteos ~# pacman -Qdtq | pacman -Rns -   # remove them all ("-" reads the names from the pipe)
+root@byteos ~# pacman -D --asdeps libnotify   # or --asexplicit: change the reason
+```
+
+`-s` never removes what you installed yourself or what another package
+still needs. Packages installed before ByteOS 1.14 count as installed by
+you; mark the ones you only got as dependencies with `pacman -D --asdeps`.
 
 ## Hacking on ByteOS
 

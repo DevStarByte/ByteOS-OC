@@ -121,7 +121,7 @@ end
 -- ---- Package info ----------------------------------------------------------
 local LISTS  = { depend = true, conflict = true, backup = true }
 local FIELDS = { "name", "version", "desc", "url", "depend", "conflict", "backup",
-                 "isize", "filename", "csize", "crc32", "sha256" }
+                 "isize", "reason", "filename", "csize", "crc32", "sha256" }
 
 function bpk.parseInfo(text)
   local info = { depend = {}, conflict = {}, backup = {} }

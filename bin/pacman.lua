@@ -5,8 +5,16 @@
     pacman -S <pkg>...       install packages and their dependencies
     pacman -U <file.bpk>...  install package files from disk
     pacman -R <pkg>...       remove packages
+    pacman -Rs <pkg>...      ... and the dependencies nothing else needs
+    pacman -Rn <pkg>...      ... and their changed config files (no .pacsave)
+    pacman -Rns <pkg>...     both, like on Arch
     pacman -Q                list installed packages
+    pacman -Qe / -Qd         only those installed explicitly / as dependencies
+    pacman -Qdt              orphans: dependencies nothing needs any more
+                             (pacman -Qdtq | pacman -Rns -  removes them;
+                             "-" reads the targets from the pipe)
     pacman -Qi <pkg>         show information about an installed package
+    pacman -D --asdeps|--asexplicit <pkg>...  change why a package is installed
     pacman -Ss [pattern]     search the repositories
     pacman -Sy               synchronize the package databases
     pacman -Syu              upgrade packages and the byteos base system
@@ -19,7 +27,8 @@
   Local database, one directory per installed package:
     /var/lib/pacman/local/<name>/desc     package info; each backup line
                                           also carries the CRC-32 of the
-                                          file as shipped ("<path> <crc>")
+                                          file as shipped ("<path> <crc>");
+                                          reason = explicit | dependency
     /var/lib/pacman/local/<name>/files    installed paths, one per line
     /var/lib/pacman/local/<name>/install  the package's hooks, if any
 ]]--
@@ -93,11 +102,13 @@ local function progress(label, frac)
 end
 
 local NOCONFIRM = false
+local FROM_PIPE = false -- the targets came through a pipe ("-")
 local function confirm(question)
   term.cwrite(T.accent, ":: ")
   term.cwrite(T.bright, question .. " [Y/n] ")
   if NOCONFIRM then term.write("\n"); return true end
-  local a = (term.read() or "n"):lower()
+  -- with the targets read from a pipe ("-"), the answer comes from the terminal
+  local a = ((FROM_PIPE and require("term").read() or term.read()) or "n"):lower()
   return a == "" or a == "y" or a == "yes"
 end
 
@@ -639,9 +650,13 @@ local function extract(it, idx, total)
 
   local dir = LOCAL_DIR .. "/" .. name
   mkdirp(dir)
+  -- why it is here: named on the command line, or pulled in by another
+  -- package; an upgrade keeps what it was (older entries count as explicit)
+  local reason = it.reason or (old and old.reason) or "explicit"
   fs.writeAll(dir .. "/desc", bpk.formatInfo({
     name = name, version = pi.version, desc = pi.desc, url = pi.url,
     depend = pi.depend, conflict = pi.conflict, backup = newBackup, isize = pi.isize,
+    reason = reason,
   }))
   fs.writeAll(dir .. "/files", table.concat(it.pkg.order, "\n") .. "\n")
   if it.pkg.install then
@@ -774,8 +789,14 @@ local function install(targets)
     ok = flashBios()
   end
   if #list > 0 then
+    local named = {}
+    for _, t in ipairs(rest) do named[depName(t)] = true end
     local items = {}
-    for _, p in ipairs(list) do items[#items + 1] = { db = p } end
+    for _, p in ipairs(list) do
+      -- what was asked for is explicit; a new dependency is a dependency
+      local reason = named[p.name] and "explicit" or (not isInstalled(p.name) and "dependency" or nil)
+      items[#items + 1] = { db = p, reason = reason }
+    end
     ok = commit(items) and ok
   end
   return ok and 0 or 1
@@ -792,7 +813,7 @@ local function installFiles(paths)
     local pkg, e = bpk.inspect(h)
     h:close()
     if not pkg then err("'" .. p .. "': " .. e); return 1 end
-    items[#items + 1] = { path = path }
+    items[#items + 1] = { path = path, reason = "explicit" }
     infos[#infos + 1] = pkg.info
     provided[pkg.info.name] = pkg.info.version
     labels[#labels + 1] = pkg.info.name .. "-" .. pkg.info.version
@@ -939,7 +960,7 @@ local function held()
   return set
 end
 
-local function removePackage(name, idx, total)
+local function removePackage(name, idx, total, nosave)
   local label = ("(%d/%d) removing %s"):format(idx, total, name)
   progress(label, 0)
   local i = localInfo(name)
@@ -948,7 +969,7 @@ local function removePackage(name, idx, total)
   local crcs, notes = backupCrcs(i), {}
   for _, f in ipairs(localFiles(name)) do
     if fs.exists(f) and not fs.isDirectory(f) then
-      if crcs[f] and crcOf(readIf(f)) ~= crcs[f] then
+      if crcs[f] and not nosave and crcOf(readIf(f)) ~= crcs[f] then
         if fs.exists(f .. ".pacsave") then fs.remove(f .. ".pacsave") end
         fs.rename(f, f .. ".pacsave")
         notes[#notes + 1] = f .. " saved as " .. f .. ".pacsave"
@@ -964,7 +985,24 @@ local function removePackage(name, idx, total)
   for _, note in ipairs(notes) do warn(note) end
 end
 
-local function remove(targets)
+-- Installed packages that need `name`, leaving out those in `except`.
+local function requiredBy(name, except)
+  local out = {}
+  for _, n in ipairs(installedNames()) do
+    if not (except and except[n]) then
+      for _, d in ipairs(localInfo(n).depend) do
+        if depName(d) == name then out[#out + 1] = n; break end
+      end
+    end
+  end
+  return out
+end
+
+-- -R [-s] [-n]: recursive also takes the dependencies of what goes that
+-- were installed as dependencies and that nothing staying needs; nosave
+-- deletes changed config files instead of keeping them as .pacsave.
+local function remove(targets, opts)
+  opts = opts or {}
   if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
   local hold, set, labels = held(), {}, {}
   for _, t in ipairs(targets) do set[t] = true end
@@ -987,6 +1025,23 @@ local function remove(targets)
     end
   end
   info("checking dependencies...")
+  if opts.recursive then
+    targets = { table.unpack(targets) }
+    local i = 1
+    while i <= #targets do -- targets grows while it is walked: deps of deps
+      local pi = targets[i] ~= "bytebios" and localInfo(targets[i])
+      for _, d in ipairs(pi and pi.depend or {}) do
+        local dn = depName(d)
+        local di = not set[dn] and not hold[dn] and localInfo(dn)
+        if di and di.reason == "dependency" and #requiredBy(dn, set) == 0 then
+          set[dn] = true
+          targets[#targets + 1] = dn
+          labels[#labels + 1] = dn .. "-" .. (di.version or "?")
+        end
+      end
+      i = i + 1
+    end
+  end
   local broken = false
   for _, n in ipairs(installedNames()) do
     if not set[n] then
@@ -1010,7 +1065,7 @@ local function remove(targets)
       if done then progress(label, 1); term.write("\n")
       else term.write("\n"); err("bytebios: " .. e); ok = false end
     else
-      removePackage(pkg, i, #targets)
+      removePackage(pkg, i, #targets, opts.nosave)
     end
   end
   return ok and 0 or 1
@@ -1039,6 +1094,45 @@ local function row(label, value)
   term.cwrite(T.fg, ((value and value ~= "") and value or "None") .. "\n")
 end
 
+-- -Qe, -Qd, -Qt and their mixes (-Qdt: orphans); q: names only
+local function queryFiltered(flags, targets)
+  local explicit, deps, unneeded, quiet = flags:find("e"), flags:find("d"), flags:find("t"), flags:find("q")
+  local want = {}
+  for _, t in ipairs(targets) do want[t] = true end
+  for _, n in ipairs(installedNames()) do
+    local i = localInfo(n)
+    local reason = i.reason or "explicit"
+    local keep = (not next(want) or want[n])
+      and (not explicit or reason == "explicit")
+      and (not deps or reason == "dependency")
+      and (not unneeded or #requiredBy(n) == 0)
+    if keep then
+      if quiet then term.write(n .. "\n")
+      else term.cwrite(T.bright, n .. " "); term.cwrite(T.green, (i.version or "?") .. "\n") end
+    end
+  end
+  return 0
+end
+
+-- -D --asdeps | --asexplicit <pkg>...: change why packages are installed
+local function setReason(targets)
+  local flag = targets[1]
+  local reason = flag == "--asdeps" and "dependency" or flag == "--asexplicit" and "explicit"
+  if not reason or #targets < 2 then
+    err("usage: pacman -D --asdeps|--asexplicit <pkg>..."); return 1
+  end
+  for i = 2, #targets do
+    local name = targets[i]
+    local pi = localInfo(name)
+    if not pi then err("package '" .. name .. "' was not found"); return 1 end
+    pi.reason = reason
+    fs.writeAll(LOCAL_DIR .. "/" .. name .. "/desc", bpk.formatInfo(pi))
+    info(("%s: install reason has been set to '%s'"):format(name,
+      reason == "explicit" and "explicitly installed" or "installed as dependency"))
+  end
+  return 0
+end
+
 local function queryInfo(pkg)
   if not pkg then err("no targets specified"); return 1 end
   if pkg == "bytebios" then return queryBios() end
@@ -1058,6 +1152,8 @@ local function queryInfo(pkg)
   row("Version", i.version)
   row("Description", i.desc)
   row("URL", i.url)
+  row("Install Reason", (i.reason or "explicit") == "explicit" and "Explicitly installed"
+    or "Installed as a dependency for another package")
   row("Depends On", table.concat(i.depend, "  "))
   row("Required By", table.concat(requiredBy, "  "))
   row("Conflicts With", table.concat(i.conflict, "  "))
@@ -1169,7 +1265,10 @@ local function usage()
     { "-S <pkg>...",  "install packages" },
     { "-U <file>...", "install .bpk package files" },
     { "-R <pkg>...",  "remove packages" },
+    { "-Rns <pkg>...", "... with unneeded deps and config" },
     { "-Q",           "list installed packages" },
+    { "-Qdt",         "orphans (-Qdtq: names only)" },
+    { "-D --asdeps",  "mark as a dependency (--asexplicit)" },
     { "-Qi <pkg>",    "show package information" },
     { "-Ql [pkg]",    "list the files of a package" },
     { "-Qo <file>",   "which package owns a file" },
@@ -1192,12 +1291,22 @@ for _, a in ipairs(args) do
   if a == "--noconfirm" then NOCONFIRM = true else rest[#rest + 1] = a end
 end
 local op = rest[1]
-local targets = { table.unpack(rest, 2) }
+local targets = {}
+for i = 2, #rest do
+  if rest[i] == "-" then -- the targets come from the pipe: pacman -Qdtq | pacman -Rns -
+    FROM_PIPE = true
+    for name in ((stdin and stdin.read("a")) or ""):gmatch("%S+") do targets[#targets + 1] = name end
+  else
+    targets[#targets + 1] = rest[i]
+  end
+end
 
 -- Everything that changes the system needs root; queries work for anyone.
 local QUERY = { ["-Q"] = true, ["-Qi"] = true, ["-Ql"] = true, ["-Qo"] = true, ["-Ss"] = true,
                 ["-h"] = true, ["--help"] = true }
-if op and not QUERY[op] and k.user() ~= "root" then
+local qflags = op and op:match("^%-Q([edtq]+)$")
+local rflags = op and op:match("^%-R([ns]*)$")
+if op and not QUERY[op] and not qflags and k.user() ~= "root" then
   err("you cannot perform this operation unless you are root.")
   term.cwrite(T.muted, "  run it with ")
   term.cwrite(T.blue, "sudo pacman " .. table.concat(args, " ") .. "\n")
@@ -1220,8 +1329,19 @@ elseif op == "-S" then
   return install(targets)
 elseif op == "-U" then
   return installFiles(targets)
-elseif op == "-R" then
-  return remove(targets)
+elseif rflags then
+  local opts = { recursive = rflags:find("s") ~= nil, nosave = rflags:find("n") ~= nil }
+  local list = {}
+  for _, t in ipairs(targets) do
+    if t == "--recursive" then opts.recursive = true
+    elseif t == "--nosave" then opts.nosave = true
+    else list[#list + 1] = t end
+  end
+  return remove(list, opts)
+elseif qflags then
+  return queryFiltered(qflags, targets)
+elseif op == "-D" then
+  return setReason(targets)
 elseif op == "-Q" then
   if targets[1] == "-i" or targets[1] == "i" then return queryInfo(targets[2]) end
   return queryAll(targets)

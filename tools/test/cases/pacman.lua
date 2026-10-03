@@ -127,4 +127,66 @@ test("a package whose SHA-256 does not match is not installed", function()
   eq(file("/var/lib/pacman/local/plain/desc"), nil)
 end)
 
+test("install reasons; -Rs takes unneeded dependencies along, -Rn the config files", function()
+  pkg("app2", 'return { name = "app2", version = "1.0", depends = { "libx" } }')
+  pkg("tool", 'return { name = "tool", version = "1.0", depends = { "toollib" } }')
+  pkg("toollib", 'return { name = "toollib", version = "1.0", depends = { "toolbase" } }')
+  pkg("toolbase", 'return { name = "toolbase", version = "1.0" }')
+  build()
+  run(P .. "-Sy")
+  run(P .. "-R app libx")
+  local L = "/var/lib/pacman/local/"
+
+  run(P .. "-S tool")
+  has(run("pacman -Qi tool"), "Explicitly installed")
+  has(run("pacman -Qi toollib"), "Installed as a dependency")
+  eq(run("pacman -Qdtq"), "", "no orphans while tool needs them")
+  run(P .. "-R tool")
+  eq(run("pacman -Qdtq"), "toollib\n", "toolbase is still needed by toollib")
+  has(run("pacman -Qd"), "toolbase 1.0-1")
+  run(P .. "-S tool")
+  has(run("pacman -Qi toollib"), "Installed as a dependency", "a reinstall keeps the reason")
+
+  local out = run(P .. "-Rs tool")
+  has(out, "tool-1.0-1"); has(out, "toollib-1.0-1"); has(out, "toolbase-1.0-1")
+  ok(not file(L .. "toollib/desc") and not file(L .. "toolbase/desc"), "dependencies of dependencies went too")
+
+  -- a dependency another package still needs stays
+  run(P .. "-S app app2")
+  has(run("pacman -Qi libx"), "Installed as a dependency")
+  run(P .. "-Rs app")
+  ok(file(L .. "libx/desc"), "libx stays: app2 needs it")
+  run(P .. "-Rs app2")
+  ok(not file(L .. "libx/desc"), "and goes with the last one needing it")
+
+  -- what was installed on purpose stays
+  run(P .. "-S toolbase")
+  run(P .. "-S tool")
+  run(P .. "-Rs tool")
+  ok(file(L .. "toolbase/desc"), "toolbase was installed explicitly")
+  ok(not file(L .. "toollib/desc"))
+  has(run(P .. "-D --asdeps toolbase"), "installed as dependency")
+  eq(run("pacman -Qdtq"), "toolbase\n")
+  has(run("pacman -Qe"), "byteos")
+  lacks(run("pacman -Qe"), "toolbase")
+  -- orphans away, as on Arch: the targets come through the pipe
+  out = run("pacman -Qdtq | " .. P .. "-Rns -")
+  has(out, "toolbase-1.0-1")
+  ok(not file(L .. "toolbase/desc"), "the orphan is gone")
+  has(run("pacman -Qdtq | " .. P .. "-Rns -"), "no targets specified")
+
+  -- -n: a changed config file is deleted, not kept as .pacsave
+  run(P .. "-S conf")
+  put("/etc/conf.conf", "setting=MINE\n")
+  os.remove(ROOT .. "/etc/conf.conf.pacsave")
+  out = run(P .. "-Rns conf")
+  lacks(out, "pacsave")
+  eq(file("/etc/conf.conf"), nil); eq(file("/etc/conf.conf.pacsave"), nil)
+
+  as("bob", function()
+    eq(select(2, run("pacman -Qdt")), 0, "anyone may look")
+    has(run("pacman -Rs conf"), "unless you are root")
+  end)
+end)
+
 os.remove(KEY)
