@@ -452,8 +452,6 @@ end
 local function runSetup()
   local cfg = {
     hostname = "ByteOS",
-    keymap   = "us",
-    locale   = "en_US.UTF-8",
     timezone = "UTC",
     rootpw   = nil,
     user     = nil,
@@ -489,19 +487,9 @@ local function runSetup()
     return r and r.value
   end
 
-  local function pickKeymap()
-    cfg.keymap = pick("Keyboard layout", { "us", "de", "fr", "uk", "es", "it", "dvorak" }, cfg.keymap) or cfg.keymap
-  end
-
-  local function pickLocale()
-    cfg.locale = pick("Locale", { "en_US.UTF-8", "en_GB.UTF-8", "de_DE.UTF-8", "fr_FR.UTF-8", "C" }, cfg.locale) or cfg.locale
-  end
-
+  -- the zone applies once timesyncd has the real time from the internet
   local function pickTimezone()
-    cfg.timezone = pick("Timezone", {
-      "UTC", "Europe/Berlin", "Europe/London", "Europe/Paris",
-      "America/New_York", "America/Los_Angeles", "Asia/Tokyo",
-    }, cfg.timezone) or cfg.timezone
+    cfg.timezone = pick("Timezone", require("clock").zones(), cfg.timezone) or cfg.timezone
   end
 
   local function setHostname()
@@ -549,8 +537,6 @@ local function runSetup()
   while true do
     local items = {
       { label = "Hostname",        right = cfg.hostname, mark = "ok", key = "host" },
-      { label = "Keyboard layout", right = cfg.keymap,   mark = "ok", key = "kb"   },
-      { label = "Locale",          right = cfg.locale,   mark = "ok", key = "loc"  },
       { label = "Timezone",        right = cfg.timezone, mark = "ok", key = "tz"   },
       { label = "Root password",   right = cfg.rootpw and "set" or "required",
         mark = cfg.rootpw and "ok" or "todo", key = "root" },
@@ -569,8 +555,6 @@ local function runSetup()
         computer.shutdown(true)
       end
     elseif pick.key == "host" then setHostname()
-    elseif pick.key == "kb"   then pickKeymap()
-    elseif pick.key == "loc"  then pickLocale()
     elseif pick.key == "tz"   then pickTimezone()
     elseif pick.key == "root" then setRootPw()
     elseif pick.key == "user" then setUser()
@@ -579,7 +563,7 @@ local function runSetup()
         pressEnter("Missing setting",
           { { "A root password is required.", COL.warn }, "",
             "Select 'Root password' to set one." })
-        last = 5
+        last = 3 -- the "Root password" entry
       elseif confirmBox("Ready to install",
         "Write the configuration and install ByteOS?", true) then
         break
@@ -593,8 +577,7 @@ local function runSetup()
 
   local steps = {
     "Synchronizing core", "Synchronizing extra", base,
-    "Writing /etc/hostname", "Writing /etc/vconsole.conf",
-    "Writing /etc/locale.conf", "Writing /etc/timezone",
+    "Writing /etc/hostname", "Writing /etc/timezone",
     "Writing /etc/hosts", "Creating user accounts", "Finalizing",
   }
   withProgress("Installing ByteOS", steps,
@@ -605,10 +588,6 @@ local function runSetup()
 
       step("Writing /etc/hostname", function()
         fs.writeAll("/etc/hostname", hn .. "\n") end)
-      step("Writing /etc/vconsole.conf", function()
-        fs.writeAll("/etc/vconsole.conf", "KEYMAP=" .. cfg.keymap .. "\n") end)
-      step("Writing /etc/locale.conf", function()
-        fs.writeAll("/etc/locale.conf", "LANG=" .. cfg.locale .. "\n") end)
       step("Writing /etc/timezone", function()
         fs.writeAll("/etc/timezone", cfg.timezone .. "\n") end)
       step("Writing /etc/hosts", function()

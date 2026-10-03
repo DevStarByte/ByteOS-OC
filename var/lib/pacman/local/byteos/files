@@ -43,6 +43,7 @@
 /bin/su.lua
 /bin/systemctl.lua
 /bin/tail.lua
+/bin/timedatectl.lua
 /bin/touch.lua
 /bin/umount.lua
 /bin/uname.lua
@@ -61,6 +62,7 @@
 /lib/auth.lua
 /lib/bpk.lua
 /lib/bytebios.lua
+/lib/clock.lua
 /lib/compress.lua
 /lib/files.lua
 /lib/internet.lua
@@ -74,6 +76,7 @@
 /lib/theme.lua
 /lib/units.lua
 /sbin/init.lua
+/sbin/timesyncd.lua
 /usr/share/man/byteos.txt
 /usr/share/man/byteshell.txt
 /usr/share/man/man.txt

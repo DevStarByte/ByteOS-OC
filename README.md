@@ -62,7 +62,7 @@ More details and other ways to install are under
   plus pipes, redirection, wildcards and shell scripts.
 - **Commands** —
   files: `ls cat cp mv rm mkdir touch find less edit grep head tail wc`;
-  system: `df du free date sleep uname hostname neofetch which env help reboot shutdown`;
+  system: `df du free date timedatectl sleep uname hostname neofetch which env help reboot shutdown`;
   processes, services and logs: `ps kill systemctl journalctl dmesg logger`;
   help: `man` (`man <command>`, `man byteshell`, `man -k <word>`);
   users: `whoami id groups passwd su sudo useradd userdel usermod`;
@@ -145,8 +145,6 @@ the full-screen setup wizard:
  ByteOS Setup                                            Settings
            ┌──────── Installation summary ────────┐
            │ ✓ Hostname                    byteos │
-           │ ✓ Keyboard layout                 us │
-           │ ✓ Locale                 en_US.UTF-8 │
            │ ✓ Timezone                       UTC │
            │ • Root password             required │
            │ ✓ User account             root only │
@@ -158,7 +156,7 @@ the full-screen setup wizard:
 ```
 Pick each entry with the arrow keys (or `1`-`9`) and Enter, set a root
 password, then choose *Install ByteOS*. Your answers are written to
-`/etc/hostname`, `/etc/passwd`, `/etc/shadow` and friends, and a
+`/etc/hostname`, `/etc/timezone`, `/etc/passwd`, `/etc/shadow` and friends, and a
 `/etc/.installed` marker is created so the wizard never runs again.
 (Escape closes the Minecraft screen, so *back* is `Shift+Q` or Backspace.)
 From now on every boot goes straight to the login prompt.
@@ -210,7 +208,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.10.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.11.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -242,7 +240,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.10.0
+byteos 1.11.0
 cowsay 0.2.0
 ```
 
@@ -441,6 +439,22 @@ root@byteos ~# logger -t backup done        # write your own line
 Programs in the background must wait with `k.event.pull` (as `sleep` and
 `term.read` do); keyboard input always goes to the foreground.
 
+## Time
+
+OpenComputers' own clock is the Minecraft world's time. With an internet
+card, the `timesyncd` service (on by default) fetches the real time at boot
+and every hour, and your time zone applies, daylight saving time included:
+
+```sh
+root@byteos ~# timedatectl                         # local time, UTC, zone, synced or not
+root@byteos ~# timedatectl set-timezone Europe/Berlin
+root@byteos ~# timedatectl list-timezones
+root@byteos ~# date "+%A, %d %B %Y %H:%M"
+```
+
+Without an internet card `date` shows the world's time and says so ("world").
+The system log uses the real time once it is synchronized.
+
 ## Disks and network
 
 Extra disks (a second HDD, a floppy) appear under `/mnt/<first 8 characters
@@ -473,10 +487,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.10.0.g2c5aad0  cowsay-0.3.0
+Packages (2) byteos-1.11.0.gbf3eb3d  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.10.0.g2c5aad0 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.11.0.gbf3eb3d from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...

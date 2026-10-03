@@ -22,6 +22,10 @@ SOFTWARE AND UPDATES
   sudo pacman -S bytebios  put ByteBIOS on the EEPROM
   If an update of ByteOS does not boot, it is rolled back by itself.
 
+TIME
+  date and timedatectl show the time; with an internet card timesyncd keeps
+  it real and /etc/timezone applies (timedatectl set-timezone Europe/Berlin).
+
 SERVICES AND LOGS
   systemctl manages services (man systemd.service), journalctl and dmesg
   show the log, ps and kill the processes.

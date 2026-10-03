@@ -3,7 +3,7 @@
 
     local internet = require("internet")
     internet.available()                  -> true if an internet card is installed
-    internet.get(url, sink [, headers])   -> true | nil, reason
+    internet.get(url, sink [, headers])   -> true, response headers | nil, reason
         streams the body to sink(chunk); only HTTP 200 counts as success
     internet.fetch(url [, headers])       -> body | nil, reason
 ]]--
@@ -39,9 +39,9 @@ function internet.get(url, sink, headers)
     kernel.event.pull(0.05)
   end
 
-  local code, message
+  local code, message, respHeaders
   repeat
-    code, message = h.response()
+    code, message, respHeaders = h.response()
     if not code then
       if computer.uptime() > deadline then h.close(); return nil, "no response" end
       kernel.event.pull(0.05)
@@ -59,7 +59,7 @@ function internet.get(url, sink, headers)
     if chunk == nil then
       h.close()
       if rerr then return nil, tostring(rerr) end
-      return true
+      return true, respHeaders or {}
     end
     if #chunk > 0 then
       sink(chunk)

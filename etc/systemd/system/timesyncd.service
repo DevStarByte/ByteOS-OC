@@ -1,0 +1,6 @@
+[Unit]
+Description=Network Time Synchronization
+
+[Service]
+ExecStart=timesyncd
+Restart=on-failure

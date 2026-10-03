@@ -419,8 +419,10 @@ local function writeLog(entries)
 end
 
 function kernel.log(msg, tag)
-  local e = { t = computer.uptime(), tag = tostring(tag or "kernel"), msg = tostring(msg),
-              date = os.date("%b %d %H:%M:%S") }
+  -- the real time once timesyncd has set it (lib/clock), else the world's
+  local clock = package.loaded.clock
+  local date = clock and clock.synced() and clock.date("%b %d %H:%M:%S") or os.date("%b %d %H:%M:%S")
+  local e = { t = computer.uptime(), tag = tostring(tag or "kernel"), msg = tostring(msg), date = date }
   ring[#ring + 1] = e
   if #ring > 300 then table.remove(ring, 1) end
   writeLog({ e })

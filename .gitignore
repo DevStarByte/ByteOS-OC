@@ -4,9 +4,7 @@ etc/.installed
 etc/shadow
 etc/group
 etc/hosts
-etc/locale.conf
 etc/timezone
-etc/vconsole.conf
 var/log/
 var/lib/pacman/sync/
 # sysupdate's local state, backups and download staging area
