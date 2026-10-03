@@ -31,11 +31,11 @@ Bigger or more demo-y packages. Enabled by default in `/etc/pacman.conf`.
 
 | Package | Version | Description |
 |---------|---------|-------------|
-| [vim](pkgs/extra/vim)         | 0.1.0 | The "use edit instead :q!" joke stub. |
+| [vim](pkgs/extra/vim)         | 1.0.0 | Modal editor like Vim: normal/insert/command mode, `hjkl`, `dd`, `yy`/`p`, `u`, `/search`, `:wq`, `:%s/a/b/g`. |
 | [figlet](pkgs/extra/figlet)   | 1.0.0 | ASCII-art big-letters renderer with a bundled font. Ships **compressed** (`.pkg.z`, 5.9 KB → 3.3 KB) — pacman picks the compressed copy automatically. |
 | [sl](pkgs/extra/sl)           | 1.0.0 | Steam Locomotive — the classic punishment for typing `sl` instead of `ls`. |
 | [cmatrix](pkgs/extra/cmatrix) | 1.0.0 | Falling green Matrix rain. Press any key to quit. |
-| [nano](pkgs/extra/nano)       | 1.0.0 | Tiny line-buffer editor. `:w` save, `:q` quit, `:wq`, `:d` drop last line. |
+| [nano](pkgs/extra/nano)       | 2.0.0 | Full-screen editor like GNU nano: `^O` write, `^X` exit, `^W` search, `^K`/`^U` cut and paste, shortcut bar. |
 | [snake](pkgs/extra/snake)     | 1.0.0 | **Game.** Classic snake. Arrow keys (or WASD) to steer, `q` to quit. |
 | [2048](pkgs/extra/2048)       | 1.0.0 | **Game.** Slide-the-tiles puzzle. Arrows to move, `r` restart, `q` quit. |
 | [btop](pkgs/extra/btop)       | 1.0.0 | Full-screen monitor: memory, energy, disks, network, services, processes (`k` stops one). |
@@ -58,6 +58,7 @@ pacman -Sy
 pacman -Ss                        # browse everything
 pacman -S lolcat fortune tree     # core picks
 pacman -S sl cmatrix figlet       # extra fun
+pacman -S vim nano                # the editors you know (edit is built in)
 sudo pacman -S nano               # as a wheel user; sudo comes with byteos
 fortune
 tree /etc

@@ -1,9 +1,0 @@
-BPK1
-70 - .PKGINFO
-name = vim
-version = 0.1.0-1
-desc = a not-quite-vim editor
-isize = 71
-71 - /usr/bin/vim.lua
-term.write("vim: This is not vim. Use 'edit' instead. :q!\n")
-return 0

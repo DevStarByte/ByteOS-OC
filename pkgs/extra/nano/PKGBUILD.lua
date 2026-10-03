@@ -1,6 +1,6 @@
 return {
   name    = "nano",
-  version = "1.0.0",
+  version = "2.0.0",
   rel     = 1,
-  desc    = "the worlds smallest line-buffer editor",
+  desc    = "small full-screen text editor in the style of GNU nano",
 }

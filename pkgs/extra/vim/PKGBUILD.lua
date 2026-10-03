@@ -1,6 +1,6 @@
 return {
   name    = "vim",
-  version = "0.1.0",
+  version = "1.0.0",
   rel     = 1,
-  desc    = "a not-quite-vim editor",
+  desc    = "modal text editor in the style of Vim: normal, insert and command mode",
 }
