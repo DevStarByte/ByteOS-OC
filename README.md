@@ -159,7 +159,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.3.1 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.4.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -191,30 +191,54 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.3.1
+byteos 1.4.0
 cowsay 0.2.0
 ```
 
-## Users and sudo
+## Users, permissions and sudo
 
-Changing the system with pacman needs root. Regular users in the `wheel` group
-(the setup wizard asks whether to add yours) use `sudo`, which is part of the
-base system:
+Like on Linux, normal users may only change their own files: they can write
+to their home directory, `/tmp` and `/mnt` (removable disks), and cannot read
+`/etc/shadow`. Changing the system needs root. Users in the `wheel` group
+(the setup wizard asks whether to add yours) use `sudo`:
 
 ```sh
 alice@byteos ~> pacman -S cowsay
 error: you cannot perform this operation unless you are root.
 alice@byteos ~> sudo pacman -S cowsay
 [sudo] password for alice:
+alice@byteos ~> rm /bin/ls.lua
+rm: cannot remove '/bin/ls.lua': permission denied
 ```
 
-Like on Linux, sudo asks for the user's own password and remembers it for
-5 minutes (`sudo -k` forgets it). Users outside `wheel` are refused.
-Queries such as `pacman -Q`, `-Qi` and `-Ss` work for everyone.
+sudo asks for the user's own password and remembers it for 5 minutes
+(`sudo -k` forgets it). Queries such as `pacman -Q`, `-Qi` and `-Ss` work for
+everyone.
 
-To switch users, type `logout` (or press Ctrl+D on an empty line) to get
-back to the login prompt. It also works from inside StarShell, and sudo
-forgets the remembered password.
+Managing accounts:
+
+```sh
+root@byteos ~# useradd -m -G wheel bob    # -m: home with /etc/skel; -G wheel: may sudo
+root@byteos ~# passwd bob                 # new accounts are locked until they get one
+root@byteos ~# usermod -aG wheel carol    # -aG add to / -rG remove from groups
+root@byteos ~# userdel -r bob             # -r: remove the home too
+alice@byteos ~> passwd                     # change your own password
+alice@byteos ~> su bob                     # a shell as bob; exit comes back
+alice@byteos ~> id                         # uid=1000(alice) gid=100(users) groups=...
+```
+
+Passwords are stored as salted SHA-256 hashes (`$sha256$512$salt$hash`). A
+plain-text password from an older ByteOS is converted the next time that user
+logs in.
+
+Who you are is kept by the kernel, not by `$USER`, which is read-only.
+To switch users, type `logout` (or press Ctrl+D on an empty line) to get back
+to the login prompt; that also ends a remembered sudo password.
+
+> These protections keep users from breaking the system or each other by
+> accident. They are not a sandbox: OpenComputers gives every program direct
+> access to the hardware through `component`, which a deliberately written
+> program could use to get around them.
 
 ## ByteShell
 
@@ -287,10 +311,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.3.1.g6b48868  cowsay-0.3.0
+Packages (2) byteos-1.4.0.gf4d0e4f  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.3.1.g6b48868 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.4.0.gf4d0e4f from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...

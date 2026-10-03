@@ -930,7 +930,7 @@ end
 
 local function search(pat)
   if not synced() then
-    if (_G.USER or "root") == "root" then
+    if k.user() == "root" then
       sync()
     else
       warn("the package databases are not synchronized; run sudo pacman -Sy")
@@ -991,13 +991,13 @@ local targets = { table.unpack(rest, 2) }
 
 -- Everything that changes the system needs root; queries work for anyone.
 local QUERY = { ["-Q"] = true, ["-Qi"] = true, ["-Ss"] = true, ["-h"] = true, ["--help"] = true }
-if op and not QUERY[op] and (_G.USER or "root") ~= "root" then
+if op and not QUERY[op] and k.user() ~= "root" then
   err("you cannot perform this operation unless you are root.")
   term.cwrite(T.muted, "  run it with ")
   term.cwrite(T.blue, "sudo pacman " .. table.concat(args, " ") .. "\n")
   return 1
 end
-if (_G.USER or "root") == "root" then ensureDirs() end
+if k.user() == "root" then ensureDirs() end
 
 if not op or op == "-h" or op == "--help" then
   usage()

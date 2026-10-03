@@ -45,17 +45,54 @@ function kernel.event.pull(timeout, filter)
 end
 
 -- ============================================================
+-- Users and permissions
+-- ============================================================
+-- Who is running. The kernel keeps this itself; the shell's $USER only
+-- mirrors it, so `export USER=root` changes nothing.
+local currentUser = "root"
+local privileged  = 0       -- > 0 while the kernel acts on a user's behalf
+local DENIED      = "permission denied"
+
+function kernel.user() return currentUser end
+
+-- Absolute path without "." / ".." / "//" parts, for permission checks.
+local function clean(path)
+  local parts = {}
+  for seg in path:gsub("\\", "/"):gmatch("[^/]+") do
+    if seg == ".." then parts[#parts] = nil elseif seg ~= "." then parts[#parts + 1] = seg end
+  end
+  return "/" .. table.concat(parts, "/")
+end
+
+-- Root may do anything. Other users may write only below their home, /tmp
+-- and /mnt (removable disks), and may not read /etc/shadow. This guards
+-- against mistakes and other users; it is no sandbox: a program can still
+-- reach the disk through `component` directly.
+local function allowed(path, write)
+  if currentUser == "root" or privileged > 0 then return true end
+  local p = clean(path)
+  if p == "/etc/shadow" then return false end
+  if not write then return true end
+  local function under(dir) return p == dir or p:sub(1, #dir + 1) == dir .. "/" end
+  return under("/home/" .. currentUser) or under("/tmp") or under("/mnt")
+end
+
+-- ============================================================
 -- Virtual File System
 -- ============================================================
 local mounts = {}      -- path -> proxy
 kernel.fs = {}
 
 function kernel.fs.mount(path, proxy)
+  if currentUser ~= "root" then return nil, DENIED end
   mounts[path] = proxy
+  return true
 end
 
 function kernel.fs.umount(path)
+  if currentUser ~= "root" then return nil, DENIED end
   mounts[path] = nil
+  return true
 end
 
 function kernel.fs.mounts()
@@ -107,16 +144,19 @@ function kernel.fs.list(path)
 end
 
 function kernel.fs.makeDirectory(path)
+  if not allowed(path, true) then return false, DENIED end
   local p, sub = resolve(path); if not p then return false end
   return p.makeDirectory(sub)
 end
 
 function kernel.fs.remove(path)
+  if not allowed(path, true) then return false, DENIED end
   local p, sub = resolve(path); if not p then return false end
   return p.remove(sub)
 end
 
 function kernel.fs.rename(from, to)
+  if not allowed(from, true) or not allowed(to, true) then return false, DENIED end
   local pa, sa = resolve(from)
   local pb, sb = resolve(to)
   if not pa or not pb or pa.address ~= pb.address then return false, "cross-device" end
@@ -124,6 +164,7 @@ function kernel.fs.rename(from, to)
 end
 
 function kernel.fs.open(path, mode)
+  if not allowed(path, (mode or "r"):find("[wa]") ~= nil) then return nil, DENIED end
   local p, sub = resolve(path); if not p then return nil, "not found" end
   local h, err = p.open(sub, mode or "r")
   if not h then return nil, err end
@@ -191,6 +232,105 @@ function _G.require(name)
     end
   end
   error("module '" .. name .. "' not found", 2)
+end
+
+-- ============================================================
+-- Accounts (the files are handled by /lib/auth.lua)
+-- ============================================================
+-- Run fn with the permission checks off: lets the kernel read /etc/shadow
+-- for sudo or change a password for passwd on a user's behalf.
+local function asKernel(fn, ...)
+  privileged = privileged + 1
+  local res = table.pack(pcall(fn, ...))
+  privileged = privileged - 1
+  if not res[1] then error(res[2], 0) end
+  return table.unpack(res, 2, res.n)
+end
+local fio = { read = function(p) return kernel.fs.readAll(p) end,
+              write = function(p, d) return kernel.fs.writeAll(p, d) end }
+local function auth() return require("auth") end
+local function lookup(name) return asKernel(function() return auth().user(fio, name) end) end
+
+-- Run fn as `name`; $USER (and $HOME when given) follow along.
+local function switch(name, home, fn, ...)
+  local prevUser, prevEnv, prevHome = currentUser, _G.USER, _G.HOME
+  currentUser, _G.USER = name, name
+  if home then _G.HOME = home end
+  local res = table.pack(pcall(fn, ...))
+  currentUser, _G.USER, _G.HOME = prevUser, prevEnv, prevHome
+  if not res[1] then error(res[2], 0) end
+  return table.unpack(res, 2, res.n)
+end
+
+-- True if `password` is `name`'s. A plain-text password from before
+-- ByteOS 1.4 is replaced by its hash on the way.
+function kernel.checkPassword(name, password)
+  return asKernel(function()
+    local ok, legacy = auth().check(password, auth().storedHash(fio, name))
+    if ok and legacy then auth().setPassword(fio, name, password) end
+    return ok == true
+  end)
+end
+
+local SUDO_TIMEOUT = 300   -- seconds a correct sudo password is remembered
+local stamps = {}          -- user -> uptime of their last correct sudo password
+
+-- Run fn as `name` without a password. Only root may (login does this).
+function kernel.runAs(name, fn, ...)
+  if currentUser ~= "root" then error(DENIED, 2) end
+  local u = lookup(name)
+  if not u then error("no such user: " .. tostring(name), 2) end
+  local res = table.pack(pcall(switch, name, u.home, fn, ...))
+  stamps[name] = nil  -- the next login asks for the sudo password again
+  if not res[1] then error(res[2], 0) end
+  return table.unpack(res, 2, res.n)
+end
+
+function kernel.sudoNeedsPassword()
+  local t = stamps[currentUser]
+  return currentUser ~= "root" and not (t and computer.uptime() - t <= SUDO_TIMEOUT)
+end
+
+function kernel.sudoForget() stamps[currentUser] = nil end
+
+-- sudo: run fn as root. Only members of wheel; they give their own
+-- password, which is remembered for SUDO_TIMEOUT seconds.
+-- Returns true, fn's results or nil, "notsudoer" | "password".
+function kernel.sudo(password, fn, ...)
+  local name = currentUser
+  if name ~= "root" then
+    if not asKernel(function() return auth().inGroup(fio, name, "wheel") end) then
+      return nil, "notsudoer"
+    end
+    if kernel.sudoNeedsPassword() and not kernel.checkPassword(name, password) then
+      return nil, "password"
+    end
+    stamps[name] = computer.uptime()
+  end
+  return true, switch("root", nil, fn, ...)
+end
+
+-- su: run fn as `name`. Root needs no password, everyone else `name`'s.
+-- Returns true, fn's results or nil, "unknown" | "password".
+function kernel.su(name, password, fn, ...)
+  local u = lookup(name)
+  if not u then return nil, "unknown" end
+  if currentUser ~= "root" and not kernel.checkPassword(name, password) then
+    return nil, "password"
+  end
+  return true, switch(name, u.home, fn, ...)
+end
+
+-- passwd: root sets anyone's password; a user only their own, giving the
+-- current one first. Returns true or nil, reason.
+function kernel.changePassword(name, old, new)
+  if not lookup(name) then return nil, "user '" .. tostring(name) .. "' does not exist" end
+  if currentUser ~= "root" then
+    if name ~= currentUser then return nil, DENIED end
+    if not kernel.checkPassword(name, old) then return nil, "Authentication failure" end
+  end
+  asKernel(function() auth().setPassword(fio, name, new) end)
+  return true
 end
 
 -- ============================================================

@@ -1,3 +1,3 @@
--- whoami
-term.write((_G.USER or "root") .. "\n")
+-- whoami - print the user you are acting as (the kernel's view, not $USER)
+term.write(k.user() .. "\n")
 return 0

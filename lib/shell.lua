@@ -158,10 +158,18 @@ function shell.builtins.exit() error("__exit__", 0) end
 -- Back to the login prompt, even from a nested shell such as StarShell.
 function shell.builtins.logout() error("__logout__", 0) end
 
+-- Set by login and su from the kernel's idea of who you are; changing them
+-- would only make the prompt lie.
+local READONLY = { USER = true, HOME = true, LOGNAME = true }
+
 -- NAME=value; refuses names that are not shell variables (see validName).
 local function assign(prog, name, value)
   if not shell.validName(name) then
     shell.err(prog, "'" .. name .. "': not a valid variable name (use UPPERCASE)")
+    return 1
+  end
+  if READONLY[name] then
+    shell.err(prog, name .. ": read-only variable")
     return 1
   end
   _G[name] = value
@@ -257,6 +265,7 @@ function shell.builtins.set(args)
     if not name then shell.err("set", "usage: set [-e] NAME [value...]"); return 1 end
     if erase then
       if not shell.validName(name) then shell.err("set", "'" .. name .. "': not a variable"); return 1 end
+      if READONLY[name] then shell.err("set", name .. ": read-only variable"); return 1 end
       _G[name] = nil
       return 0
     end

@@ -612,7 +612,8 @@ local function runSetup()
 
       step("Creating user accounts", function()
         local passwd = { "root:x:0:0:root:/home/root:/bin/sh" }
-        local shadow = { "root:" .. cfg.rootpw .. ":::::::" }
+        local hash = require("auth").hash
+        local shadow = { "root:" .. hash(cfg.rootpw) .. ":::::::" }
         local group  = {
           "root:x:0:root",
           "wheel:x:10:" .. ((cfg.user and cfg.wheel) and cfg.user or ""),
@@ -620,8 +621,8 @@ local function runSetup()
         }
         if cfg.user then
           table.insert(passwd,
-            ("%s:x:1000:1000:%s:/home/%s:/bin/sh"):format(cfg.user, cfg.user, cfg.user))
-          table.insert(shadow, ("%s:%s:::::::"):format(cfg.user, cfg.userpw))
+            ("%s:x:1000:100:%s:/home/%s:/bin/sh"):format(cfg.user, cfg.user, cfg.user))
+          table.insert(shadow, ("%s:%s:::::::"):format(cfg.user, hash(cfg.userpw)))
           local home = "/home/" .. cfg.user
           if not fs.exists(home) then fs.makeDirectory(home) end
           -- like /etc/skel on Linux: the new user starts with the default .shrc
@@ -663,25 +664,12 @@ end
 
 -- ===== Login ================================================================
 
--- Helper: look up a user (reads /etc/passwd + /etc/shadow if present)
+-- The account for `name` if `password` is right. The kernel checks the
+-- hash in /etc/shadow (and turns an old plain-text password into one).
 local function lookupUser(name, password)
-  -- shadow first (passwords stored separately, Arch-style)
-  local shadowPass
-  if fs.exists("/etc/shadow") then
-    for line in (fs.readAll("/etc/shadow") or ""):gmatch("[^\n]+") do
-      local n, p = line:match("([^:]+):([^:]*)")
-      if n == name then shadowPass = p; break end
-    end
-  end
-  for line in (fs.readAll("/etc/passwd") or ""):gmatch("[^\n]+") do
-    local n, pw, _, _, _, home, sh = line:match("([^:]+):([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):([^:]*)")
-    if n == name then
-      local stored = (pw == "x" or pw == "" or pw == nil) and shadowPass or pw
-      if stored == password then
-        return { name = n, home = home, shell = sh }
-      end
-      return nil
-    end
+  local u = require("auth").user(fs, name)
+  if u and k.checkPassword(name, password) then
+    return { name = u.name, home = u.home, shell = u.shell }
   end
   return nil
 end
@@ -803,13 +791,13 @@ end
 -- Log in, run the shell until the user exits, then return to the login screen.
 while true do
   login()
-  local ok, err = pcall(shell.repl)
+  -- the kernel runs the session as that user (file permissions, sudo)
+  local ok, err = pcall(k.runAs, _G.USER, shell.repl)
   if not ok then
     term.cwrite(T.err, "shell crashed: " .. tostring(err) .. "\n")
     k.event.pull(2)
   end
   -- logged out: nothing of this session carries over to the next user
-  _G.SUDO_TIMESTAMPS = nil
   _G.USER, _G.HOME, _G.SHELL = nil, nil, nil
   _G.PWD = "/"
 end
