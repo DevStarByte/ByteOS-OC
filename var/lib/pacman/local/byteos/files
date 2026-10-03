@@ -17,6 +17,7 @@
 /bin/help.lua
 /bin/hostname.lua
 /bin/id.lua
+/bin/ip.lua
 /bin/journalctl.lua
 /bin/kill.lua
 /bin/less.lua
@@ -27,10 +28,14 @@
 /bin/man.lua
 /bin/mkdir.lua
 /bin/mount.lua
+/bin/msg.lua
 /bin/mv.lua
 /bin/neofetch.lua
+/bin/netcp.lua
+/bin/netscan.lua
 /bin/pacman.lua
 /bin/passwd.lua
+/bin/ping.lua
 /bin/ps.lua
 /bin/pwd.lua
 /bin/reboot.lua
@@ -67,6 +72,7 @@
 /lib/files.lua
 /lib/internet.lua
 /lib/lineedit.lua
+/lib/net.lua
 /lib/setup.lua
 /lib/sha256.lua
 /lib/shell.lua
@@ -77,6 +83,7 @@
 /lib/theme.lua
 /lib/units.lua
 /sbin/init.lua
+/sbin/netd.lua
 /sbin/timesyncd.lua
 /usr/share/man/byteos.txt
 /usr/share/man/byteshell.txt

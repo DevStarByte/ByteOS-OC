@@ -22,6 +22,7 @@
     signals{...}                 queue signals for computer.pullSignal
     deliver{...}                 the same, and have the kernel handle them now
     disk(dir, addr, label)       a filesystem component on a host dir
+    network(peers) incoming(...) a network card and other computers on it
     useDatacard(true|false)      put a tier 3 data card in (or take it out)
     file(path)  put(path, data)  read/write the fake disk directly
     screen()                     what the terminal shows
@@ -223,6 +224,43 @@ function disk(dir, addr, label)
   COMPONENTS[addr] = { "filesystem", fsProxy(dir, addr, label) }
 end
 function undisk(addr) COMPONENTS[addr] = nil end
+
+-- A network card. peers[address] = { distance = n, reply = fn(kind, id, ...) }
+-- stands for another computer: whatever reply returns (an answer kind and
+-- its values) comes back as a modem_message. Returns the list of every
+-- message this computer sent: { to = address|nil (broadcast), args = {...} }.
+function network(peers)
+  local sent, ports = {}, {}
+  local me = "modem000-test"
+  local function answer(addr, port, ...)
+    local peer = peers[addr]
+    if not peer then return end
+    local args = table.pack(...)          -- magic, kind, id, ...
+    local r = table.pack(peer.reply(table.unpack(args, 2, args.n)))
+    if r[1] then
+      SIGNALS[#SIGNALS + 1] = { "modem_message", me, addr, port, peer.distance or 5, args[1], r[1], args[3], table.unpack(r, 2, r.n) }
+    end
+  end
+  COMPONENTS[me] = { "modem", {
+    address = me,
+    isWireless = function() return false end,
+    maxPacketSize = function() return 8192 end,
+    open = function(p) ports[p] = true; return true end,
+    close = function(p) ports[p] = nil; return true end,
+    isOpen = function(p) return ports[p] == true end,
+    send = function(to, port, ...) sent[#sent + 1] = { to = to, args = table.pack(...) }; answer(to, port, ...); return true end,
+    broadcast = function(port, ...)
+      sent[#sent + 1] = { args = table.pack(...) }
+      for addr in pairs(peers) do answer(addr, port, ...) end
+      return true
+    end,
+  } }
+  return sent
+end
+-- a message from another computer, as its network card would deliver it
+function incoming(from, distance, ...)
+  deliver({ { "modem_message", "modem000-test", from, 4400, distance, "bytenet", ... } })
+end
 
 _G.ROOT, _G.REPO, _G.shell, _G.term = ROOT, REPO, shell, term
 

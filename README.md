@@ -66,7 +66,8 @@ More details and other ways to install are under
   processes, services and logs: `ps kill systemctl journalctl dmesg logger`;
   help: `man` (`man <command>`, `man byteshell`, `man -k <word>`);
   users: `whoami id groups passwd su sudo useradd userdel usermod`;
-  disks: `mount umount lsblk`; network: `wget curl`.
+  disks: `mount umount lsblk`; internet: `wget curl`; between computers:
+  `ip netscan ping msg netcp`.
 - **pacman** — `-S / -R / -Q / -Qi / -Sy / -Syu / -Ss` with a tiny on-disk repo format.
 - **edit** — full-screen editor with line numbers and Lua syntax highlighting
   (`^S` save, `^Q` quit, `^K`/`^U` cut/paste line, `^G` go to line).
@@ -210,7 +211,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.11.1 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.12.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -242,7 +243,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.11.1
+byteos 1.12.0
 cowsay 0.2.0
 ```
 
@@ -457,6 +458,23 @@ root@byteos ~# date "+%A, %d %B %Y %H:%M"
 Without an internet card `date` shows the world's time and says so ("world").
 The system log uses the real time once it is synchronized.
 
+## Between computers (ByteNet)
+
+Computers with a **network card** (wired through cables and relays, or
+wireless) find and talk to each other. Each one runs the `netd` service,
+which answers on port 4400:
+
+```sh
+root@byteos ~# ip                      # this computer's card and address
+root@byteos ~# netscan                 # every ByteOS computer on the network
+root@byteos ~# ping box2               # by name, an address, or its first characters
+root@byteos ~# msg box2 dinner is ready  # shows up on box2's screen
+root@byteos ~# netcp notes.txt box2    # arrives in box2's /tmp/incoming/
+```
+
+Anyone on the network can send messages and files, as OpenComputers works
+that way; files only ever land in `/tmp/incoming` and are limited to 64 KiB.
+
 ## Disks and network
 
 Extra disks (a second HDD, a floppy) appear under `/mnt/<first 8 characters
@@ -489,10 +507,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.11.1.g82e80f4  cowsay-0.3.0
+Packages (2) byteos-1.12.0.g436e0a8  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.11.1.g82e80f4 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.12.0.g436e0a8 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...

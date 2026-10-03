@@ -76,7 +76,7 @@ end)
 
 test("enable starts at boot; only root may control services", function()
   run("systemctl enable hello")
-  eq(file("/etc/systemd/enabled"), "timesyncd\nhello\n", "timesyncd is enabled by default")
+  eq(file("/etc/systemd/enabled"), "timesyncd\nnetd\nhello\n", "timesyncd and netd are enabled by default")
   local started = {}
   for _, r in ipairs(require("systemd").boot()) do started[r.name] = r.ok end
   eq(started.hello, true)

@@ -1,0 +1,6 @@
+[Unit]
+Description=ByteNet Network Daemon
+
+[Service]
+ExecStart=netd
+Restart=on-failure

@@ -26,6 +26,12 @@ TIME
   date and timedatectl show the time; with an internet card timesyncd keeps
   it real and /etc/timezone applies (timedatectl set-timezone Europe/Berlin).
 
+NETWORK
+  With a network card, computers talk over ByteNet (port 4400, answered by
+  the netd service): ip, netscan, ping <host>, msg <host> <text> and
+  netcp <file> <host> (files land in /tmp/incoming/, 64 KiB at most).
+  With an internet card, wget and curl reach the web.
+
 SERVICES AND LOGS
   systemctl manages services (man systemd.service), journalctl and dmesg
   show the log, ps and kill the processes.
