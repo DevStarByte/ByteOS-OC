@@ -280,26 +280,29 @@ end
 
 -- ---- windows -----------------------------------------------------------------------
 local function open(cmd)
-  local s = surface.new(screen, 1, 2, 10, 3)
-  local t = tty.new(s)
-  local win = { id = nextId, title = cmd or "byteshell", surface = s, term = t, ws = state.active }
+  local win = { id = nextId, title = cmd or "byteshell", ws = state.active }
   nextId = nextId + 1
-  local pid, err = k.process.spawn(function()
-    if cmd then return shell.execute(cmd) end
-    shell.loop()
-  end, { name = "hyprbyte: " .. win.title, tty = t, onexit = function() win.closed = true end })
-  if not pid then return nil, err end
-  win.pid = pid
   local cur = ws()
   table.insert(cur.list, math.min(#cur.list + 1, cur.focus + 1), win)
   cur.focus = math.min(#cur.list, cur.focus + (#cur.list > 1 and 1 or 0))
   cur.fullscreen = false
+  -- its place is known before anything runs in it: the shell starts with
+  -- the real size, also while the opening animation plays
   local rects = {}
   local x0, y0, w0, h0 = area()
   local g = conf.gaps_out
   tile(cur.list, 1, x0 + g, y0 + g, w0 - 2 * g, h0 - 2 * g, rects)
+  local r = rects[win] or { x0, y0, w0, h0 }
+  win.surface = surface.new(screen, r[1] + 1, r[2] + 1, math.max(1, r[3] - 2), math.max(1, r[4] - 2))
+  win.term = tty.new(win.surface)
   if not exclusive() then popin(rects[win]) end
   layout()
+  local pid, err = k.process.spawn(function()
+    if cmd then return shell.execute(cmd) end
+    shell.loop()
+  end, { name = "hyprbyte: " .. win.title, tty = win.term, onexit = function() win.closed = true end })
+  if not pid then win.closed = true; return nil, err end
+  win.pid = pid
   return win
 end
 
