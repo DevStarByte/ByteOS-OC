@@ -3,9 +3,10 @@
 > An Arch-Linux-flavoured operating system for the **OpenComputers** Minecraft mod.
 
 ByteOS reimagines Arch Linux inside a virtual computer running on Lua 5.3/5.4.
-You get a familiar layout (`/bin`, `/etc`, `/home`, `/usr`, `/var`), a colourful shell prompt
-in the classic `[user@host pwd]$` style, an Arch-style **`pacman`** package manager,
-**`neofetch`**, an `init` system that prints `[ OK ]` lines, the works.
+You get a familiar layout (`/bin`, `/etc`, `/home`, `/usr`, `/var`), a shell modelled on
+**fish**, an Arch-style **`pacman`** package manager that also updates the OS itself,
+users with `sudo`, services, **`neofetch`**, an `init` system that prints `[ OK ]` lines,
+the works.
 
 ```
    ____        _        ___  ____
@@ -15,6 +16,38 @@ in the classic `[user@host pwd]$` style, an Arch-style **`pacman`** package mana
   |____/ \__, |\__\___|\___/|____/
          |___/
 ```
+
+## Quick install
+
+Everything happens inside Minecraft:
+
+1. Build a computer with an **internet card** and a blank **hard disk**.
+2. Put the **OpenOS floppy** in (craft a floppy disk together with the
+   OpenComputers manual) and turn the computer on.
+3. In the OpenOS shell, type these two lines:
+
+   ```
+   wget -f https://raw.githubusercontent.com/DevStarByte/ByteOS-OC/master/install.lua /tmp/install.lua
+   /tmp/install.lua
+   ```
+
+4. Answer the questions. Pressing Enter takes the default, except for erasing
+   the disk, which you have to confirm with `yes`:
+
+   | Question | Answer |
+   |---|---|
+   | Source | `1` (the internet) |
+   | Which one is the target | the number of your hard disk |
+   | Continue? (the disk will be erased) | `yes` |
+   | Flash ByteBIOS onto the EEPROM? | Enter (yes) |
+   | Reboot now? | Enter (yes) |
+
+5. Take the OpenOS floppy out. ByteOS boots, and on the first start asks for a
+   root password and a user name.
+
+That's it. From then on, `sudo pacman -Syu` keeps ByteOS up to date.
+More details and other ways to install are under
+[Installing inside Minecraft](#installing-inside-minecraft-opencomputers).
 
 ## Features
 
@@ -75,6 +108,9 @@ You will need:
 - An EEPROM
 - A managed hard disk drive
 - A screen + keyboard + GPU (any tier)
+- For installing over the internet: an **internet card** and the **OpenOS
+  floppy**
+- Optional: a **tier 3 data card**, so pacman can check package signatures
 
 ### Easiest way: over the internet, from OpenOS
 
