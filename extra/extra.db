@@ -35,6 +35,17 @@ csize = 3137
 crc32 = 6edfaa47
 sha256 = 72d447d776829ef786f549fac6c66f136991d6b2930939a1efcdf85d3477ca7d
 
+name = hyprbyte
+version = 1.0.0-1
+desc = tiling window manager in the spirit of Hyprland: windows, workspaces, a bar
+depend = byteos>=1.13.0
+backup = /etc/hyprbyte.conf
+isize = 26850
+filename = hyprbyte-1.0.0-1.bpk
+csize = 19679
+crc32 = 71dba0e3
+sha256 = e7e02c3cf0f42154724c63fe7a780e7f7043d63a5894ba9639bb7e5dcacc1e39
+
 name = nano
 version = 1.0.0-1
 desc = the worlds smallest line-buffer editor

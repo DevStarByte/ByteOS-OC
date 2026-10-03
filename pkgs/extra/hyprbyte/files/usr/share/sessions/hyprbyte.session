@@ -1,0 +1,4 @@
+[Session]
+Name=Hyprbyte
+Comment=A tiling window manager: windows, workspaces and a bar
+Exec=hyprbyte

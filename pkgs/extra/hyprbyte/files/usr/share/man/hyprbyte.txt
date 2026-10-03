@@ -1,0 +1,43 @@
+hyprbyte - a tiling window manager for ByteOS
+
+Hyprbyte puts terminals side by side, like Hyprland on Arch. Each window
+runs its own ByteShell (or one program); new windows split the space
+(dwindle), there are nine workspaces and a bar on top.
+
+START
+  hyprbyte                      from the shell; Mod+Shift+E returns to it
+  At the login screen, F2 picks the session "Hyprbyte"; quitting it logs
+  out. The login remembers the choice.
+
+KEYS (Mod = Alt unless the config says otherwise)
+  Mod+Enter          a new terminal
+  Mod+D              run a program in a new window
+  Mod+Q              close the window in focus
+  Mod+Arrows, Tab    focus the previous / next window; a click focuses too
+  Mod+Shift+Arrows   move the window back / forward in the layout
+  Mod+F              full screen
+  Mod+1 ... 9        workspace 1 to 9
+  Mod+Shift+1 ... 9  send the window there
+  Mod+Shift+E        quit (every window is closed)
+
+  Everything else goes to the window in focus, Ctrl+C included.
+
+SETTINGS
+  /etc/hyprbyte.conf, then ~/.config/hyprbyte.conf:
+    mod = alt | super | ctrl
+    gaps_in = 1          gaps_out = 1
+    animations = yes     rounding = yes     bar = yes
+    exec-once = btop     (any number of them)
+
+HYPRCTL
+  hyprctl clients | workspaces | activewindow | version
+  hyprctl dispatch exec btop
+  hyprctl dispatch workspace 2 | movetoworkspace 3 | killactive
+  hyprctl dispatch fullscreen | cyclenext | exit
+
+MEMORY
+  Each window is a shell and a screen buffer; on a Tier 2 screen two or
+  three windows are comfortable, with Tier 3 memory more.
+
+SEE ALSO
+  man byteshell

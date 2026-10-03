@@ -42,6 +42,7 @@ Bigger or more demo-y packages. Enabled by default in `/etc/pacman.conf`.
 | [power](pkgs/extra/power)     | 1.0.0 | Energy stored, use per second, time left. `power -w` keeps watching. |
 | [rsh](pkgs/extra/rsh)         | 1.0.0 | Remote shell over ByteNet: `rsh alice@box2 uptime`, or a prompt there. |
 | [netfs](pkgs/extra/netfs)     | 1.0.0 | Shared folders over ByteNet: share in `/etc/netfs.conf`, `netfs mount box2:pub /mnt/pub`. |
+| [hyprbyte](pkgs/extra/hyprbyte) | 1.0.0 | Tiling window manager like Hyprland: terminals side by side, 9 workspaces, a bar, `hyprctl`. Alt+Enter opens a terminal; also a login session (F2). |
 
 ## Quick demo run
 
