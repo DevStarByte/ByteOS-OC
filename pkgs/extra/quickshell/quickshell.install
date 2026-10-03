@@ -1,0 +1,4 @@
+function post_install()
+  print("Start it with Hyprbyte: add  exec-once = quickshell  to ~/.config/hyprbyte.conf")
+  print("Your shell goes in ~/.config/quickshell/shell.lua (man quickshell)")
+end

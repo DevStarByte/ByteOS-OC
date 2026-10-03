@@ -1,0 +1,188 @@
+BPK1
+197 - .PKGINFO
+name = quickshell
+version = 1.0.0-1
+desc = build your own desktop shell for Hyprbyte: bars and widgets from a Lua file
+depend = hyprbyte>=1.1.0
+backup = /etc/xdg/quickshell/shell.lua
+isize = 13753
+197 - .INSTALL
+function post_install()
+  print("Start it with Hyprbyte: add  exec-once = quickshell  to ~/.config/hyprbyte.conf")
+  print("Your shell goes in ~/.config/quickshell/shell.lua (man quickshell)")
+end
+501 - /etc/xdg/quickshell/shell.lua
+-- Quickshell's default shell. Copy it to ~/.config/quickshell/shell.lua
+-- and change it there: Quickshell reloads it as soon as you save.
+-- Every widget is described in `man quickshell`.
+return {
+  PanelWindow {
+    anchor = "top",
+    color = "base",
+    Text { text = " ◆ ", color = "accent" },
+    Workspaces {},
+    Separator {},
+    ActiveWindow { max = 40 },
+    Spacer {},
+    Memory {},
+    Separator {},
+    Energy {},
+    Separator {},
+    Clock { format = "%a %d %b  %H:%M " },
+  },
+}
+131 - /usr/bin/qs.lua
+--[[
+  qs - the short name of quickshell (see man quickshell)
+]]--
+return shell.run("quickshell " .. table.concat(arg or {}, " "))
+3157 - /usr/bin/quickshell.lua
+--[[
+  quickshell [-p <file>] - your own desktop shell for Hyprbyte
+
+  Draws the panels described in ~/.config/quickshell/shell.lua (else
+  /etc/xdg/quickshell/shell.lua) along the edges of Hyprbyte's screen,
+  and draws them again when you save the file. A mistake in it shows up
+  in a red panel instead.
+
+  Start it with Hyprbyte: put  exec-once = quickshell  into
+  ~/.config/hyprbyte.conf. qs is the same command. See man quickshell.
+
+    -p <file>   use this shell file
+]]--
+local qs = require("quickshell")
+local args = arg or {}
+local path
+for i = 1, #args do if args[i] == "-p" or args[i] == "--path" then path = args[i + 1] end end
+if not path then
+  local own = (_G.HOME or "/") .. "/.config/quickshell/shell.lua"
+  path = fs.exists(own) and own or "/etc/xdg/quickshell/shell.lua"
+end
+
+local hypr = package.loaded["hyprbyte.state"]
+if not hypr or not hypr.addLayer then
+  print("quickshell: Hyprbyte (1.1 or newer) is not running; start it from Hyprbyte with exec-once = quickshell")
+  return 1
+end
+for _, l in ipairs(hypr.layers) do
+  if l.namespace == "quickshell" then print("quickshell: already running"); return 1 end
+end
+
+local ctx = { hypr = hypr }
+local layers, commands, source = {}, {}, nil
+
+local function show(panels)
+  for _, l in ipairs(layers) do hypr.removeLayer(l) end
+  layers, commands = {}, {}
+  for _, p in ipairs(panels) do
+    layers[#layers + 1] = hypr.addLayer({
+      namespace = "quickshell", anchor = p.props.anchor or "top", height = p.props.height or 1,
+      draw = function(gpu, x, y, w, h) qs.draw(p, ctx, gpu, x, y, w, h) end,
+      click = function(x) qs.click(p, ctx, x) end,
+    })
+    for _, c in ipairs(qs.commands(p)) do commands[#commands + 1] = c end
+  end
+end
+
+local function load()
+  source = fs.readAll(path)
+  if not source then return nil, "cannot read " .. path end
+  local env = qs.env(hypr)
+  local chunk, err = _G.load(source, "=" .. path, "t", env)
+  if not chunk then return nil, err end
+  local ok, result = pcall(chunk)
+  if not ok then return nil, result end
+  return qs.panels(result)
+end
+
+local function reload()
+  local panels, err = load()
+  if not panels then
+    print("error in " .. path .. ": " .. tostring(err))
+    local env = qs.env(hypr)
+    panels = { env.PanelWindow { anchor = "top", color = "red", env.Text { text = "quickshell: " .. tostring(err), color = "bright" } } }
+  else
+    print("loaded " .. path)
+  end
+  show(panels)
+end
+
+reload()
+local nextCheck = computer.uptime() + 2
+local okRun, err = pcall(function()
+  while package.loaded["hyprbyte.state"] == hypr do
+    local now = computer.uptime()
+    for _, c in ipairs(commands) do
+      if now >= (c.due or 0) then
+        local buf = {}
+        pcall(shell.withIO, { output = buf }, shell.execute, tostring(c.props.cmd or ""))
+        c.output = (table.concat(buf):match("^[^\n]*") or "")
+        c.due = now + (tonumber(c.props.interval) or 10)
+      end
+    end
+    if now >= nextCheck then
+      nextCheck = now + 2
+      if fs.readAll(path) ~= source then reload() end
+    end
+    k.event.pull(0.5)
+  end
+end)
+for _, l in ipairs(layers) do hypr.removeLayer(l) end
+if not okRun then error(err, 0) end
+return 0
+5576 z /usr/lib/quickshell.lua
+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2277 - /usr/share/man/quickshell.txt
+quickshell - build your own desktop shell for Hyprbyte
+
+Quickshell draws panels (bars) along the top or bottom of Hyprbyte's
+screen, made of widgets you list in a Lua file. It is ByteOS's take on
+Quickshell for Hyprland, with Lua where that one has QML.
+
+START
+  In ~/.config/hyprbyte.conf:   exec-once = quickshell
+  or from a window:             quickshell &      (qs is the same)
+  With a panel at the top, Hyprbyte leaves out its own bar.
+
+THE SHELL FILE
+  ~/.config/quickshell/shell.lua, else /etc/xdg/quickshell/shell.lua (a
+  good start: copy it). It returns a PanelWindow or a list of them; saving
+  the file shows the change within two seconds.
+
+  return {
+    PanelWindow {
+      anchor = "top",              -- or "bottom"
+      height = 1,                  -- rows
+      color = "base",              -- the panel's background
+      Workspaces {},
+      ActiveWindow { max = 30 },
+      Spacer {},
+      Command { cmd = "uptime", interval = 60 },
+      Button { text = "btop", onClick = "btop", color = "green" },
+      Clock { format = "%H:%M " },
+    },
+    PanelWindow { anchor = "bottom", Text { text = "hello" } },
+  }
+
+WIDGETS
+  Text { text = "..." | function() return ... end }
+  Clock { format = "%a %H:%M" }             (see man date for the codes)
+  Workspaces { shown = 5 }                  click one to go there
+  ActiveWindow { max = 40, empty = "" }     the title of the window in focus
+  Memory { format = "mem %d%%" }
+  Energy { format = "⚡%d%%" }              hidden without a battery
+  Command { cmd = "...", interval = 10, format = "up %s" }
+                                            the first line a command prints
+  Button { text = "...", onClick = "btop" | function() ... end }
+                                            a command opens in a window
+  Separator { char = "│" }
+  Spacer {}                                 takes up the free room
+  Row { ... }                               widgets kept together
+
+  Every widget also takes color (a theme name such as "accent", "green",
+  "muted" or a number like 0xFF8800), bg and padding (spaces around it).
+
+  The file is Lua: functions, variables and if work; hypr is Hyprbyte's
+  state (hypr.active, hypr.workspaces, hypr.focused()), clock the clock.
+
+SEE ALSO
+  man hyprbyte, man date

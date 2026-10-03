@@ -1,0 +1,54 @@
+quickshell - build your own desktop shell for Hyprbyte
+
+Quickshell draws panels (bars) along the top or bottom of Hyprbyte's
+screen, made of widgets you list in a Lua file. It is ByteOS's take on
+Quickshell for Hyprland, with Lua where that one has QML.
+
+START
+  In ~/.config/hyprbyte.conf:   exec-once = quickshell
+  or from a window:             quickshell &      (qs is the same)
+  With a panel at the top, Hyprbyte leaves out its own bar.
+
+THE SHELL FILE
+  ~/.config/quickshell/shell.lua, else /etc/xdg/quickshell/shell.lua (a
+  good start: copy it). It returns a PanelWindow or a list of them; saving
+  the file shows the change within two seconds.
+
+  return {
+    PanelWindow {
+      anchor = "top",              -- or "bottom"
+      height = 1,                  -- rows
+      color = "base",              -- the panel's background
+      Workspaces {},
+      ActiveWindow { max = 30 },
+      Spacer {},
+      Command { cmd = "uptime", interval = 60 },
+      Button { text = "btop", onClick = "btop", color = "green" },
+      Clock { format = "%H:%M " },
+    },
+    PanelWindow { anchor = "bottom", Text { text = "hello" } },
+  }
+
+WIDGETS
+  Text { text = "..." | function() return ... end }
+  Clock { format = "%a %H:%M" }             (see man date for the codes)
+  Workspaces { shown = 5 }                  click one to go there
+  ActiveWindow { max = 40, empty = "" }     the title of the window in focus
+  Memory { format = "mem %d%%" }
+  Energy { format = "⚡%d%%" }              hidden without a battery
+  Command { cmd = "...", interval = 10, format = "up %s" }
+                                            the first line a command prints
+  Button { text = "...", onClick = "btop" | function() ... end }
+                                            a command opens in a window
+  Separator { char = "│" }
+  Spacer {}                                 takes up the free room
+  Row { ... }                               widgets kept together
+
+  Every widget also takes color (a theme name such as "accent", "green",
+  "muted" or a number like 0xFF8800), bg and padding (spaces around it).
+
+  The file is Lua: functions, variables and if work; hypr is Hyprbyte's
+  state (hypr.active, hypr.workspaces, hypr.focused()), clock the clock.
+
+SEE ALSO
+  man hyprbyte, man date

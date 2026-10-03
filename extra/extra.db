@@ -36,15 +36,15 @@ crc32 = 6edfaa47
 sha256 = 72d447d776829ef786f549fac6c66f136991d6b2930939a1efcdf85d3477ca7d
 
 name = hyprbyte
-version = 1.0.0-1
+version = 1.1.0-1
 desc = tiling window manager in the spirit of Hyprland: windows, workspaces, a bar
 depend = byteos>=1.13.0
 backup = /etc/hyprbyte.conf
-isize = 26850
-filename = hyprbyte-1.0.0-1.bpk
-csize = 19679
-crc32 = 71dba0e3
-sha256 = e7e02c3cf0f42154724c63fe7a780e7f7043d63a5894ba9639bb7e5dcacc1e39
+isize = 31159
+filename = hyprbyte-1.1.0-1.bpk
+csize = 22705
+crc32 = 94cc8696
+sha256 = fe43a1ab6d0781fbab4b2fc5ee490d7bf978628ca3ba8de2f235002880b4ab78
 
 name = nano
 version = 1.0.0-1
@@ -74,6 +74,17 @@ filename = power-1.0.0-1.bpk
 csize = 2454
 crc32 = 91a26fa4
 sha256 = 0ca469d3b1ba4407513b9e276630e49f11f2d304c39b69feb7c4a856a986e1fb
+
+name = quickshell
+version = 1.0.0-1
+desc = build your own desktop shell for Hyprbyte: bars and widgets from a Lua file
+depend = hyprbyte>=1.1.0
+backup = /etc/xdg/quickshell/shell.lua
+isize = 13753
+filename = quickshell-1.0.0-1.bpk
+csize = 12228
+crc32 = 704cd00f
+sha256 = 9d5352ef5c2cf40eee7917e1cad79e057b22ad34d641d9529b54b9e994b9fb5e
 
 name = rsh
 version = 1.0.0-1
