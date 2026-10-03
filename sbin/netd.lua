@@ -10,7 +10,15 @@ local net = require("net")
 local LIMIT = 65536
 local transfers = {}
 
-local function notice(text)
+-- Tell whoever sits at the screen: as a notification when a daemon shows
+-- them (the libnotify and dunst packages), else on the screen itself.
+local function notice(text, summary, body)
+  local okN, notify = pcall(require, "notify")
+  if okN and notify.running() then
+    notify.send(summary or "ByteNet", body or text, { app = "netd" })
+    print(text)
+    return
+  end
   local screen = rawget(_G, "term") -- the real screen, not this service's log
   if screen and screen.cwrite then
     screen.write("\n")
@@ -23,7 +31,7 @@ local handlers = {}
 function handlers.ping(from, id) net.send(from, "ping-reply", id) end
 function handlers.who(from, id) net.send(from, "who-reply", id, _G.HOSTNAME or "byteos", _G._OSVERSION or "ByteOS") end
 function handlers.msg(from, id, who, text)
-  notice(("Message from %s: %s"):format(tostring(who), tostring(text)))
+  notice(("Message from %s: %s"):format(tostring(who), tostring(text)), "Message from " .. tostring(who), tostring(text))
   net.send(from, "msg-reply", id, true)
 end
 handlers["file-offer"] = function(from, id, name, size, who)
@@ -49,7 +57,7 @@ handlers["file-done"] = function(from, id)
   local path = ("/tmp/incoming/%s-%s"):format(tostring(t.who):gsub("[^%w%._%-@]", "_"), t.name)
   local ok, err = fs.writeAll(path, data)
   if not ok then return net.send(from, "file-done-reply", id, false, tostring(err)) end
-  notice(("File from %s: %s (%d bytes)"):format(tostring(t.who), path, #data))
+  notice(("File from %s: %s (%d bytes)"):format(tostring(t.who), path, #data), "File from " .. tostring(t.who), ("%s (%d bytes)"):format(path, #data))
   net.send(from, "file-done-reply", id, true, path)
 end
 

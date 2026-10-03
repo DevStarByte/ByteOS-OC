@@ -288,3 +288,89 @@ test("quickshell puts its panels into Hyprbyte and follows its file", function()
   has(broken, "quickshell:")
   for _, p in ipairs(kernel.process.list()) do lacks(p.name, "quickshell", "stopped with Hyprbyte") end
 end)
+
+-- ---- the Hyprbyte ecosystem ---------------------------------------------------------
+local function settle(seq, n) for _ = 1, n or 4 do seq[#seq + 1] = { "noop" } end end
+local function spin(seq, s) seq[#seq + 1] = function() local t = os.clock(); while os.clock() - t < s do end end end
+
+test("dunst shows notify-send and ByteNet messages; hyprpaper fills empty space", function()
+  lacks(run(P .. "-S libnotify dunst rofi hyprlock hypridle hyprpaper"), "error")
+  has(run("notify-send hi"), "no notification daemon")
+  run("systemctl start netd")
+  put("/home/root/.config/hyprbyte.conf", "exec-once = dunst\nexec-once = hyprpaper\n")
+  local seq, s1, s2, s3 = {}, nil, nil, nil
+  settle(seq)
+  typed('notify-send -a test Hello "from the window"\n', seq)
+  settle(seq)
+  seq[#seq + 1] = function() s1 = rows(1, 12) end
+  seq[#seq + 1] = { "modem_message", "modem000-test", "b0b00000-0000-0000-0000-000000000009", 4400, 3,
+                    "bytenet", "msg", "id-1", "bob@box2", "dinner is ready" }
+  settle(seq)
+  seq[#seq + 1] = function() s2 = rows(1, 20) end
+  typed("dunstctl history > /tmp/dh\n", seq)
+  mod(3, 50, seq)                                  -- Alt+2: an empty workspace
+  settle(seq)
+  seq[#seq + 1] = function() s3 = rows(1, 200) end
+  mod(18, 69, seq, true)
+  signals(seq)
+  local _, rc = run("hyprbyte --no-animations")
+  eq(rc, 0)
+  has(s1, "Hello"); has(s1, "from the window"); has(s1, " test ")
+  has(s2, "Message from bob@box2"); has(s2, "│ dinner is ready"); lacks(s2, "bob@box2: dinner", "the body is the message alone")
+  has(file("/tmp/dh"), "[test] Hello: from the window")
+  has(s3, "B y t e O S"); has(s3, "·")
+  lacks(s3, "root@byteos", "workspace 2 has no window")
+end)
+
+test("rofi finds and starts programs and switches windows", function()
+  put("/home/root/.config/hyprbyte.conf", "")
+  local seq, picking, layersAfterEsc, focusAfter = {}, nil, nil, nil
+  settle(seq)
+  mod(32, 100, seq); settle(seq)                   -- Alt+D: rofi
+  typed("unam", seq); settle(seq, 2)
+  seq[#seq + 1] = function() picking = rows(1, 200) end
+  seq[#seq + 1] = down(13, 28); seq[#seq + 1] = up(13, 28); settle(seq)
+  mod(32, 100, seq); settle(seq)
+  typed("hyprctl clients > /tmp/rc\n", seq); settle(seq)
+  mod(32, 100, seq); settle(seq)
+  seq[#seq + 1] = down(0, 1); seq[#seq + 1] = up(0, 1); settle(seq)   -- Esc closes it
+  seq[#seq + 1] = function()
+    layersAfterEsc = 0
+    for _, l in ipairs(package.loaded["hyprbyte.state"].layers) do if l.namespace == "rofi" then layersAfterEsc = layersAfterEsc + 1 end end
+  end
+  mod(28, 13, seq); settle(seq)                    -- a second terminal, in focus
+  mod(17, 119, seq); settle(seq)                   -- Alt+W: the window list
+  seq[#seq + 1] = down(13, 28); seq[#seq + 1] = up(13, 28); settle(seq) -- the first one
+  seq[#seq + 1] = function() local s = package.loaded["hyprbyte.state"]; focusAfter = s.workspaces[1].focus end
+  mod(18, 69, seq, true)
+  signals(seq)
+  run("hyprbyte --no-animations")
+  has(picking, "❯ unam"); has(picking, " uname")
+  has(file("/home/root/.cache/rofi.history"), "uname")
+  has(file("/tmp/rc"), "Window 1")
+  eq(layersAfterEsc, 0, "Esc closed rofi")
+  eq(focusAfter, 1, "the window picked in rofi is in focus")
+end)
+
+test("hypridle locks the screen with hyprlock; only the password opens it", function()
+  put("/home/root/.config/hyprbyte.conf", "exec-once = hypridle\n")
+  put("/home/root/.config/hypr/hypridle.conf", "listener = 1, hyprlock\n")
+  os.remove(ROOT .. "/tmp/leak")
+  local seq, locked, wrong, open = {}, nil, nil, nil
+  settle(seq)
+  spin(seq, 1.3); settle(seq, 8)                   -- a second without input
+  seq[#seq + 1] = function() locked = rows(1, 200) end
+  typed("echo leak > /tmp/leak\n", seq); settle(seq)
+  seq[#seq + 1] = function() wrong = rows(1, 200) end
+  spin(seq, 2.3)
+  typed("rootpw\n", seq); settle(seq)
+  seq[#seq + 1] = function() open = rows(1, 200) end
+  mod(18, 69, seq, true)
+  signals(seq)
+  run("hyprbyte --no-animations")
+  has(locked, "Locked · root"); lacks(locked, "root@byteos", "the windows are hidden")
+  has(wrong, "wrong password")
+  ok(not file("/tmp/leak"), "nothing typed reached a window")
+  has(open, "root@byteos"); lacks(open, "Locked")
+  has(file("/var/log/messages"), "hyprlock: wrong password for root")
+end)

@@ -211,7 +211,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.13.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.13.1 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -243,7 +243,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.13.0
+byteos 1.13.1
 cowsay 0.2.0
 ```
 
@@ -500,6 +500,7 @@ Besides the small tools and games, the repositories have:
 | `netfs`    | shared folders over ByteNet |
 | `hyprbyte` | a tiling window manager, see below |
 | `quickshell` | build your own bars and widgets for Hyprbyte, see below |
+| `dunst`, `rofi`, `hyprlock`, `hypridle`, `hyprpaper` | the rest of the Hyprbyte desktop, see below |
 
 `pacman -Ss` lists everything.
 
@@ -553,6 +554,25 @@ return {
 
 `man quickshell` lists every widget.
 
+**The rest of the desktop**, as on a Hyprland setup:
+
+| Package | |
+|---------|---|
+| `dunst` (+ `libnotify`) | notification pop-ups: `notify-send "Backup done"`; ByteNet messages show up there too. `dunstctl history`, `dunstctl set-paused true` (do not disturb) |
+| `rofi` | Alt+D: a launcher with fuzzy search ("sctl" finds systemctl); Alt+W: switch to any window |
+| `hyprlock` | Alt+L: a lock screen with a big clock; your password opens it |
+| `hypridle` | does something after a while without input: `listener = 300, hyprlock` in `~/.config/hypr/hypridle.conf` |
+| `hyprpaper` | a wallpaper (text art and patterns) behind the windows: `~/.config/hypr/hyprpaper.conf` |
+
+```sh
+root@byteos ~# pacman -S dunst rofi hyprlock hypridle hyprpaper
+root@byteos ~# cat >> ~/.config/hyprbyte.conf
+exec-once = dunst
+exec-once = hyprpaper
+exec-once = hypridle
+bind = MOD, B, exec, btop
+```
+
 **Login sessions:** like a display manager, the login screen offers every
 session a package installs (`/usr/share/sessions/*.session`): press **F2**
 to pick *Hyprbyte* instead of ByteShell. The choice is remembered, and
@@ -593,10 +613,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.13.0.gdc69aa7  cowsay-0.3.0
+Packages (2) byteos-1.13.1.g45c0c7e  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.13.0.gdc69aa7 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.13.1.g45c0c7e from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...
