@@ -336,9 +336,16 @@ local function lookup(name) return asKernel(function() return auth().user(fio, n
 -- Run fn as `name`; $USER (and $HOME when given) follow along.
 local function switch(name, home, fn, ...)
   local prevUser, prevEnv, prevHome = currentUser, _G.USER, _G.HOME
+  -- inside a process the process itself changes user too: the scheduler
+  -- puts its user back whenever it continues after waiting (sudo pacman
+  -- in a window downloads, and must still be root afterwards)
+  local p = currentProc
+  local procUser, procHome = p and p.user, p and p.home
   currentUser, _G.USER = name, name
   if home then _G.HOME = home end
+  if p then p.user = name; if home then p.home = home end end
   local res = table.pack(pcall(fn, ...))
+  if p then p.user, p.home = procUser, procHome end
   currentUser, _G.USER, _G.HOME = prevUser, prevEnv, prevHome
   if not res[1] then error(res[2], 0) end
   return table.unpack(res, 2, res.n)
@@ -539,7 +546,10 @@ function kernel.process.spawn(fn, opts, ...)
   -- a process stays on its parent's terminal, in the background there;
   -- opts.tty puts it in the foreground of a terminal (a window)
   local tty, fg = currentProc and currentProc.tty, false
-  if opts.tty then tty, fg = opts.tty, opts.foreground ~= false end
+  if opts.tty then
+    tty, fg = opts.tty, opts.foreground ~= false
+    tty.owner = tty.owner or currentUser -- whoever opened the window
+  end
   local args = table.pack(...)
   local p = {
     pid = nextPid, name = opts.name or "?", user = user, home = home, pwd = pwd or "/", started = computer.uptime(),
@@ -574,15 +584,22 @@ local function onTty(t, fgOnly)
   return list
 end
 
+-- A terminal belongs to whoever opened it: they type into it and close
+-- it, also while a program there runs as someone else (sudo).
+local function ownsTty(t, list)
+  if currentUser == "root" then return true end
+  if t.owner then return t.owner == currentUser end
+  for _, p in ipairs(list) do if p.user ~= currentUser then return false end end
+  return true
+end
+
 -- Give a signal (key_down, key_up, clipboard, ...) to the foreground of
 -- terminal t. Ctrl+C stops the program running there, as on the screen.
 function kernel.tty.input(t, ...)
   local sig = table.pack(...)
   local name, code = sig[1], sig[4]
   local list = onTty(t, true)
-  for _, p in ipairs(list) do
-    if currentUser ~= "root" and p.user ~= currentUser then return nil, DENIED end
-  end
+  if not ownsTty(t, list) then return nil, DENIED end
   if name == "key_down" or name == "key_up" then
     if code == 29 or code == 157 then
       t.ctrlHeld = name == "key_down"
@@ -598,9 +615,13 @@ function kernel.tty.input(t, ...)
   return true
 end
 
--- Stop every process on terminal t (its window was closed).
+-- Stop every process on terminal t (its window was closed), whoever
+-- they run as, like a hangup.
+local stop
 function kernel.tty.hangup(t)
-  for _, p in ipairs(onTty(t)) do kernel.process.kill(p.pid) end
+  local list = onTty(t)
+  if not ownsTty(t, list) then return nil, DENIED end
+  for _, p in ipairs(list) do if procs[p.pid] then stop(p) end end
   return true
 end
 
@@ -633,12 +654,16 @@ function kernel.process.kill(pid)
   local p = procs[pid]
   if not p then return nil, "no such process" end
   if currentUser ~= "root" and currentUser ~= p.user then return nil, DENIED end
+  stop(p)
+  return true
+end
+
+function stop(p)
   if p == currentProc then
     p.wake = 0
     p.co = coroutine.create(function() end) -- ends at its next turn
   end
   ended(p, "killed")
-  return true
 end
 
 -- ============================================================
