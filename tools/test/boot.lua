@@ -22,7 +22,10 @@
     signals{...}                 queue signals for computer.pullSignal
     deliver{...}                 the same, and have the kernel handle them now
     disk(dir, addr, label)       a filesystem component on a host dir
-    network(peers) incoming(...) a network card and other computers on it
+    network(peers [, address])   a network card and other computers on it;
+    incoming(...)                what it sends to its own address comes back
+    plug(kind, addr, proxy)      any other component (undisk takes it out)
+    machine{ energy, maxEnergy, devices }  what computer.energy & co. say
     useDatacard(true|false)      put a tier 3 data card in (or take it out)
     file(path)  put(path, data)  read/write the fake disk directly
     screen()                     what the terminal shows
@@ -110,7 +113,7 @@ _G.component = {
     for a, c in pairs(COMPONENTS) do if not kind or c[1] == kind then keys[#keys + 1] = a end end
     table.sort(keys)
     local i = 0
-    return function() i = i + 1; return keys[i] end
+    return function() i = i + 1; return keys[i], keys[i] and COMPONENTS[keys[i]][1] end
   end,
   proxy = function(a) return COMPONENTS[a] and COMPONENTS[a][2] end,
 }
@@ -121,6 +124,10 @@ _G.computer = {
   tmpAddress = function() return "tmpfs000" end, address = function() return "computer" end,
   shutdown = function() error("shutdown requested", 0) end,
 }
+local MACHINE = { energy = 5000, maxEnergy = 10000, devices = {} }
+function computer.energy() return MACHINE.energy end
+function computer.maxEnergy() return MACHINE.maxEnergy end
+function computer.getDeviceInfo() return MACHINE.devices end
 _G.bootfs = bootfs
 _G.kprint = function() end
 _G.BOOTLOG = { { t = 0, tag = "kernel", msg = "ByteOS test boot" } }
@@ -224,14 +231,16 @@ function disk(dir, addr, label)
   COMPONENTS[addr] = { "filesystem", fsProxy(dir, addr, label) }
 end
 function undisk(addr) COMPONENTS[addr] = nil end
+function plug(kind, addr, proxy) proxy.address = addr; COMPONENTS[addr] = { kind, proxy } end
+function machine(t) for key, v in pairs(t) do MACHINE[key] = v end end
 
 -- A network card. peers[address] = { distance = n, reply = fn(kind, id, ...) }
 -- stands for another computer: whatever reply returns (an answer kind and
 -- its values) comes back as a modem_message. Returns the list of every
 -- message this computer sent: { to = address|nil (broadcast), args = {...} }.
-function network(peers)
+function network(peers, address)
   local sent, ports = {}, {}
-  local me = "modem000-test"
+  local me = address or "modem000-test"
   local function answer(addr, port, ...)
     local peer = peers[addr]
     if not peer then return end
@@ -248,7 +257,12 @@ function network(peers)
     open = function(p) ports[p] = true; return true end,
     close = function(p) ports[p] = nil; return true end,
     isOpen = function(p) return ports[p] == true end,
-    send = function(to, port, ...) sent[#sent + 1] = { to = to, args = table.pack(...) }; answer(to, port, ...); return true end,
+    send = function(to, port, ...)
+      sent[#sent + 1] = { to = to, args = table.pack(...) }
+      if to == me then SIGNALS[#SIGNALS + 1] = { "modem_message", me, me, port, 0, ... } end
+      answer(to, port, ...)
+      return true
+    end,
     broadcast = function(port, ...)
       sent[#sent + 1] = { args = table.pack(...) }
       for addr in pairs(peers) do answer(addr, port, ...) end

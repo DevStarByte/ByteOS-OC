@@ -211,7 +211,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.12.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.12.1 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -243,7 +243,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.12.0
+byteos 1.12.1
 cowsay 0.2.0
 ```
 
@@ -475,6 +475,32 @@ root@byteos ~# netcp notes.txt box2    # arrives in box2's /tmp/incoming/
 Anyone on the network can send messages and files, as OpenComputers works
 that way; files only ever land in `/tmp/incoming` and are limited to 64 KiB.
 
+Two packages go further (`sudo pacman -S rsh netfs`):
+
+```sh
+alice@byteos ~> rsh box2 uptime                       # run a command there (asks box2's password)
+alice@byteos ~> rsh alice@box2                        # a prompt on box2 until `exit`
+root@byteos ~# echo "pub /home/root/public ro" >> /etc/netfs.conf   # share a folder
+root@byteos ~# netfs shares box2                      # what box2 shares
+root@byteos ~# netfs mount box2:pub /mnt/pub          # use it like a disk
+```
+
+## More packages
+
+Besides the small tools and games, the repositories have:
+
+| Package | What it does |
+|---------|--------------|
+| `btop`     | full-screen monitor: memory, energy, disks, network, services, processes (`k` stops one) |
+| `lshw`     | every component with its details (`lshw -short`, `lshw memory`) |
+| `power`    | energy stored, use per second and how long it lasts (`power -w` keeps watching) |
+| `redstone` | read and set redstone signals and bundled cables |
+| `timers`   | start services on a schedule, like cron: `.timer` units (`man systemd.timer`) |
+| `rsh`      | remote shell over ByteNet |
+| `netfs`    | shared folders over ByteNet |
+
+`pacman -Ss` lists everything.
+
 ## Disks and network
 
 Extra disks (a second HDD, a floppy) appear under `/mnt/<first 8 characters
@@ -507,10 +533,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.12.0.g436e0a8  cowsay-0.3.0
+Packages (2) byteos-1.12.1.g90bfdc9  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.12.0.g436e0a8 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.12.1.g90bfdc9 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...
@@ -703,6 +729,10 @@ end)
 The helpers (`run`, `as`, `answers`, `keys`, `signals`, `disk`,
 `useDatacard`, `file`, `put`, `eq`, `has`, ...) are described at the top of
 [`tools/test/boot.lua`](tools/test/boot.lua).
+
+The `packages` case builds the repositories from the `packages` branch and
+tries every new package; to test package sources before committing them,
+point it at a checkout: `BYTEOS_PKGS=../pkgs lua tools/test/run.lua packages`.
 
 A pre-commit hook runs the suite before every commit and stops the commit
 when a test fails. Turn it on once per clone:

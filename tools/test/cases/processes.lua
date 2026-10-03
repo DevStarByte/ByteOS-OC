@@ -101,3 +101,11 @@ test("fg waits for a job; Ctrl+C stops it", function()
   eq(rc2, 130); eq(kernel.process.info(pid).state, "killed")
   has(run("fg"), "no current job")
 end)
+
+test("a cd in the background does not move the shell", function()
+  local before = _G.PWD
+  run("cd /etc && pwd > /tmp/bgpwd &")
+  run("wait")
+  eq(file("/tmp/bgpwd"), "/etc\n")
+  eq(_G.PWD, before)
+end)

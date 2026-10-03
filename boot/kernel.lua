@@ -469,13 +469,16 @@ local function ended(p, state, result)
   if p.onexit then pcall(p.onexit, p) end
 end
 
+-- Each process has its own user, $HOME and working directory: a `cd` in
+-- the background does not move the shell in the foreground.
 local function resume(p, ...)
-  local prevUser, prevEnv = currentUser, _G.USER
-  currentUser, _G.USER = p.user, p.user
+  local prevUser, prevEnv, prevHome, prevPwd = currentUser, _G.USER, _G.HOME, _G.PWD
+  currentUser, _G.USER, _G.HOME, _G.PWD = p.user, p.user, p.home, p.pwd
   currentProc = p
   local res = table.pack(coroutine.resume(p.co, ...))
   currentProc = nil
-  currentUser, _G.USER = prevUser, prevEnv
+  p.home, p.pwd = _G.HOME, _G.PWD
+  currentUser, _G.USER, _G.HOME, _G.PWD = prevUser, prevEnv, prevHome, prevPwd
   if coroutine.status(p.co) == "dead" then
     if res[1] then ended(p, "done", res[2]) else ended(p, "failed", tostring(res[2])) end
   else
@@ -505,14 +508,16 @@ kernel.process = {}
 -- start one as someone else), onexit = function(process). Returns the pid.
 function kernel.process.spawn(fn, opts, ...)
   opts = opts or {}
-  local user = currentUser
+  local user, home, pwd = currentUser, _G.HOME, _G.PWD
   if opts.user and opts.user ~= currentUser then
     if currentUser ~= "root" then return nil, DENIED end
-    user = opts.user
+    local u = lookup(opts.user)
+    if not u then return nil, "no such user: " .. tostring(opts.user) end
+    user, home, pwd = opts.user, u.home, u.home
   end
   local args = table.pack(...)
   local p = {
-    pid = nextPid, name = opts.name or "?", user = user, started = computer.uptime(),
+    pid = nextPid, name = opts.name or "?", user = user, home = home, pwd = pwd or "/", started = computer.uptime(),
     wake = 0, onexit = opts.onexit,
     co = coroutine.create(function() return fn(table.unpack(args, 1, args.n)) end),
   }
