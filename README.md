@@ -27,7 +27,11 @@ in the classic `[user@host pwd]$` style, an Arch-style **`pacman`** package mana
   while you type, grey autosuggestions, history search with ↑, Tab completion,
   a persistent `~/.byteshell_history`, aliases, `;`/`&&`/`||` and auto-cd,
   plus pipes, redirection, wildcards and shell scripts.
-- **Coreutils** — `ls cat echo pwd mkdir rm cp mv clear uname whoami edit help neofetch reboot shutdown`.
+- **Commands** —
+  files: `ls cat cp mv rm mkdir touch find less edit grep head tail wc`;
+  system: `df du free date sleep uname hostname neofetch which env help reboot shutdown`;
+  users: `whoami id groups passwd su sudo useradd userdel usermod`;
+  disks: `mount umount lsblk`; network: `wget curl`.
 - **pacman** — `-S / -R / -Q / -Qi / -Sy / -Syu / -Ss` with a tiny on-disk repo format.
 - **edit** — full-screen editor with line numbers and Lua syntax highlighting
   (`^S` save, `^Q` quit, `^K`/`^U` cut/paste line, `^G` go to line).
@@ -160,7 +164,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.5.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.6.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -192,7 +196,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.5.0
+byteos 1.6.0
 cowsay 0.2.0
 ```
 
@@ -338,6 +342,27 @@ The shell understands `'single'` and `"double"` quotes (also mid-word, as in
 variable, `export` too, and `set` lists them. Variable names are UPPERCASE
 because they share the global namespace with Lua.
 
+## Disks and network
+
+Extra disks (a second HDD, a floppy) appear under `/mnt/<first 8 characters
+of the address>`, also when you insert them while ByteOS runs, and disappear
+when you take them out.
+
+```sh
+root@byteos ~# lsblk                         # disks, sizes and where they are mounted
+root@byteos ~# df                            # free space per filesystem
+root@byteos ~# ls /mnt/1a2b3c4d/
+root@byteos ~# mount 1a2b3c4d /media         # mount a disk somewhere else (root)
+root@byteos ~# umount /media
+```
+
+With an internet card, `wget URL` saves a file and `curl URL` prints it:
+
+```sh
+root@byteos ~# wget https://example.com/notes.txt
+root@byteos ~# curl -s https://example.com/data.txt | grep foo
+```
+
 ## Updating ByteOS
 
 Like on Arch, `pacman -Syu` upgrades everything, including the OS itself.
@@ -349,10 +374,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.5.0.gf49ede5  cowsay-0.3.0
+Packages (2) byteos-1.6.0.g1678560  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.5.0.gf49ede5 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.6.0.g1678560 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...

@@ -131,14 +131,24 @@ local function resolve(path)
 end
 kernel.fs.resolve = resolve
 
+-- True for a directory something is mounted below (/mnt), even when it
+-- does not exist on the disk itself.
+local function holdsMount(path)
+  local dir = clean(path)
+  for mp in pairs(mounts) do
+    if mp ~= "/" and mp:sub(1, #dir + 1) == (dir == "/" and "/" or dir .. "/") then return true end
+  end
+  return false
+end
+
 function kernel.fs.exists(path)
   local p, sub = resolve(path); if not p then return false end
-  return p.exists(sub)
+  return p.exists(sub) or holdsMount(path)
 end
 
 function kernel.fs.isDirectory(path)
   local p, sub = resolve(path); if not p then return false end
-  return p.isDirectory(sub)
+  return p.isDirectory(sub) or holdsMount(path)
 end
 
 function kernel.fs.size(path)
@@ -148,8 +158,19 @@ end
 
 function kernel.fs.list(path)
   local p, sub = resolve(path); if not p then return {} end
-  local out = {}
-  for _, n in ipairs(p.list(sub) or {}) do out[#out+1] = n end
+  local out, seen = {}, {}
+  for _, n in ipairs(p.list(sub) or {}) do
+    out[#out+1] = n
+    seen[(n:gsub("/$", ""))] = true
+  end
+  -- mount points show up in their parent directory (/mnt/<id>/)
+  local dir = clean(path)
+  for mp in pairs(mounts) do
+    local parent, name = mp:match("^(.*)/([^/]+)$")
+    if name and (parent == "" and "/" or parent) == dir and not seen[name] then
+      out[#out+1] = name .. "/"
+    end
+  end
   table.sort(out)
   return out
 end
@@ -216,12 +237,21 @@ end
 
 -- Mount the boot filesystem at /
 kernel.fs.mount("/", _G.bootfs)
--- Auto-mount additional filesystems at /mnt/<addr8>
-for addr in component.list("filesystem") do
-  if addr ~= _G.bootfs.address then
-    kernel.fs.mount("/mnt/" .. addr:sub(1, 8), component.proxy(addr))
-  end
+-- Auto-mount additional filesystems at /mnt/<addr8>, also the ones
+-- inserted later (a floppy); a removed disk is unmounted.
+local function automount(addr)
+  if addr ~= _G.bootfs.address then mounts["/mnt/" .. addr:sub(1, 8)] = component.proxy(addr) end
 end
+for addr in component.list("filesystem") do automount(addr) end
+kernel.event.listen("component_added", function(_, addr, kind)
+  if kind == "filesystem" then automount(addr) end
+end)
+kernel.event.listen("component_removed", function(_, addr, kind)
+  if kind ~= "filesystem" then return end
+  for path, proxy in pairs(mounts) do
+    if proxy.address == addr and path ~= "/" then mounts[path] = nil end
+  end
+end)
 
 -- ============================================================
 -- require() / package loader
