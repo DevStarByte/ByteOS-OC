@@ -123,6 +123,14 @@ _G.computer = {
 _G.bootfs = bootfs
 _G.kprint = function() end
 _G.BOOTLOG = { { t = 0, tag = "kernel", msg = "ByteOS test boot" } }
+-- what /init.lua sets before the kernel: the version from /etc/os-release
+do
+  local f = io.open(ROOT .. "/etc/os-release")
+  local text = f and f:read("a") or ""
+  if f then f:close() end
+  _G._OSVERSION = "ByteOS " .. (text:match('VERSION_ID="?([^"\r\n]+)') or "?")
+  _G._OSCODENAME = text:match('VERSION_CODENAME="?([^"\r\n]+)') or "Iron"
+end
 
 assert(loadfile(ROOT .. "/boot/kernel.lua", "t", _G))()
 local term = dofile(REPO .. "/tools/test/fterm.lua")

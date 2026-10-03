@@ -47,7 +47,8 @@
       <dir>/files/...             the files, laid out as on the target disk
 ]]--
 
-local compress = require("compress")
+-- lib/compress.lua (19 KiB) is loaded only for compressed entries
+local function compress() return require("compress") end
 
 local bpk = {}
 
@@ -227,7 +228,7 @@ function bpk.open(h)
     if not ok then return nil, e end
     local data = table.concat(parts)
     if flag == "z" then
-      local okd, plain = pcall(compress.decode, data)
+      local okd, plain = pcall(compress().decode, data)
       if not okd or not plain then return nil, "cannot decompress entry" end
       data = plain
     end
@@ -289,7 +290,7 @@ function bpk.write(h, entries)
     assert(not e.name:find("\n"), "entry name contains a newline")
     local data, flag = e.data, "-"
     if #data >= 512 then
-      local z = compress.encode(data)
+      local z = compress().encode(data)
       if #z < #data * 0.9 then data, flag = z, "z" end
     end
     h:write(("%d %s %s\n"):format(#data, flag, e.name))

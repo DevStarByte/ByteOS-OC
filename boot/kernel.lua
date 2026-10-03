@@ -302,6 +302,9 @@ local function asKernel(fn, ...)
   privileged = privileged + 1
   local res = table.pack(pcall(fn, ...))
   privileged = privileged - 1
+  -- /lib/auth (with sha256 about 20 KiB) is needed only for these moments;
+  -- let it go so it does not stay in memory for the whole session
+  package.loaded.auth, package.loaded.sha256 = nil, nil
   if not res[1] then error(res[2], 0) end
   return table.unpack(res, 2, res.n)
 end

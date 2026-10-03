@@ -67,6 +67,7 @@
 /lib/files.lua
 /lib/internet.lua
 /lib/lineedit.lua
+/lib/setup.lua
 /lib/sha256.lua
 /lib/shell.lua
 /lib/starshell.lua

@@ -104,9 +104,11 @@ every package. pacman downloads from there through the internet card.
 You will need:
 
 - A computer case (any tier)
-- CPU + RAM: **Tier 2 memory or better** (two sticks are comfortable). ByteOS
-  uses about 150 KiB at the prompt and about 300 KiB while pacman runs
-  (measured with 64-bit Lua on a PC; OpenComputers' own accounting may differ)
+- CPU + RAM: **Tier 2 memory is safe**, Tier 1.5 should just do. Measured
+  with 64-bit Lua, ByteOS keeps about 190 KiB of code loaded at the prompt,
+  and pacman adds 110-150 KiB while it runs. OpenComputers on a 64-bit
+  server counts memory with a factor (`ramScaleFor64Bit`, 1.8 by default),
+  so one Tier 1.5 stick gives about 460 KiB there.
 - An EEPROM
 - A managed hard disk drive
 - A screen + keyboard + GPU (any tier)
@@ -208,7 +210,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.11.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.11.1 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -240,7 +242,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.11.0
+byteos 1.11.1
 cowsay 0.2.0
 ```
 
@@ -487,10 +489,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.11.0.gbf3eb3d  cowsay-0.3.0
+Packages (2) byteos-1.11.1.g82e80f4  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.11.0.gbf3eb3d from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.11.1.g82e80f4 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...

@@ -31,7 +31,7 @@ local gpu = {
 
 local keys, answers = {}, {}
 local term = {
-  theme = theme, gpu = gpu, width = W,
+  theme = theme, gpu = gpu, width = W, depth = 8,
   size = function() return W, H end,
   getCursor = function() return cx, cy end,
   setCursor = function(x, y) cx, cy = x, y end,
