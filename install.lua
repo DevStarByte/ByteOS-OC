@@ -1,22 +1,22 @@
 --[[
-  install.lua - ByteOS-Installer
-  Auf einer Floppy oder per `pastebin get` neben den ByteOS-Quellen platzieren.
-  Wird unter OpenOS ausgeführt:  lua install.lua
+  install.lua - ByteOS installer
+  Put it next to the ByteOS files (e.g. on a floppy) and run it under OpenOS:
+    lua install.lua
 
-  Was er tut:
-    1. fragt Quell-FS (wo die ByteOS-Dateien liegen) und Ziel-FS ab
-    2. löscht ALLES im Ziel  (du bekommst einen Prompt)
-    3. kopiert /init.lua, /boot, /sbin, /lib, /bin, /etc, /home, /var rekursiv
-    4. (optional) flasht ByteBIOS aufs EEPROM und setzt Boot-Adresse aufs Ziel
-    5. fordert zum Reboot auf
+  What it does:
+    1. asks for the source filesystem (where the ByteOS files are) and the
+       target filesystem
+    2. erases EVERYTHING on the target (after asking)
+    3. copies /init.lua, /boot, /sbin, /lib, /bin, /etc, /home, /var
+    4. optionally flashes ByteBIOS onto the EEPROM and sets the boot address
+    5. asks you to reboot
+
+  Once ByteOS runs, it updates itself with `sudo pacman -Syu`.
 ]]--
 
 local component = require and require("component") or _G.component
-local computer  = require and require("computer")  or _G.computer
-local fs        = component.proxy(component.list("filesystem")()) -- nur als fallback
-local term
 
--- OpenOS hat term & io. Wir nutzen io.read fürs Prompting.
+-- OpenOS provides io; prompts are read with io.read.
 local function ask(msg, default)
   io.write(msg)
   if default then io.write(" [" .. default .. "]") end
@@ -34,7 +34,7 @@ local function confirm(msg)
 end
 
 local function listFs()
-  print("Verfügbare Filesysteme:")
+  print("Filesystems:")
   for addr in component.list("filesystem") do
     local p = component.proxy(addr)
     local label = (p.getLabel and p.getLabel()) or "<no label>"
@@ -50,13 +50,13 @@ end
 local function pickFs(prompt)
   while true do
     listFs()
-    local s = ask(prompt .. " (Adresse oder Präfix)")
+    local s = ask(prompt .. " (address or prefix)")
     if s then
       for addr in component.list("filesystem") do
         if addr:sub(1, #s) == s then return component.proxy(addr) end
       end
     end
-    print("Nicht gefunden, nochmal.")
+    print("Not found, try again.")
   end
 end
 
@@ -67,9 +67,9 @@ end
 
 local function copyFile(srcFs, srcPath, dstFs, dstPath)
   local fh = srcFs.open(srcPath, "r")
-  if not fh then error("kann nicht lesen: " .. srcPath) end
+  if not fh then error("cannot read: " .. srcPath) end
   local oh = dstFs.open(dstPath, "w")
-  if not oh then srcFs.close(fh); error("kann nicht schreiben: " .. dstPath) end
+  if not oh then srcFs.close(fh); error("cannot write: " .. dstPath) end
   while true do
     local chunk = srcFs.read(fh, 4096)
     if not chunk then break end
@@ -99,54 +99,54 @@ local function wipe(dstFs)
   end
 end
 
--- ====== los gehts ======
+-- ====== main ======
 print("==========================================")
 print(" ByteOS Installer")
 print("==========================================")
 print()
 
-local src = pickFs("Quell-Filesystem (wo liegt das ByteOS-Repo / die Floppy?)")
-local srcRoot = ask("Pfad innerhalb der Quelle, der ByteOS enthält", "/")
+local src = pickFs("Source filesystem (where are the ByteOS files?)")
+local srcRoot = ask("Path on the source that contains ByteOS", "/")
 if not src.exists(joinPath(srcRoot, "init.lua")) then
-  print("Fehler: " .. joinPath(srcRoot, "init.lua") .. " existiert nicht.")
+  print("Error: " .. joinPath(srcRoot, "init.lua") .. " does not exist.")
   return
 end
 if not src.exists(joinPath(srcRoot, "boot")) then
-  print("Fehler: " .. joinPath(srcRoot, "boot") .. " fehlt.")
+  print("Error: " .. joinPath(srcRoot, "boot") .. " is missing.")
   return
 end
 
 print()
-local dst = pickFs("Ziel-Filesystem (Festplatte fuer ByteOS)")
-if dst.isReadOnly() then print("Ziel ist schreibgeschuetzt, abbruch."); return end
-if dst.address == src.address then print("Quelle = Ziel, abbruch."); return end
+local dst = pickFs("Target filesystem (the disk for ByteOS)")
+if dst.isReadOnly() then print("The target is read-only, aborting."); return end
+if dst.address == src.address then print("Source and target are the same disk, aborting."); return end
 
 print()
-print("ACHTUNG: Das Ziel " .. dst.address:sub(1,8) .. " wird KOMPLETT gelöscht.")
-if not confirm("Wirklich fortfahren?") then print("Abgebrochen."); return end
+print("WARNING: the target " .. dst.address:sub(1,8) .. " will be ERASED COMPLETELY.")
+if not confirm("Continue?") then print("Aborted."); return end
 
-print("Loesche Ziel ...")
+print("Erasing the target...")
 wipe(dst)
 
-print("Kopiere ByteOS ...")
+print("Copying ByteOS...")
 local TOP = { "init.lua", "boot", "sbin", "lib", "bin", "etc", "home", "var" }
 for _, name in ipairs(TOP) do
   local sp = joinPath(srcRoot, name)
   if src.exists(sp) then
     copyTree(src, sp, dst, "/" .. name)
   else
-    print("  (uebersprungen, nicht in Quelle: " .. sp .. ")")
+    print("  (skipped, not in the source: " .. sp .. ")")
   end
 end
 
 dst.setLabel("ByteOS")
-print("Dateien kopiert.")
+print("Files copied.")
 print()
 
 -- EEPROM
 local eepromAddr = component.list("eeprom")()
 if eepromAddr then
-  if confirm("ByteBIOS jetzt aufs EEPROM flashen und Bootadresse setzen?") then
+  if confirm("Flash ByteBIOS onto the EEPROM and set the boot address now?") then
     local biosPath = joinPath(srcRoot, "boot/eeprom.lua")
     local fh = src.open(biosPath, "r")
     local code = ""
@@ -159,9 +159,9 @@ if eepromAddr then
     eep.set(code)
     eep.setLabel("ByteBIOS")
     eep.setData(dst.address)
-    print("EEPROM geflasht, Bootadresse = " .. dst.address:sub(1,8))
+    print("EEPROM flashed, boot address = " .. dst.address:sub(1,8))
   end
 end
 
 print()
-print("Fertig. Bitte rebooten:  reboot")
+print("Done. Reboot to start ByteOS:  reboot")

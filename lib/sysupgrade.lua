@@ -47,6 +47,21 @@ local OS_DIRS  = { "boot/", "sbin/", "lib/", "bin/" }
 local OS_FILES = { ["init.lua"] = true, ["etc/os-release"] = true, ["etc/issue"] = true }
 local NEVER    = { ["etc/passwd"] = true, ["etc/hostname"] = true }
 
+-- Files older versions shipped that are gone now. Normally a file that
+-- disappears upstream is removed because the state file lists it, but a
+-- system installed by copying files has no state yet, so these are named
+-- here. Removal is journaled like every other change (pacman --rollback).
+local OBSOLETE = {
+  -- OpenOS leftovers nothing in ByteOS loaded (removed in 1.3.1)
+  "boot/00_base.lua", "boot/01_process.lua", "boot/02_os.lua", "boot/03_io.lua",
+  "boot/04_component.lua", "boot/10_devfs.lua", "boot/89_rc.lua",
+  "boot/90_filesystem.lua", "boot/91_gpu.lua", "boot/92_keyboard.lua",
+  "boot/93_term.lua", "boot/94_shell.lua",
+  "lib/tty.lua", "lib/note.lua", "lib/uuid.lua", "lib/transforms.lua",
+  -- replaced by pacman -Syu and makepkg
+  "bin/sysupdate.lua", "etc/sysupdate.conf", "bin/mkpkg.lua",
+}
+
 local function classify(path)
   if OS_FILES[path] then return "os" end
   if NEVER[path] then return nil end
@@ -222,10 +237,15 @@ function sysupgrade.download(up, progress)
       ops[#ops + 1] = { op = "pacnew", path = f.path }
     end
   end
+  local gone = {}
   for path in pairs(up.state.files) do
-    if not remote[path] and classify(path) == "os" and fs.exists("/" .. path) then
-      ops[#ops + 1] = { op = "delete", path = path }
-    end
+    if not remote[path] and classify(path) == "os" then gone[path] = true end
+  end
+  for _, path in ipairs(OBSOLETE) do
+    if not remote[path] then gone[path] = true end
+  end
+  for path in pairs(gone) do
+    if fs.exists("/" .. path) then ops[#ops + 1] = { op = "delete", path = path } end
   end
   table.sort(ops, function(a, b) return a.path < b.path end)
 
