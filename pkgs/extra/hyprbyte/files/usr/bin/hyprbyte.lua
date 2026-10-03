@@ -2,8 +2,8 @@
   hyprbyte - a tiling window manager, in the spirit of Hyprland
 
   Every window is a terminal with its own shell. New windows split the
-  space (dwindle: halves of halves), there are nine workspaces, and a bar
-  on top shows them with the window in focus, memory, energy and the time.
+  space (dwindle: halves of halves) and there are nine workspaces. Like
+  Hyprland it has no bar of its own: quickshell (a package) draws one.
   Start it from the shell, or pick the Hyprbyte session at the login (F2).
 
   Keys (Mod is Alt; mod = super in the config makes it the Windows key):
@@ -24,7 +24,7 @@
   bind = lines add or change keys.
 
   Layers: other programs (quickshell, dunst, rofi, hyprlock, hyprpaper)
-  draw panels, pop-ups and wallpapers; see LAYERS in man hyprbyte.
+  draw bars, pop-ups and wallpapers; see LAYERS in man hyprbyte.
 ]]--
 local surface = require("surface")
 local tty = require("tty")
@@ -46,7 +46,7 @@ local SW, SH = screen.getResolution()
 -- ---- settings ------------------------------------------------------------------
 local conf = {
   gaps_in = SW >= 120 and 1 or 0, gaps_out = SW >= 120 and 1 or 0,
-  animations = true, bar = true, mod = "alt", rounding = true,
+  animations = true, mod = "alt", rounding = true,
   exec_once = {}, open = {}, bind = {},
 }
 local LISTS = { exec_once = true, open = true, bind = true }
@@ -94,18 +94,13 @@ end
 --                     exclusive = true hides the windows while it is there
 --   anchor "background": below the windows (a wallpaper)
 local function edge(l) return l.anchor == nil or l.anchor == "top" or l.anchor == "bottom" end
-local function hasTopLayer()
-  for _, l in ipairs(state.layers) do if l.anchor == nil or l.anchor == "top" then return true end end
-  return false
-end
-local function builtinBar() return conf.bar and not hasTopLayer() end
 local function exclusive()
   for _, l in ipairs(state.layers) do if l.anchor == "overlay" and l.exclusive then return true end end
   return false
 end
 -- the space for windows: x, y, w, h
 local function area()
-  local top, bottom = builtinBar() and 1 or 0, 0
+  local top, bottom = 0, 0
   for _, l in ipairs(state.layers) do
     if l.anchor == "bottom" then bottom = bottom + l.height elseif edge(l) then top = top + l.height end
   end
@@ -177,7 +172,7 @@ local function drawLayer(l, x, y, w, h)
 end
 
 local function drawEdges()
-  local top, bottom = builtinBar() and 1 or 0, 0
+  local top, bottom = 0, 0
   for _, l in ipairs(state.layers) do
     if edge(l) then
       local y
@@ -201,38 +196,9 @@ local function drawOverlays()
   screen.setBackground(T.bg)
 end
 
+-- the panels (quickshell's bar, ...) and the overlays
 local function bar()
   drawEdges()
-  if builtinBar() then
-    screen.setBackground(T.base); screen.fill(1, 1, SW, 1, " ")
-    local last = 5
-    for i = 1, 9 do if #state.workspaces[i].list > 0 then last = math.max(last, i) end end
-    local x = 1
-    for i = 1, last do
-      local label = " " .. i .. " "
-      if i == state.active then paint(x, 1, label, T.bright, T.accent)
-      elseif #state.workspaces[i].list > 0 then paint(x, 1, label, T.fg, T.base)
-      else paint(x, 1, label, T.dim, T.base) end
-      x = x + 3
-    end
-    local okC, clock = pcall(require, "clock")
-    local right = ("mem %d%%"):format(math.floor(100 * (1 - computer.freeMemory() / computer.totalMemory()) + 0.5))
-    if computer.maxEnergy and computer.maxEnergy() > 0 then
-      right = right .. ("  ⚡%d%%"):format(math.floor(100 * computer.energy() / computer.maxEnergy() + 0.5))
-    end
-    if okC then right = right .. "  " .. clock.date("%H:%M") end
-    right = right .. " "
-    paint(SW - term.ulen(right) + 1, 1, right, T.muted, T.base)
-    local win = focused()
-    if win then
-      local room = SW - term.ulen(right) - x - 2
-      if room > 4 then
-        local t = term.usub(win.term.title or win.title, 1, room)
-        paint(math.max(x + 1, (SW - term.ulen(t)) // 2), 1, t, T.fg, T.base)
-      end
-    end
-    screen.setBackground(T.bg)
-  end
   drawOverlays()
 end
 

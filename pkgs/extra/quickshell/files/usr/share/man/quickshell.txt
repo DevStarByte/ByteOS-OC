@@ -7,7 +7,7 @@ Quickshell for Hyprland, with Lua where that one has QML.
 START
   In ~/.config/hyprbyte.conf:   exec-once = quickshell
   or from a window:             quickshell &      (qs is the same)
-  With a panel at the top, Hyprbyte leaves out its own bar.
+  Hyprbyte has no bar of its own; this is where it comes from.
 
 THE SHELL FILE
   ~/.config/quickshell/shell.lua, else /etc/xdg/quickshell/shell.lua (a

@@ -1,0 +1,11 @@
+local function hint()
+  if not fs.exists("/usr/bin/quickshell.lua") then
+    print("Hyprbyte has no bar of its own (as Hyprland): pacman -S quickshell,")
+    print("then exec-once = quickshell in ~/.config/hyprbyte.conf")
+  end
+end
+function post_install() hint() end
+function post_upgrade(new, old)
+  if tostring(old):match("^1%.[012]%.") then print("Hyprbyte 1.3: the built-in bar is gone; quickshell draws one now") end
+  hint()
+end

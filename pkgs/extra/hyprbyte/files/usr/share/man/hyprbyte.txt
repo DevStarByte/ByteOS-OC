@@ -2,7 +2,8 @@ hyprbyte - a tiling window manager for ByteOS
 
 Hyprbyte puts terminals side by side, like Hyprland on Arch. Each window
 runs its own ByteShell (or one program); new windows split the space
-(dwindle), there are nine workspaces and a bar on top.
+(dwindle) and there are nine workspaces. Like Hyprland it draws no bar
+itself: install quickshell and add  exec-once = quickshell  for one.
 
 START
   hyprbyte                      from the shell; Mod+Shift+E returns to it
@@ -28,7 +29,7 @@ SETTINGS
   /etc/hyprbyte.conf, then ~/.config/hyprbyte.conf:
     mod = alt | super | ctrl
     gaps_in = 1          gaps_out = 1
-    animations = yes     rounding = yes     bar = yes
+    animations = yes     rounding = yes
     open = btop          a window at the start (any number of them)
     exec-once = quickshell   a program in the background, no window
     bind = MOD SHIFT, R, spawn, rofi -show run
@@ -51,8 +52,7 @@ LAYERS
       click = function(x, y, button) end })
     hypr.removeLayer(layer)
 
-  anchor   "top" / "bottom": a panel; its rows stay free of windows (the
-           built-in bar makes way for one at the top)
+  anchor   "top" / "bottom": a panel (a bar); its rows stay free of windows
            "overlay": above the windows, where place(SW, SH) returns
            x, y, w, h (default: everything); exclusive = true hides the
            windows meanwhile (a lock screen)
