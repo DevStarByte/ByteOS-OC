@@ -508,11 +508,12 @@ Besides the small tools and games, the repositories have:
 
 `hyprbyte` (in `extra`) is a tiling window manager in the spirit of
 Hyprland: every window is a terminal with its own shell, new windows split
-the space, there are nine workspaces and a bar with the time, memory and
-energy.
+the space and there are nine workspaces. Like Hyprland it has no bar of its
+own: that is what Quickshell (below) is for.
 
 ```sh
-root@byteos ~# pacman -S hyprbyte
+root@byteos ~# pacman -S hyprbyte quickshell
+root@byteos ~# echo "exec-once = quickshell" >> ~/.config/hyprbyte.conf
 root@byteos ~# hyprbyte                  # Alt+Enter: a terminal, Alt+Shift+E: back to the shell
 ```
 
@@ -532,10 +533,11 @@ root@byteos ~# hyprbyte                  # Alt+Enter: a terminal, Alt+Shift+E: b
 the background (`exec-once = ...`) are in `~/.config/hyprbyte.conf`.
 See `man hyprbyte`.
 
-**Quickshell** (`pacman -S quickshell`) replaces the bar with your own
-panels, as Quickshell does for Hyprland, with Lua where that one has QML.
-Add `exec-once = quickshell` to `~/.config/hyprbyte.conf` and describe the
-panels in `~/.config/quickshell/shell.lua`; saving the file shows the
+**Quickshell** (`pacman -S quickshell`) draws the bar, or any panels you
+like, as Quickshell does for Hyprland, with Lua where that one has QML.
+With `exec-once = quickshell` in `~/.config/hyprbyte.conf` you get its
+default bar (workspaces, window title, memory, energy, clock); describe
+your own in `~/.config/quickshell/shell.lua`, and saving the file shows the
 change at once:
 
 ```lua

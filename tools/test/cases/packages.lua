@@ -223,8 +223,9 @@ test("hyprbyte tiles terminals and hands the keys to the one in focus", function
   has(file("/tmp/clients"), "Window 1"); has(file("/tmp/clients"), "Window 2")
   has(file("/tmp/active"), "Window 1")
   has(file("/tmp/spaces"), "workspace 1 (active): 1 window"); has(file("/tmp/spaces"), "workspace 2: 1 window")
-  -- the screen while two windows were open: the bar, two framed terminals
-  has(shot, " 1  2  3  4  5"); has(shot, "two")
+  -- the screen while two windows were open: no bar of its own (that is
+  -- quickshell's job), the first window starts at the top
+  ok(shot:find("^╭─ / ─"), "no built-in bar:\n" .. shot:sub(1, 160)); has(shot, "two")
   -- the test screen is 80 x 200, tall: dwindle puts the second one below;
   -- the titles are what the shells say: their directory between commands
   eq(select(2, shot:gsub("╭─ / ─", "")), 2, "two frames titled /")
@@ -278,7 +279,7 @@ test("quickshell puts its panels into Hyprbyte and follows its file", function()
   signals(seq)
   local _, rc = run("hyprbyte --no-animations")
   eq(rc, 0)
-  ok(before:find("^ hello from quickshell"), "the top panel in place of the built-in bar:\n" .. before:sub(1, 240))
+  ok(before:find("^ hello from quickshell"), "the top panel:\n" .. before:sub(1, 240))
   ok(before:match("\n╭"), "the windows start below it")
   has(before:sub(-200), "cmd output", "the bottom panel")
   eq(active, 2, "a click on 2 went to workspace 2")
