@@ -104,7 +104,9 @@ every package. pacman downloads from there through the internet card.
 You will need:
 
 - A computer case (any tier)
-- CPU + RAM (at least Tier 1.5; the OS is small but uses ~64 KiB)
+- CPU + RAM: **Tier 2 memory or better** (two sticks are comfortable). ByteOS
+  uses about 150 KiB at the prompt and about 300 KiB while pacman runs
+  (measured with 64-bit Lua on a PC; OpenComputers' own accounting may differ)
 - An EEPROM
 - A managed hard disk drive
 - A screen + keyboard + GPU (any tier)
