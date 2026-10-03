@@ -8,7 +8,8 @@ local term = require("term")
 local T    = term.theme
 
 local shell = {}
-shell.history = {}
+shell.history = {}   -- this user's command history, oldest first
+shell.status  = 0    -- exit status of the last command ($status, $?)
 
 -- Print an error message: "<prog>: " in red, the message in the default colour.
 function shell.err(prog, msg)
@@ -30,9 +31,9 @@ function shell.resolveBin(name)
   if name:find("/") then return shell.normalize(name) end
   for dir in (_G.PATH or "/bin:/usr/bin:/sbin"):gmatch("[^:]+") do
     local p = dir .. "/" .. name .. ".lua"
-    if fs.exists(p) then return p end
+    if fs.exists(p) and not fs.isDirectory(p) then return p end
     p = dir .. "/" .. name
-    if fs.exists(p) then return p end
+    if fs.exists(p) and not fs.isDirectory(p) then return p end -- not "/bin/.."
   end
   return nil
 end
@@ -70,9 +71,11 @@ function shell.tokenize(line)
     word, inWord = {}, false
   end
   local function variable(j)
+    if line:sub(j, j) == "?" then return tostring(shell.status), j + 1 end
     local name, nxt = line:match("^{([%w_]+)}()", j)
     if not name then name, nxt = line:match("^([%w_]+)()", j) end
     if not name then return "$", j end
+    if name == "status" then return tostring(shell.status), nxt end -- fish's $status
     return shell.getVar(name), nxt
   end
   while i <= n do
@@ -133,15 +136,20 @@ end
 -- Built-ins handled directly in the shell process
 shell.builtins = {}
 
+-- cd [dir]   cd - (back to the previous directory)
 function shell.builtins.cd(args)
   local target = args[1] or _G.HOME or "/"
-  if target == "~" or target:sub(1, 2) == "~/" then target = (_G.HOME or "/") .. target:sub(2) end
+  if target == "-" then
+    target = _G.OLDPWD
+    if not target then shell.err("cd", "no previous directory"); return 1 end
+    term.write(target .. "\n")
+  end
   local p = shell.normalize(target)
   if not fs.isDirectory(p) then
     shell.err("cd", "not a directory: " .. target)
     return 1
   end
-  _G.PWD = p
+  _G.OLDPWD, _G.PWD = _G.PWD, p
   return 0
 end
 
@@ -231,7 +239,29 @@ function shell.builtins.source(args)
 end
 shell.builtins["."] = shell.builtins.source
 
-function shell.builtins.set()
+-- set                    list variables
+-- set NAME value...      set one, as in fish (-x/-g are accepted: every
+--                        variable is global and exported here)
+-- set -e NAME            erase one
+function shell.builtins.set(args)
+  if args and #args > 0 then
+    local erase = false
+    while args[1] and args[1]:sub(1, 1) == "-" do
+      local f = table.remove(args, 1)
+      if f == "-e" or f == "--erase" then erase = true
+      elseif not (f == "-x" or f == "-g" or f == "-U" or f == "--export" or f == "--global") then
+        shell.err("set", "unknown option " .. f); return 1
+      end
+    end
+    local name = table.remove(args, 1)
+    if not name then shell.err("set", "usage: set [-e] NAME [value...]"); return 1 end
+    if erase then
+      if not shell.validName(name) then shell.err("set", "'" .. name .. "': not a variable"); return 1 end
+      _G[name] = nil
+      return 0
+    end
+    return assign("set", name, table.concat(args, " "))
+  end
   local names = {}
   for name, v in pairs(_G) do
     if shell.validName(name) and (type(v) == "string" or type(v) == "number") then
@@ -246,10 +276,122 @@ function shell.builtins.set()
   return 0
 end
 
--- ---- Run a single command ------------------------------------------------
-function shell.execute(line)
-  line = (line or ""):gsub("^%s+", ""):gsub("%s+$", "")
-  if line == "" or line:sub(1,1) == "#" then return 0 end
+-- ---- History -------------------------------------------------------------
+-- Every command goes to ~/.byteshell_history. Like fish, a command that
+-- starts with a space is not remembered, and a repeated command moves to
+-- the end instead of being stored twice.
+shell.HISTMAX = 500
+
+local function histFile() return (_G.HOME or "/") .. "/.byteshell_history" end
+
+-- Load this user's history, dropping duplicates (the newest copy wins).
+function shell.loadHistory()
+  local lines, seen, keep = {}, {}, {}
+  for l in (fs.exists(histFile()) and fs.readAll(histFile()) or ""):gmatch("[^\r\n]+") do
+    lines[#lines + 1] = l
+  end
+  for i = #lines, 1, -1 do
+    if not seen[lines[i]] and #keep < shell.HISTMAX then
+      seen[lines[i]] = true
+      keep[#keep + 1] = lines[i]
+    end
+  end
+  shell.history = {}
+  for i = #keep, 1, -1 do shell.history[#shell.history + 1] = keep[i] end
+  if #shell.history ~= #lines then -- write the tidied file back
+    pcall(fs.writeAll, histFile(), table.concat(shell.history, "\n") .. (#keep > 0 and "\n" or ""))
+  end
+end
+
+function shell.addHistory(line)
+  if line:match("^%s") or line:match("^%s*$") then return end
+  line = line:gsub("%s+$", "")
+  local h = shell.history
+  for i = #h, 1, -1 do
+    if h[i] == line then table.remove(h, i) end
+  end
+  h[#h + 1] = line
+  while #h > shell.HISTMAX do table.remove(h, 1) end
+  local f = fs.open(histFile(), "a")
+  if f then f:write(line .. "\n"); f:close() end
+end
+
+-- history                newest first
+-- history search <text>  only lines containing text
+-- history clear          forget everything
+function shell.builtins.history(args)
+  local sub = args[1]
+  if sub == "clear" then
+    shell.history = {}
+    pcall(fs.writeAll, histFile(), "")
+    return 0
+  end
+  if sub and sub ~= "search" then
+    shell.err("history", "usage: history [search <text> | clear]"); return 1
+  end
+  local text = sub == "search" and table.concat(args, " ", 2) or nil
+  for i = #shell.history, 1, -1 do
+    local h = shell.history[i]
+    if not text or h:find(text, 1, true) then term.write(h .. "\n") end
+  end
+  return 0
+end
+
+-- ---- Running commands ----------------------------------------------------
+-- Splits a line at ; && || outside quotes. A # at the start of a word
+-- starts a comment. Returns the parts and the operator after each part.
+function shell.split(line)
+  local parts, ops, cur = {}, {}, {}
+  local i, n, q = 1, #line, nil
+  local function cut(op)
+    parts[#parts + 1] = table.concat(cur); ops[#parts] = op; cur = {}
+  end
+  while i <= n do
+    local c = line:sub(i, i)
+    if q then
+      if c == q then q = nil
+      elseif c == "\\" and q == '"' then cur[#cur + 1] = c; i = i + 1; c = line:sub(i, i) end
+      cur[#cur + 1] = c
+    elseif c == "'" or c == '"' then
+      q = c; cur[#cur + 1] = c
+    elseif c == "\\" then
+      cur[#cur + 1] = line:sub(i, i + 1); i = i + 1
+    elseif c == ";" then
+      cut(";")
+    elseif line:sub(i, i + 1) == "&&" or line:sub(i, i + 1) == "||" then
+      cut(line:sub(i, i + 1)); i = i + 1
+    elseif c == "#" and (i == 1 or line:sub(i - 1, i - 1):match("%s")) then
+      break
+    else
+      cur[#cur + 1] = c
+    end
+    i = i + 1
+  end
+  parts[#parts + 1] = table.concat(cur)
+  return parts, ops
+end
+
+-- A directory typed as a command is entered (fish's auto-cd), but only
+-- when it looks like a path, so a missing command never moves you.
+local function autocdTarget(name)
+  if not (name:find("/") or name == "." or name == ".." or name == "~") then return nil end
+  local p = shell.normalize(name)
+  if fs.isDirectory(p) then return p end
+end
+
+function shell.commandExists(name)
+  return shell.builtins[name] ~= nil or shell.aliases[name] ~= nil or name == "not"
+      or shell.resolveBin(name) ~= nil or autocdTarget(name) ~= nil
+end
+
+-- Run one simple command (no ; && ||). Returns its exit status.
+function shell.run(line)
+  line = line:gsub("^%s+", ""):gsub("%s+$", "")
+  if line == "" then return 0 end
+
+  -- fish's `not cmd` inverts the status
+  local rest = line:match("^not%s+(.+)$")
+  if rest then return shell.run(rest) == 0 and 1 or 0 end
 
   line = shell.expandAliases(line)
   local args = tokenize(line)
@@ -259,7 +401,7 @@ function shell.execute(line)
     local name, value = args[1]:match("^([%w_]+)=(.*)$")
     return assign("byteshell", name, value)
   end
-  local cmd  = table.remove(args, 1)
+  local cmd = table.remove(args, 1)
 
   if shell.builtins[cmd] then
     return shell.builtins[cmd](args)
@@ -267,7 +409,9 @@ function shell.execute(line)
 
   local path = shell.resolveBin(cmd)
   if not path then
-    shell.err("byteshell", "command not found: " .. cmd)
+    local dir = #args == 0 and autocdTarget(cmd)
+    if dir then return shell.builtins.cd({ dir }) end
+    shell.err("byteshell", "Unknown command: " .. cmd)
     return 127
   end
 
@@ -289,35 +433,190 @@ function shell.execute(line)
   return tonumber(rc) or 0
 end
 
--- ---- REPL ----------------------------------------------------------------
--- Arch-style prompt:  [user@host ~]$   (user and # in red when root)
+-- Run a command line: a; b && c || d. Sets and returns $status.
+function shell.execute(line)
+  local parts, ops = shell.split(line or "")
+  local go, rc = true, shell.status
+  for i, part in ipairs(parts) do
+    if go and part:match("%S") then
+      rc = shell.run(part)
+      shell.status = rc
+    end
+    local op = ops[i]
+    if op == "&&" then go = rc == 0
+    elseif op == "||" then go = rc ~= 0
+    else go = true end
+  end
+  return rc
+end
+
+-- ---- Interactive editing (see /lib/lineedit.lua) -------------------------
+-- Colours as in fish: command blue (red if unknown), options cyan,
+-- strings yellow, variables magenta, operators and comments muted.
+local function colorWord(word, add)
+  local base = word:sub(1, 1) == "-" and T.cyan or T.fg
+  local i, n = 1, #word
+  while i <= n do
+    local c = word:sub(i, i)
+    if c == "'" or c == '"' then
+      local e = word:find(c, i + 1, true) or n
+      add(word:sub(i, e), T.yellow); i = e + 1
+    elseif c == "$" then
+      local e = (word:find("[^%w_{}?]", i + 1) or n + 1) - 1
+      add(word:sub(i, e), T.magenta); i = e + 1
+    else
+      local e = (word:find("['\"$]", i) or n + 1) - 1
+      add(word:sub(i, e), base); i = e + 1
+    end
+  end
+end
+
+function shell.highlight(buf)
+  local out = {}
+  local function add(text, color) if text ~= "" then out[#out + 1] = { text, color } end end
+  local i, n, wantCmd = 1, #buf, true
+  while i <= n do
+    local c, two = buf:sub(i, i), buf:sub(i, i + 1)
+    if c:match("%s") then
+      local j = buf:find("%S", i) or n + 1
+      add(buf:sub(i, j - 1), T.fg); i = j
+    elseif two == "&&" or two == "||" then
+      add(two, T.accent); i = i + 2; wantCmd = true
+    elseif c == ";" then
+      add(c, T.accent); i = i + 1; wantCmd = true
+    elseif c == "#" and (i == 1 or buf:sub(i - 1, i - 1):match("%s")) then
+      add(buf:sub(i), T.muted); break
+    else
+      local j, q = i, nil
+      while j <= n do
+        local d = buf:sub(j, j)
+        if q then
+          if d == q then q = nil elseif d == "\\" and q == '"' then j = j + 1 end
+        elseif d == "'" or d == '"' then q = d
+        elseif d == "\\" then j = j + 1
+        elseif d:match("%s") or d == ";" or buf:sub(j, j + 1) == "&&" or buf:sub(j, j + 1) == "||" then
+          break
+        end
+        j = j + 1
+      end
+      local word = buf:sub(i, math.min(j - 1, n))
+      if wantCmd and word == "not" then
+        add(word, T.accent)
+      elseif wantCmd then
+        local name = shell.tokenize(word)[1] or word
+        add(word, shell.commandExists(name) and T.blue or T.red)
+        wantCmd = false
+      else
+        colorWord(word, add)
+      end
+      i = j
+    end
+  end
+  return out
+end
+
+-- The newest history line that starts with what was typed.
+function shell.suggest(buf)
+  for i = #shell.history, 1, -1 do
+    local h = shell.history[i]
+    if #h > #buf and h:sub(1, #buf) == buf then return h end
+  end
+end
+
+local function packageNames()
+  local names = {}
+  for _, f in ipairs(fs.list("/var/lib/pacman/sync") or {}) do
+    if f:match("%.db$") then
+      for n in (fs.readAll("/var/lib/pacman/sync/" .. f) or ""):gmatch("name = (%S+)") do names[n] = true end
+    end
+  end
+  for _, d in ipairs(fs.list("/var/lib/pacman/local") or {}) do names[(d:gsub("/$", ""))] = true end
+  return names
+end
+
+-- Tab completion: commands in command position, $VARIABLES, package names
+-- after `pacman`, and paths everywhere else.
+function shell.complete(before)
+  local startByte = (before:match("^.*()[%s;&|]") or 0) + 1
+  local word, head = before:sub(startByte), before:sub(1, startByte - 1)
+  local found, seen = {}, {}
+  local function offer(s, prefix)
+    if s:sub(1, #prefix) == prefix and not seen[s] then seen[s] = true; found[#found + 1] = s end
+  end
+  local cmdPos = head:match("^%s*$") or head:match("[;&|]%s*$")
+      or head:match("^%s*sudo%s+$") or head:match("[;&|]%s*sudo%s+$") or head:match("not%s+$")
+
+  if word:sub(1, 1) == "$" then
+    for name, v in pairs(_G) do
+      if shell.validName(name) and type(v) == "string" then offer("$" .. name, word) end
+    end
+  elseif cmdPos and not word:find("/") then
+    for b in pairs(shell.builtins) do offer(b, word) end
+    for a in pairs(shell.aliases) do offer(a, word) end
+    for dir in (_G.PATH or "/bin"):gmatch("[^:]+") do
+      for _, e in ipairs(fs.list(dir) or {}) do
+        if not e:match("/$") then offer((e:gsub("%.lua$", "")), word) end
+      end
+    end
+  elseif head:match("pacman%s") and not word:match("^%-") and not word:find("/") then
+    for n in pairs(packageNames()) do offer(n, word) end
+  else
+    local dirPart, base = word:match("^(.*/)([^/]*)$")
+    if not dirPart then dirPart, base = "", word end
+    local real = dirPart == "" and (_G.PWD or "/")
+      or shell.normalize((dirPart:gsub("^~", _G.HOME or "/")))
+    for _, e in ipairs(fs.list(real) or {}) do
+      local name = e:gsub("/$", "")
+      if base:sub(1, 1) == "." or name:sub(1, 1) ~= "." then
+        offer(dirPart .. name .. (fs.isDirectory(real .. "/" .. name) and "/" or ""), word)
+      end
+    end
+  end
+  table.sort(found)
+  return term.ulen(head) + 1, found
+end
+
+-- ---- Prompt and REPL -----------------------------------------------------
+-- fish's prompt_pwd: ~ for home, every directory but the last cut to its
+-- first letter (two for dot-directories).
+function shell.promptPwd()
+  local pwd, home = _G.PWD or "/", _G.HOME
+  if home and home ~= "/" then
+    if pwd == home then return "~" end
+    if pwd:sub(1, #home + 1) == home .. "/" then pwd = "~" .. pwd:sub(#home + 1) end
+  end
+  local parts = {}
+  for seg in pwd:gmatch("[^/]+") do parts[#parts + 1] = seg end
+  for i = 1, #parts - 1 do
+    if parts[i] ~= "~" then
+      parts[i] = term.usub(parts[i], 1, parts[i]:sub(1, 1) == "." and 2 or 1)
+    end
+  end
+  return (pwd:sub(1, 1) == "/" and "/" or "") .. table.concat(parts, "/")
+end
+
+-- fish-style prompt:  alice@byteos ~/p/projekt>   (root: red, ends in #;
+-- a failed last command shows its status: [1])
 function shell.prompt()
   local user = _G.USER or "root"
-  local host = _G.HOSTNAME or "byteos"
-  local pwd  = _G.PWD or "/"
-  local home = _G.HOME
-  if pwd == home then pwd = "~"
-  elseif home and pwd:sub(1, #home + 1) == home .. "/" then pwd = "~" .. pwd:sub(#home + 1) end
-  -- keep the prompt short enough to leave room for typing on small screens
-  local maxPwd = math.max(8, math.floor(term.width / 3))
-  if term.ulen(pwd) > maxPwd then pwd = "…" .. term.usub(pwd, -(maxPwd - 1)) end
   local root = user == "root"
   -- never start the prompt in the middle of a line left by a program
   if term.getCursor() > 1 then term.write("\n") end
-  term.cwrite(T.muted, "[")
   term.cwrite(root and T.red or T.green, user)
-  term.cwrite(T.muted, "@")
-  term.cwrite(T.fg, host .. " ")
-  term.cwrite(T.blue, pwd)
-  term.cwrite(T.muted, "]")
-  term.cwrite(root and T.red or T.fg, root and "# " or "$ ")
-  term.setForeground(T.bright)
+  term.cwrite(T.fg, "@" .. (_G.HOSTNAME or "byteos") .. " ")
+  term.cwrite(root and T.red or T.green, shell.promptPwd())
+  if shell.status ~= 0 then term.cwrite(T.red, " [" .. shell.status .. "]") end
+  term.cwrite(T.fg, root and "# " or "> ")
 end
 
--- Login: run /etc/profile, then the user's ~/.shrc. Aliases start empty so
--- nothing carries over from the previous user.
+-- Login: load this user's history, then run /etc/profile and ~/.shrc.
+-- Aliases and the greeting start fresh so nothing carries over from the
+-- previous user.
 function shell.startup()
   shell.aliases = {}
+  shell.status = 0
+  _G.GREETING = nil
+  shell.loadHistory()
   for _, f in ipairs({ "/etc/profile", (_G.HOME or "/") .. "/.shrc" }) do
     if fs.exists(f) then
       local ok, e = pcall(shell.source, f)
@@ -327,21 +626,53 @@ function shell.startup()
       end
     end
   end
+  shell.status = 0
+end
+
+-- Like fish_greeting: set GREETING in ~/.shrc to change it, GREETING= to
+-- turn it off.
+function shell.greeting()
+  local g = _G.GREETING
+  if g == nil then
+    term.cwrite(T.fg, "Welcome to ")
+    term.cwrite(T.accent, "ByteShell")
+    term.cwrite(T.fg, ", the friendly interactive shell\n")
+    term.cwrite(T.muted, "Type ")
+    term.cwrite(T.blue, "help")
+    term.cwrite(T.muted, " for commands; Tab completes, → takes the grey suggestion\n")
+  elseif g ~= "" then
+    term.write(g .. "\n")
+  end
+end
+
+-- Read and run commands until exit, logout or Ctrl+D. A nested shell
+-- (StarShell) passes logout on to the login shell and ends on exit.
+function shell.loop(prompt, nested)
+  prompt = prompt or shell.prompt
+  local lineedit = require("lineedit")
+  while true do
+    prompt()
+    local line = lineedit.read({
+      history = shell.history, highlight = shell.highlight,
+      suggest = shell.suggest, complete = shell.complete, prompt = prompt,
+    })
+    term.setForeground(T.fg)
+    if line == nil then return end
+    shell.addHistory(line)
+    local ok, err = pcall(shell.execute, line)
+    if not ok then
+      if err == "__logout__" and nested then error(err, 0) end
+      if err == "__exit__" or err == "__logout__" then return end
+      shell.err("error", err)
+      shell.status = 1
+    end
+  end
 end
 
 function shell.repl()
   if not pcall(shell.startup) then return end -- exit/logout in a startup file
-  while true do
-    shell.prompt()
-    local line = term.read({ history = shell.history })
-    term.setForeground(T.fg)
-    if line == nil then return end
-    local ok, err = pcall(shell.execute, line)
-    if not ok then
-      if err == "__exit__" or err == "__logout__" then return end
-      shell.err("error", err)
-    end
-  end
+  shell.greeting()
+  shell.loop(shell.prompt)
 end
 
 return shell

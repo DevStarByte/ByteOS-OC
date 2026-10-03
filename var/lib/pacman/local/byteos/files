@@ -39,6 +39,7 @@
 /lib/bytebios.lua
 /lib/compress.lua
 /lib/internet.lua
+/lib/lineedit.lua
 /lib/note.lua
 /lib/shell.lua
 /lib/starshell.lua

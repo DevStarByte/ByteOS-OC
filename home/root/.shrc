@@ -8,3 +8,4 @@ alias ..='cd ..'
 alias cls=clear
 
 # export PATH=$PATH:$HOME/bin
+# GREETING=           # no greeting at login (or set your own text)

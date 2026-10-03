@@ -23,8 +23,9 @@ in the classic `[user@host pwd]$` style, an Arch-style **`pacman`** package mana
   scheduler, signal/event loop, `require()` package loader.
 - **systemd-style init** — prints `[ OK ]` boot messages, loads core libs, drops to
   a login prompt seeded from `/etc/passwd`.
-- **ByteShell** — POSIX-ish shell with built-ins (`cd`, `exit`, `export`, `set`),
-  Arch-coloured prompt, quoting, and a Lua execution environment per command.
+- **ByteShell** — an interactive shell modelled on fish: syntax highlighting
+  while you type, grey autosuggestions, history search with ↑, Tab completion,
+  a persistent `~/.byteshell_history`, aliases, `;`/`&&`/`||` and auto-cd.
 - **Coreutils** — `ls cat echo pwd mkdir rm cp mv clear uname whoami edit help neofetch reboot shutdown`.
 - **pacman** — `-S / -R / -Q / -Qi / -Sy / -Syu / -Ss` with a tiny on-disk repo format.
 - **edit** — full-screen editor with line numbers and Lua syntax highlighting
@@ -32,8 +33,7 @@ in the classic `[user@host pwd]$` style, an Arch-style **`pacman`** package mana
 - **One colour theme** ([`lib/theme.lua`](lib/theme.lua)) — 16 colours, loaded
   into the GPU palette so Tier 2 and Tier 3 look identical; Tier 1 gets a
   clean black/white fallback. Every screen adapts to 50×16 up to 160×50.
-- **Terminal** — UTF-8 output, blinking cursor, line editing with history
-  (`↑↓`, `←→`, `^A`/`^E`, `^U`, `^W`, `^C`, `^D`) and clipboard paste.
+- **Terminal** — UTF-8 output, blinking cursor and clipboard paste.
 - **Kernel panic screen** instead of the generic OpenComputers crash screen.
 - **/etc/os-release**, **/etc/issue**, **/etc/motd**, **/etc/hostname**, **/etc/passwd**, **/etc/pacman.conf**, **/etc/profile**, **/etc/fstab**.
 
@@ -134,8 +134,8 @@ ByteOS boots with the stock Lua BIOS too, so this is optional. To get
 ByteBIOS, run this inside ByteOS:
 
 ```sh
-[root@byteos ~]# pacman -S bytebios   # flash ByteBIOS (the old BIOS is saved)
-[root@byteos ~]# pacman -R bytebios   # put the old BIOS back
+root@byteos ~# pacman -S bytebios   # flash ByteBIOS (the old BIOS is saved)
+root@byteos ~# pacman -R bytebios   # put the old BIOS back
 ```
 
 Once ByteBIOS is on the EEPROM, `pacman -Syu` keeps it current. Another BIOS
@@ -157,20 +157,20 @@ component.eeprom.setLabel("ByteBIOS")
 ## A short tour
 
 ```sh
-[root@byteos ~]# neofetch
-[root@byteos ~]# uname -a
-ByteOS byteos 1.2.0 (Iron) lua54 GNU/ByteOS
+root@byteos ~# neofetch
+root@byteos ~# uname -a
+ByteOS byteos 1.3.0 (Iron) lua54 GNU/ByteOS
 
-[root@byteos ~]# pacman -Sy
+root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
  core                                   [##############################] 100%
  extra                                  [##############################] 100%
 
-[root@byteos ~]# pacman -Ss cow
+root@byteos ~# pacman -Ss cow
 core/cowsay 0.2.0
     ascii-art talking cow
 
-[root@byteos ~]# pacman -S cowsay
+root@byteos ~# pacman -S cowsay
 resolving dependencies...
 looking for conflicting packages...
 
@@ -180,7 +180,7 @@ Packages (1) cowsay-0.2.0
 :: Processing package changes...
  (1/1) installing cowsay                [##############################] 100%
 
-[root@byteos ~]# cowsay "I run Arch... ish."
+root@byteos ~# cowsay "I run Arch... ish."
  -------------------
 < I run Arch... ish. >
  -------------------
@@ -190,8 +190,8 @@ Packages (1) cowsay-0.2.0
                 ||----w |
                 ||     ||
 
-[root@byteos ~]# pacman -Q
-byteos 1.2.0
+root@byteos ~# pacman -Q
+byteos 1.3.0
 cowsay 0.2.0
 ```
 
@@ -202,9 +202,9 @@ Changing the system with pacman needs root. Regular users in the `wheel` group
 base system:
 
 ```sh
-[alice@byteos ~]$ pacman -S cowsay
+alice@byteos ~> pacman -S cowsay
 error: you cannot perform this operation unless you are root.
-[alice@byteos ~]$ sudo pacman -S cowsay
+alice@byteos ~> sudo pacman -S cowsay
 [sudo] password for alice:
 ```
 
@@ -216,6 +216,45 @@ To switch users, type `logout` (or press Ctrl+D on an empty line) to get
 back to the login prompt. It also works from inside StarShell, and sudo
 forgets the remembered password.
 
+## ByteShell
+
+The login shell takes its cues from [fish](https://fishshell.com/), the
+friendly interactive shell:
+
+```
+alice@byteos ~/p/byteos> echo "hi $USER" && pacman -Q
+alice@byteos ~ [127]>
+```
+
+The prompt shows user, host and directory, every directory but the last cut
+to its first letter as in fish; after a failed command it adds the status.
+While you type, the line is coloured: a real command is blue and an unknown
+one red (before you press Enter), options cyan, strings yellow, variables
+magenta.
+
+- **History** is saved to `~/.byteshell_history` (500 commands, duplicates
+  merged; each user has their own). A command that starts with a space is not
+  saved. `history`, `history search <text>` and `history clear` manage it.
+- **↑ / ↓** walk the history. With text typed, they only stop at commands
+  containing it: type `pac`, press ↑, get your last pacman command.
+- **Autosuggestions**: the grey text after the cursor is the newest matching
+  command from your history. `→`, `End` or `Ctrl+F` take it.
+- **Tab** completes commands, files and directories, `$VARIABLES` and, after
+  `pacman`, package names. When it is ambiguous it lists the candidates.
+- `a; b`, `a && b`, `a || b` and `not a`; `$status` (or `$?`) is the last
+  exit status.
+- Type a directory (`..`, `/etc`, `~/projects/`) to `cd` into it; `cd -`
+  goes back.
+- `set NAME value`, `set -e NAME` (fish syntax) as well as `NAME=value`.
+- Keys: `Ctrl+A`/`Ctrl+E` start/end, `Ctrl+U`/`Ctrl+K` delete to start/end,
+  `Ctrl+W` delete a word, `Ctrl+L` clear the screen, `Ctrl+C` cancel,
+  `Ctrl+D` log out.
+- The greeting can be changed with `GREETING=...` in `~/.shrc`, or turned
+  off with `GREETING=`.
+
+`starshell` starts the same shell with a Starship-style two-line prompt;
+`exit` goes back.
+
 ## Aliases and ~/.shrc
 
 At every login ByteShell runs `/etc/profile` and then your `~/.shrc`, so
@@ -223,13 +262,13 @@ that is the place for aliases and variables. New users get a copy of
 `/etc/skel/.shrc` with a few defaults (`ll`, `la`, `l`, `..`, `cls`):
 
 ```sh
-[root@byteos ~]# alias up='sudo pacman -Syu'
-[root@byteos ~]# alias
+root@byteos ~# alias up='sudo pacman -Syu'
+root@byteos ~# alias
 alias ..='cd ..'
 alias ll='ls -l'
 alias up='sudo pacman -Syu'
-[root@byteos ~]# unalias up
-[root@byteos ~]# source ~/.shrc        # or: . ~/.shrc
+root@byteos ~# unalias up
+root@byteos ~# source ~/.shrc        # or: . ~/.shrc
 ```
 
 The shell understands `'single'` and `"double"` quotes (also mid-word, as in
@@ -244,20 +283,20 @@ The base system is the package `byteos`; with an **internet card** pacman
 pulls its newest version straight from this GitHub repository:
 
 ```sh
-[root@byteos ~]# pacman -Syu
+root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.2.0.gfb46153  cowsay-0.3.0
+Packages (2) byteos-1.3.0.g240fc8d  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.2.0.gfb46153 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.3.0.g240fc8d from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...
 :: byteos was upgraded; reboot to start the new version
 
-[root@byteos ~]# pacman --rollback   # undo the last byteos upgrade
+root@byteos ~# pacman --rollback   # undo the last byteos upgrade
 ```
 
 Upgrading byteos is built not to break the running system:
@@ -318,10 +357,10 @@ function post_remove(version) end
 Inside ByteOS, build and install it with:
 
 ```sh
-[root@byteos mytool]# makepkg
+root@byteos mytool# makepkg
 ==> Making package: mytool 1.0.0-1
 ==> Finished making: mytool-1.0.0-1.bpk (412 bytes)
-[root@byteos mytool]# pacman -U mytool-1.0.0-1.bpk
+root@byteos mytool# pacman -U mytool-1.0.0-1.bpk
 ```
 
 To publish it, put the directory into `pkgs/<repo>/` on the
