@@ -581,11 +581,10 @@ local function runSetup()
 
   -- ---- Apply ---------------------------------------------------------------
   local hn = cfg.hostname
+  local base = "Installing byteos " .. ((_G._OSVERSION or ""):match("[%d%.]+") or "")
 
   local steps = {
-    "Synchronizing core", "Synchronizing extra",
-    "Installing bytekernel 1.0.0", "Installing coreutils 1.0.0",
-    "Installing pacman 1.0.0", "Installing byteshell 1.0.0",
+    "Synchronizing core", "Synchronizing extra", base,
     "Writing /etc/hostname", "Writing /etc/vconsole.conf",
     "Writing /etc/locale.conf", "Writing /etc/timezone",
     "Writing /etc/hosts", "Creating user accounts", "Finalizing",
@@ -594,10 +593,7 @@ local function runSetup()
     function(step)
       step("Synchronizing core")
       step("Synchronizing extra")
-      step("Installing bytekernel 1.0.0")
-      step("Installing coreutils 1.0.0")
-      step("Installing pacman 1.0.0")
-      step("Installing byteshell 1.0.0")
+      step(base)
 
       step("Writing /etc/hostname", function()
         fs.writeAll("/etc/hostname", hn .. "\n") end)

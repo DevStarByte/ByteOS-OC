@@ -4,7 +4,9 @@
   It bootstraps the kernel, then transfers control to /sbin/init.
 ]]--
 
-_G._OSVERSION   = "ByteOS 1.0.0"
+-- The version lives in /etc/os-release only; it is read below once the
+-- boot disk is known.
+_G._OSVERSION   = "ByteOS"
 _G._OSCODENAME  = "Iron"
 _G._BOOTADDRESS = (computer.getBootAddress and computer.getBootAddress()) or nil
 
@@ -31,6 +33,18 @@ end
 
 local boot = findBootFs()
 _G.bootfs  = boot
+
+do
+  local h = boot.open("/etc/os-release", "r")
+  if h then
+    local text = boot.read(h, math.huge) or ""
+    boot.close(h)
+    local ver = text:match("VERSION_ID=\"?([^\"\r\n]+)")
+    local code = text:match("VERSION_CODENAME=\"?([^\"\r\n]+)")
+    if ver then _G._OSVERSION = "ByteOS " .. ver end
+    if code then _G._OSCODENAME = code end
+  end
+end
 
 -- Tiny early console (dmesg-style: dim timestamp, then the message)
 local gpu    = component.proxy(component.list("gpu")())

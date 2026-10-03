@@ -75,7 +75,7 @@ local info = {
   { nil, string.rep("-", term.ulen(user .. "@" .. host)) },
   { "OS",       (_G._OSVERSION or "ByteOS") .. " (" .. (_G._OSCODENAME or "") .. ")" },
   { "Host",     "OpenComputers " .. computer.address():sub(1, 8) },
-  { "Kernel",   "bytekernel 1.0" },
+  { "Kernel",   "bytekernel " .. ((_G._OSVERSION or ""):match("[%d%.]+") or "?") },
   { "Uptime",   uptime() },
   { "Packages", pkgs .. " (pacman)" },
   { "Shell",    "byteshell" },

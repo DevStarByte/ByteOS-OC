@@ -159,7 +159,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 [root@byteos ~]# neofetch
 [root@byteos ~]# uname -a
-ByteOS byteos 1.0.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.1.0 (Iron) lua54 GNU/ByteOS
 
 [root@byteos ~]# pacman -Sy
 :: Synchronizing package databases...
@@ -191,7 +191,7 @@ Packages (1) cowsay-0.2.0
                 ||     ||
 
 [root@byteos ~]# pacman -Q
-byteos 1.0.0
+byteos 1.1.0
 cowsay 0.2.0
 ```
 
@@ -227,10 +227,10 @@ pulls its newest version straight from this GitHub repository:
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.0.0.ga98d83c  cowsay-0.3.0
+Packages (2) byteos-1.1.0.g2577c8d  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.0.0.ga98d83c from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.1.0.g2577c8d from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...

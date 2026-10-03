@@ -1,7 +1,8 @@
 -- uname - print system information
 local args = arg or {}
 local flag = args[1] or ""
-local name, version, codename = "ByteOS", "1.0.0", _G._OSCODENAME or "Iron"
+local name, codename = "ByteOS", _G._OSCODENAME or "Iron"
+local version = (_G._OSVERSION or ""):match("[%d%.]+") or "?"
 local arch = "lua54"
 local host = _G.HOSTNAME or "byteos"
 if flag == "-a" then
