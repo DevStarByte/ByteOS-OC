@@ -1016,16 +1016,21 @@ local function remove(targets)
   return ok and 0 or 1
 end
 
-local function queryAll()
-  for _, n in ipairs(installedNames()) do
-    term.cwrite(T.bright, n .. " ")
-    term.cwrite(T.green, (localInfo(n).version or "?") .. "\n")
+-- -Q [pkg...]: installed packages with their versions (only the named ones)
+local function queryAll(targets)
+  local want, rc = {}, 0
+  for _, t in ipairs(targets or {}) do want[t] = true end
+  local function show(name, version)
+    if next(want) and not want[name] then return end
+    want[name] = nil
+    term.cwrite(T.bright, name .. " ")
+    term.cwrite(T.green, version .. "\n")
   end
+  for _, n in ipairs(installedNames()) do show(n, localInfo(n).version or "?") end
   local st, i = biosStatus()
-  if st == "current" or st == "outdated" then
-    term.cwrite(T.bright, "bytebios ")
-    term.cwrite(T.green, i.installed .. "\n")
-  end
+  if st == "current" or st == "outdated" then show("bytebios", i.installed) end
+  for n in pairs(want) do err("package '" .. n .. "' was not found"); rc = 1 end
+  return rc
 end
 
 local function row(label, value)
@@ -1219,7 +1224,7 @@ elseif op == "-R" then
   return remove(targets)
 elseif op == "-Q" then
   if targets[1] == "-i" or targets[1] == "i" then return queryInfo(targets[2]) end
-  queryAll()
+  return queryAll(targets)
 elseif op == "-Ql" then
   return queryFiles(targets)
 elseif op == "-Qo" then

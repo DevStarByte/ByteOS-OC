@@ -76,65 +76,70 @@ You will need:
 - A managed hard disk drive
 - A screen + keyboard + GPU (any tier)
 
-### Easiest way: just copy the files onto a disk
+### Easiest way: over the internet, from OpenOS
 
-ByteOS now has a **first-boot setup wizard**. You don't need to run any installer
-script — just put the files on a disk and boot it.
+Everything happens in the game; you don't touch the save folder. You need an
+**internet card** in the computer and the **OpenOS floppy** (craft a floppy
+disk together with the OpenComputers manual, or take it from creative).
 
-1. Flash `boot/eeprom.lua` onto your EEPROM (see "Flash the EEPROM" below).
-2. Copy the contents of this repository onto the target HDD so the disk root
-   contains `/init.lua`, `/boot/`, `/sbin/`, `/lib/`, `/bin/`, `/etc/`, `/home/`,
-   `/var/`. From outside Minecraft you can drop the files straight into
-   `saves/<world>/opencomputers/<disk-uuid>/`.
-3. Set the EEPROM's boot address to that disk (or just have it as the only
-   bootable FS).
-4. Power on. On the very first boot ByteOS notices `/etc/.installed` is missing
-   and runs the full-screen setup wizard:
+1. Put a blank hard disk in the computer, insert the OpenOS floppy and start
+   the computer: it boots OpenOS.
+2. In the OpenOS shell type:
    ```
-    ByteOS Setup                                            Settings
-              ┌──────── Installation summary ────────┐
-              │ ✓ Hostname                    byteos │
-              │ ✓ Keyboard layout                 us │
-              │ ✓ Locale                 en_US.UTF-8 │
-              │ ✓ Timezone                       UTC │
-              │ • Root password             required │
-              │ ✓ User account             root only │
-              │ ──────────────────────────────────── │
-              │   Install ByteOS                     │
-              │   Abort and reboot                   │
-              └──────────────────────────────────────┘
-    ↑↓ move  Enter change  Shift+Q abort
+   wget -f https://raw.githubusercontent.com/DevStarByte/ByteOS-OC/master/install.lua /tmp/install.lua
+   /tmp/install.lua
    ```
-   Pick each entry with the arrow keys (or `1`-`9`) and Enter, set a root
-   password, then choose *Install ByteOS*. Your answers are written to
-   `/etc/hostname`, `/etc/passwd`, `/etc/shadow` and friends, and a
-   `/etc/.installed` marker is created so the wizard never runs again.
-   (Escape closes the Minecraft screen, so *back* is `Shift+Q` or Backspace.)
-5. From now on every boot goes straight to the login prompt and verifies your
-   password.
+3. The installer asks which disk to install on (it offers only the ones that
+   can take ByteOS), erases it after you confirm, downloads ByteOS from GitHub
+   onto it and offers to flash ByteBIOS onto the EEPROM (your old BIOS is
+   saved; `pacman -R bytebios` restores it).
+4. Take the OpenOS floppy out and let it reboot.
+
+Only the system itself (`/init.lua /boot /sbin /lib /bin /etc /home /var
+/usr`) is installed. The installed system already knows its version, so
+`sudo pacman -Syu` later only fetches what changed.
+
+### The first start
+
+On the very first boot ByteOS notices `/etc/.installed` is missing and runs
+the full-screen setup wizard:
+```
+ ByteOS Setup                                            Settings
+           ┌──────── Installation summary ────────┐
+           │ ✓ Hostname                    byteos │
+           │ ✓ Keyboard layout                 us │
+           │ ✓ Locale                 en_US.UTF-8 │
+           │ ✓ Timezone                       UTC │
+           │ • Root password             required │
+           │ ✓ User account             root only │
+           │ ──────────────────────────────────── │
+           │   Install ByteOS                     │
+           │   Abort and reboot                   │
+           └──────────────────────────────────────┘
+ ↑↓ move  Enter change  Shift+Q abort
+```
+Pick each entry with the arrow keys (or `1`-`9`) and Enter, set a root
+password, then choose *Install ByteOS*. Your answers are written to
+`/etc/hostname`, `/etc/passwd`, `/etc/shadow` and friends, and a
+`/etc/.installed` marker is created so the wizard never runs again.
+(Escape closes the Minecraft screen, so *back* is `Shift+Q` or Backspace.)
+From now on every boot goes straight to the login prompt.
 
 > Want to redo the setup? Just delete `/etc/.installed` and reboot.
 
-### Optional: use the bundled `install.lua` from OpenOS
+### Other ways
 
-The old installer is still included for the case where you want to copy the
-files **from another disk** (e.g. a floppy under OpenOS) and optionally flash
-the EEPROM in one go:
-
-1. Boot any OpenOS computer.
-2. Insert a disk/floppy that contains this repository.
-3. Insert a blank target HDD for ByteOS.
-4. From the OpenOS shell run:
-   ```
-   lua /mnt/<id_of_byteos_disk>/install.lua
-   ```
-5. The installer asks for source / target FS, wipes the target, copies all
-   ByteOS files and (optionally) flashes ByteBIOS. Reboot afterwards — the
-   first-boot wizard above takes care of the rest.
+- **From a disk instead of the internet:** put the ByteOS files on a floppy
+  (or any disk), boot OpenOS, run `install.lua` from that disk and choose
+  "a disk" as the source. It finds the disk with ByteOS by itself.
+- **By hand:** copy `init.lua`, `boot/`, `sbin/`, `lib/`, `bin/`, `etc/`,
+  `home/`, `var/` and `usr/` onto the hard disk (outside Minecraft:
+  `saves/<world>/opencomputers/<disk-uuid>/`) and boot it. ByteOS also starts
+  with the stock Lua BIOS.
 
 > If you ever see `unrecoverable error init:4: /lib/core/boot.lua` after copying
-> ByteOS, that means OpenOS files are still on the disk. Wipe the disk (or
-> re-run `install.lua`) before copying ByteOS over it.
+> ByteOS by hand, OpenOS files are still on the disk. Erase it first, or use
+> the installer, which does.
 
 ### Flash the EEPROM
 
@@ -167,7 +172,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.9.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.9.1 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -199,7 +204,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.9.0
+byteos 1.9.1
 cowsay 0.2.0
 ```
 
@@ -429,10 +434,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.9.0.gbbfdeca  cowsay-0.3.0
+Packages (2) byteos-1.9.1.gf14f720  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.9.0.gbbfdeca from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.9.1.gf14f720 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...
