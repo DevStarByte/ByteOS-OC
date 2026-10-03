@@ -7,7 +7,7 @@
     1. asks for the source filesystem (where the ByteOS files are) and the
        target filesystem
     2. erases EVERYTHING on the target (after asking)
-    3. copies /init.lua, /boot, /sbin, /lib, /bin, /etc, /home, /var
+    3. copies /init.lua, /boot, /sbin, /lib, /bin, /etc, /home, /var, /usr
     4. optionally flashes ByteBIOS onto the EEPROM and sets the boot address
     5. asks you to reboot
 
@@ -129,7 +129,7 @@ print("Erasing the target...")
 wipe(dst)
 
 print("Copying ByteOS...")
-local TOP = { "init.lua", "boot", "sbin", "lib", "bin", "etc", "home", "var" }
+local TOP = { "init.lua", "boot", "sbin", "lib", "bin", "etc", "home", "var", "usr" }
 for _, name in ipairs(TOP) do
   local sp = joinPath(srcRoot, name)
   if src.exists(sp) then

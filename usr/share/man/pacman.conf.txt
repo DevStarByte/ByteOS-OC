@@ -1,0 +1,33 @@
+pacman.conf - pacman's settings (/etc/pacman.conf)
+
+An INI file: [options] for pacman itself, then one [section] per
+repository.
+
+[options]
+  HoldPkg = byteos         packages pacman -R refuses to remove
+  SigLevel = Optional      Never | Optional | Required (see SIGNATURES)
+  TrustedKey = /etc/pacman.d/byteos.pub
+                           the public key the databases are signed with
+  BaseRepo = DevStarByte/ByteOS-OC
+  BaseBranch = master      where pacman -Syu gets new ByteOS versions
+
+[core], [extra], ...
+  Server = https://...     a URL (needs an internet card), or
+  Server = /mnt/1a2b3c4d/repo/core
+                           a directory, e.g. on a floppy
+  SigLevel = ...           overrides the [options] value for this repo
+
+  A repository is a directory with <repo>.db, the .bpk packages it lists
+  and, when signed, <repo>.db.sig.
+
+SIGNATURES
+  The database lists the SHA-256 of every package, and every download is
+  checked against it. The database itself is signed (ECDSA P-256); checking
+  that signature needs a tier 3 data card.
+    Never     signatures are ignored
+    Optional  checked when a data card is there; otherwise one warning,
+              and unsigned repositories are accepted
+    Required  only correctly signed databases are used
+
+SEE ALSO
+  pacman, man PKGBUILD

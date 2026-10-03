@@ -1,4 +1,4 @@
--- mv - move/rename
+-- mv <source> <target> - move or rename a file (also onto another disk)
 local args = arg or {}
 if #args < 2 then term.write("mv: missing operand\n"); return 1 end
 local src = shell.normalize(args[1])

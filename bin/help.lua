@@ -1,4 +1,4 @@
--- help - list available commands
+-- help - list the commands and shell built-ins (man <command> for details)
 local T = term.theme
 local W = term.size()
 
@@ -42,6 +42,13 @@ grid({ ".", "alias", "cd", "exit", "export", "history", "jobs", "logout", "not",
 term.write("\n")
 term.cwrite(T.muted, "Keys: ↑↓ history (type first to search)  → take suggestion  Tab complete\n")
 term.cwrite(T.muted, "      ^A/^E start/end  ^U/^K cut  ^W word  ^L clear  ^C cancel  ^D log out\n")
+term.cwrite(T.muted, "Details: ")
+term.cwrite(T.blue, "man <command>")
+term.cwrite(T.muted, ", ")
+term.cwrite(T.blue, "man byteshell")
+term.cwrite(T.muted, ", ")
+term.cwrite(T.blue, "man -k <word>")
+term.cwrite(T.muted, ".\n")
 term.cwrite(T.muted, "More software: ")
 term.cwrite(T.blue, "pacman -Ss")
 term.cwrite(T.muted, " to search, ")

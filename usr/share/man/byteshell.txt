@@ -1,0 +1,61 @@
+byteshell - the ByteOS shell
+
+ByteShell is the login shell. It takes its cues from fish: the line is
+coloured as you type, grey suggestions come from your history, and Tab
+completes.
+
+EDITING
+  Up / Down        history; with text typed, only lines containing it
+  Right End ^F     take the grey suggestion
+  Tab              complete commands, files, $VARIABLES, package names
+  ^A ^E            start / end of the line     ^U ^K  cut to start / end
+  ^W               cut the word before the cursor
+  ^L               clear the screen            ^C     cancel the line
+  ^D               on an empty line: log out
+
+COMMAND LINES
+  a; b             one after the other
+  a && b           b only if a succeeded       a || b   b only if a failed
+  not a            invert a's status           $status or $?  last status
+  a | b            a's output becomes b's input
+  a > file         write the output to file    >> appends    < file reads
+  a &              run in the background (the whole a && b || c list)
+  * ? [abc]        match file names; 'quoted' or \* stays literal
+  'single'         everything literal          "double"  $VARS expanded
+  ~                your home directory         # rest    a comment
+  dir/  ..         typing a directory changes into it (auto-cd)
+
+VARIABLES
+  NAME=value       set a variable (names are UPPERCASE)
+  set NAME value   the same, fish style; set -e NAME erases it
+  export NAME=v    the same; every variable is exported
+  env              list them; env NAME=v cmd runs cmd with NAME set
+  USER and HOME are read-only: who you are is kept by the kernel.
+
+FILES
+  /etc/profile     run at every login (for everyone)
+  ~/.shrc          run at every login, after /etc/profile; set aliases
+                   and variables here (GREETING= turns the greeting off)
+  ~/.byteshell_history   your history (500 lines; a command that starts
+                   with a space is not saved)
+
+SCRIPTS
+  A text file of command lines. With #!/bin/sh as its first line it runs
+  by name (./script); otherwise use sh script. Inside: $0 the script,
+  $1..$9 its arguments, $# how many, $@ all of them; exit n ends it.
+
+BUILT-IN COMMANDS
+  cd [dir|-]               change directory; - goes back
+  alias [name[=value]]     list or define aliases: alias ll='ls -l'
+  unalias name... | -a     remove aliases
+  source file | . file     run a file in this shell
+  history [search t|clear] show, search or clear the history
+  set, export              variables (see above)
+  jobs                     this session's background jobs
+  wait [%job|pid]          until background jobs have finished
+  exit [n]                 leave the shell (or a script, with status n)
+  logout                   back to the login prompt
+  not cmd                  run cmd and invert its status
+
+SEE ALSO
+  sh, starshell, ps, kill, man byteos

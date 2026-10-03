@@ -1,4 +1,4 @@
--- rm - remove files or directories
+-- rm <path>... - remove files, and directories with everything in them
 local args = arg or {}
 if #args == 0 then term.write("rm: missing operand\n"); return 1 end
 for _, a in ipairs(args) do

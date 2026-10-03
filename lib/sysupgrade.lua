@@ -39,11 +39,12 @@ local LOCAL    = "var/lib/pacman/local"
 -- placeholder entries from before the base system was one package
 local LEGACY   = { "bytekernel", "coreutils", "pacman" }
 
--- Which repository paths belong to the running system.
+-- Which repository paths belong to the running system (the manual's
+-- topic pages in /usr/share/man included).
 --   "os"     : owned by ByteOS, replaced on upgrade
 --   "config" : /etc files the user may edit, replaced only if untouched
 --   nil      : not installed (README, docs, home/, var/ ...)
-local OS_DIRS  = { "boot/", "sbin/", "lib/", "bin/" }
+local OS_DIRS  = { "boot/", "sbin/", "lib/", "bin/", "usr/share/man/" }
 local OS_FILES = { ["init.lua"] = true, ["etc/os-release"] = true, ["etc/issue"] = true }
 local NEVER    = { ["etc/passwd"] = true, ["etc/hostname"] = true }
 

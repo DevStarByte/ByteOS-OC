@@ -1,4 +1,4 @@
--- mkdir - create directories
+-- mkdir <dir>... - create directories (missing parents too)
 local args = arg or {}
 if #args == 0 then term.write("mkdir: missing operand\n"); return 1 end
 for _, a in ipairs(args) do

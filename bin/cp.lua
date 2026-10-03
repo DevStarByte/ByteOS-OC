@@ -1,4 +1,4 @@
--- cp - copy file
+-- cp <source> <target> - copy a file (target may be a directory)
 local args = arg or {}
 if #args < 2 then term.write("cp: missing operand\n"); return 1 end
 local src = shell.normalize(args[1])

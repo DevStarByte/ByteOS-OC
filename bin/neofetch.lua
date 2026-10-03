@@ -1,4 +1,4 @@
--- neofetch - system info banner for ByteOS
+-- neofetch - the ByteOS logo with system information
 local T = term.theme
 local W, H = term.size()
 

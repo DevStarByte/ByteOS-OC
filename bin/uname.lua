@@ -1,4 +1,4 @@
--- uname - print system information
+-- uname [-a|-r|-n|-m] - system name; -a all, -r release, -n host, -m machine
 local args = arg or {}
 local flag = args[1] or ""
 local name, codename = "ByteOS", _G._OSCODENAME or "Iron"

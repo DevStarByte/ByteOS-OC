@@ -1,0 +1,17 @@
+man - the ByteOS manual
+
+  man <name>     the page of a command or topic (q quits, / searches)
+  man -k word    pages whose name or first line mention word
+
+Every command's page is the comment at the top of its program, so it
+always matches the installed version; commands from packages have pages
+the same way. Topics without a command:
+
+  byteshell        the shell: editing keys, history, aliases, pipes,
+                   scripts, jobs and every built-in command
+  byteos           the system: where things live, users, updates
+  pacman.conf      pacman's settings, repositories and signatures
+  PKGBUILD         how to write and build a package
+  systemd.service  how to describe a service for systemctl
+
+A package can add a topic page by installing /usr/share/man/<name>.txt.

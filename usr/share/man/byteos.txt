@@ -1,0 +1,33 @@
+byteos - an Arch-flavoured operating system for OpenComputers
+
+WHERE THINGS LIVE
+  /init.lua /boot /sbin /lib /bin   the system (package "byteos")
+  /usr/bin /usr/share               programs and data from packages
+  /etc                              settings (yours to edit)
+  /home/<user>                      your files; /tmp for anyone
+  /mnt/<disk>                       other disks, also ones inserted later
+  /var/log/messages                 the system log (journalctl)
+
+USERS
+  Everyone but root may only write in their home, /tmp and /mnt. Users in
+  the wheel group run commands as root with sudo. useradd, userdel,
+  usermod, passwd, su, id and groups manage accounts; logout switches
+  users. Passwords are stored as salted SHA-256 hashes in /etc/shadow,
+  which only root can read.
+
+SOFTWARE AND UPDATES
+  sudo pacman -Syu         update everything, ByteOS itself included
+  sudo pacman -S <pkg>     install;  pacman -Ss <text> searches
+  sudo pacman --rollback   undo the last ByteOS update
+  sudo pacman -S bytebios  put ByteBIOS on the EEPROM
+  If an update of ByteOS does not boot, it is rolled back by itself.
+
+SERVICES AND LOGS
+  systemctl manages services (man systemd.service), journalctl and dmesg
+  show the log, ps and kill the processes.
+
+THE VERSION
+  /etc/os-release holds it; uname -r and neofetch show it.
+
+SEE ALSO
+  man byteshell, man pacman.conf, man PKGBUILD, man systemd.service

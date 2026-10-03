@@ -1,4 +1,4 @@
--- ls - list directory contents
+-- ls [-a] [-l] [-1] [path...] - list directory contents
 --   -a  show hidden (dot) files     -l  long listing     -1  one per line
 local T = term.theme
 local args = arg or {}

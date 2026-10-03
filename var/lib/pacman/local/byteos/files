@@ -24,6 +24,7 @@
 /bin/lsblk.lua
 /bin/ls.lua
 /bin/makepkg.lua
+/bin/man.lua
 /bin/mkdir.lua
 /bin/mount.lua
 /bin/mv.lua
@@ -72,3 +73,9 @@
 /lib/theme.lua
 /lib/units.lua
 /sbin/init.lua
+/usr/share/man/byteos.txt
+/usr/share/man/byteshell.txt
+/usr/share/man/man.txt
+/usr/share/man/pacman.conf.txt
+/usr/share/man/PKGBUILD.txt
+/usr/share/man/systemd.service.txt

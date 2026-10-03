@@ -36,10 +36,10 @@ local tier = ({ [1] = 1, [4] = 2, [8] = 3 })[term.depth] or "?"
 status(("Loaded terminal driver (Tier %s GPU, %dx%d, %d-bit colour)."):format(tier, W, H, term.depth))
 
 -- Make sure essential dirs exist
-for _, d in ipairs({ "/tmp", "/var", "/var/log", "/home", "/home/root", "/run" }) do
+for _, d in ipairs({ "/tmp", "/var", "/var/log", "/home", "/home/root", "/run", "/mnt" }) do
   if not fs.exists(d) then fs.makeDirectory(d) end
 end
-status("Created runtime directories /tmp /run /var/log.")
+status("Created runtime directories /tmp /run /var/log /mnt.")
 
 local mounts = k.fs.mounts()
 status(("Mounted %d filesystem%s."):format(#mounts, #mounts == 1 and "" or "s"))

@@ -14,3 +14,5 @@ var/lib/sysupdate/
 var/cache/
 ocelot-desktop-v1.14.2.jar# signing keys never belong in the repository
 *.pem
+# Ocelot Desktop, the OpenComputers emulator used to try ByteOS locally
+ocelot-desktop-*.jar

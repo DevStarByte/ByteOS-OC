@@ -1,0 +1,45 @@
+PKGBUILD - how to write a ByteOS package
+
+A package is built from a directory:
+
+  mytool/
+    PKGBUILD.lua       what the package is
+    mytool.install     optional hooks
+    files/             the files, laid out as on the disk
+      usr/bin/mytool.lua
+      etc/mytool.conf
+
+PKGBUILD.lua returns a table:
+
+  return {
+    name      = "mytool",
+    version   = "1.0.0",      -- letters, digits and dots
+    rel       = 1,            -- bump when only the packaging changes
+    desc      = "my cool tool",
+    url       = "https://...",
+    depends   = { "lolcat", "figlet>=1.0" },  -- >= <= = < > allowed
+    conflicts = { "oldtool<2" },
+    backup    = { "/etc/mytool.conf" },       -- your edits survive updates
+    install   = "mytool.install",
+  }
+
+The install file may define any of:
+
+  function post_install(version) end
+  function post_upgrade(new, old) end
+  function pre_remove(version) end
+  function post_remove(version) end
+
+Build and install it inside ByteOS:
+
+  makepkg [dir]                 writes mytool-1.0.0-1.bpk
+  sudo pacman -U mytool-1.0.0-1.bpk
+
+To publish it, put the directory into pkgs/<repo>/ on the packages branch
+and run tools/mkrepo.lua on a PC (see the README).
+
+A command's manual page is the comment at the top of its program, and a
+package may install a topic page as /usr/share/man/<name>.txt.
+
+SEE ALSO
+  makepkg, pacman, man pacman.conf

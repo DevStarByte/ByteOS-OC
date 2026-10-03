@@ -31,6 +31,7 @@ in the classic `[user@host pwd]$` style, an Arch-style **`pacman`** package mana
   files: `ls cat cp mv rm mkdir touch find less edit grep head tail wc`;
   system: `df du free date sleep uname hostname neofetch which env help reboot shutdown`;
   processes, services and logs: `ps kill systemctl journalctl dmesg logger`;
+  help: `man` (`man <command>`, `man byteshell`, `man -k <word>`);
   users: `whoami id groups passwd su sudo useradd userdel usermod`;
   disks: `mount umount lsblk`; network: `wget curl`.
 - **pacman** — `-S / -R / -Q / -Qi / -Sy / -Syu / -Ss` with a tiny on-disk repo format.
@@ -57,7 +58,8 @@ ByteOS/
 ├── etc/                  ← system configuration
 ├── home/root/            ← root's home
 ├── var/lib/pacman/       ← pacman local DB
-└── tools/mkrepo.lua      ← builds the package repos (runs on a PC)
+├── usr/share/man/        ← manual topic pages (man byteshell, man pacman.conf, ...)
+└── tools/                ← PC tools: mkrepo.lua, repokey.sh, the test suite in test/
 ```
 
 The pacman repositories (`core/`, `extra/`) live on the separate
@@ -165,7 +167,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.8.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.9.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -197,7 +199,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.8.0
+byteos 1.9.0
 cowsay 0.2.0
 ```
 
@@ -427,10 +429,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.8.0.gf8c4c1c  cowsay-0.3.0
+Packages (2) byteos-1.9.0.gbbfdeca  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.8.0.gf8c4c1c from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.9.0.gbbfdeca from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...
@@ -580,9 +582,50 @@ removal.
 
 ## Hacking on ByteOS
 
-Each command in `bin/` runs in a sandbox where the following globals are pre-injected:
-`term`, `shell`, `fs` (= `kernel.fs`), `k` (= `kernel`), and `arg` (the argv list).
-Just write a `.lua` file that uses them and `return` an exit code.
+Each command in `bin/` runs with these globals: `term`, `shell`, `fs`
+(= `kernel.fs`), `k` (= `kernel`), `arg` (the arguments), `stdin` (its input:
+`stdin.read("a")`, `stdin.lines()`) and `print`. Write a `.lua` file that
+uses them and `return` an exit code. In a pipe or redirection `term.write`
+goes there automatically.
+
+Start the file with a comment: that is its manual page. `man mycmd` shows
+
+```lua
+--[[
+  mycmd [-v] <file> - what it does, in one line
+
+    -v   say more
+]]--
+```
+
+### Tests
+
+`tools/test/` boots the real kernel on a PC (a directory as the disk, a
+fake screen and keyboard, extra disks, a data card) and drives the system
+through the shell, as users, with key presses:
+
+```sh
+lua tools/test/run.lua            # everything (Lua 5.3+, openssl; no Minecraft, no internet)
+lua tools/test/run.lua pacman     # only cases whose name contains "pacman"
+lua tools/test/run.lua -v         # list every test, not just failures
+```
+
+Each case in `tools/test/cases/` runs on its own fresh copy of the system.
+A case is a list of tests:
+
+```lua
+users()                                          -- root, alice (wheel), bob
+test("bob cannot write to /etc", function()
+  as("bob", function()
+    has(run("echo x > /etc/x"), "permission denied")
+  end)
+end)
+```
+
+The helpers (`run`, `as`, `answers`, `keys`, `signals`, `disk`,
+`useDatacard`, `file`, `put`, `eq`, `has`, ...) are described at the top of
+[`tools/test/boot.lua`](tools/test/boot.lua). Run the suite before every
+commit.
 
 ## License
 

@@ -1,0 +1,31 @@
+systemd.service - how to describe a service
+
+A service is a program that runs in the background, started by systemctl
+or at boot. It is described in /etc/systemd/system/<name>.service (yours)
+or /usr/lib/systemd/system/<name>.service (from a package):
+
+  [Unit]
+  Description=Backup every hour
+
+  [Service]
+  ExecStart=/usr/bin/backupd --quiet   a command line, as in the shell
+  User=root                            who it runs as (default root)
+  Restart=on-failure                   no | on-failure | always
+  RestartSec=5                         seconds before a restart
+
+What the service prints, errors included, goes to the system log under
+its name: journalctl -u <name>. A service that fails is restarted at most
+five times in a row.
+
+The program must wait now and then with k.event.pull (sleep does), since
+background programs only run while others wait.
+
+COMMANDS
+  systemctl                      every service and its state
+  systemctl status <name>        state, PID and the last log lines
+  sudo systemctl start|stop|restart <name>
+  sudo systemctl enable [--now] <name>    start at every boot
+  sudo systemctl disable [--now] <name>
+
+SEE ALSO
+  systemctl, journalctl, ps, kill
