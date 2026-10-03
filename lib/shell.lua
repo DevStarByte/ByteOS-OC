@@ -75,6 +75,9 @@ end
 
 function shell.builtins.exit() error("__exit__", 0) end
 
+-- Back to the login prompt, even from a nested shell such as StarShell.
+function shell.builtins.logout() error("__logout__", 0) end
+
 function shell.builtins.export(args)
   for _, a in ipairs(args) do
     local k_, v = a:match("([^=]+)=(.*)")
@@ -119,7 +122,11 @@ function shell.execute(line)
   local ok, rc = pcall(fn, table.unpack(args))
   -- programs may leave colours behind; reset to the defaults
   term.setForeground(T.fg); term.setBackground(T.bg)
-  if not ok then shell.err(cmd, tostring(rc)); return 1 end
+  if not ok then
+    if rc == "__logout__" then error(rc, 0) end -- from a nested shell
+    shell.err(cmd, tostring(rc))
+    return 1
+  end
   return tonumber(rc) or 0
 end
 
@@ -156,7 +163,7 @@ function shell.repl()
     if line == nil then return end
     local ok, err = pcall(shell.execute, line)
     if not ok then
-      if err == "__exit__" then return end
+      if err == "__exit__" or err == "__logout__" then return end
       shell.err("error", err)
     end
   end

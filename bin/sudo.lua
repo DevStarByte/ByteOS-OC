@@ -84,5 +84,8 @@ end
 _G.USER = "root"
 local ok, rc = pcall(shell.execute, table.concat(line, " "))
 _G.USER = user
-if not ok then return fail(tostring(rc)) end
+if not ok then
+  if rc == "__logout__" then error(rc, 0) end
+  return fail(tostring(rc))
+end
 return rc

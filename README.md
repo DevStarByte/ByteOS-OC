@@ -212,6 +212,10 @@ Like on Linux, sudo asks for the user's own password and remembers it for
 5 minutes (`sudo -k` forgets it). Users outside `wheel` are refused.
 Queries such as `pacman -Q`, `-Qi` and `-Ss` work for everyone.
 
+To switch users, type `logout` (or press Ctrl+D on an empty line) to get
+back to the login prompt. It also works from inside StarShell, and sudo
+forgets the remembered password.
+
 ## Updating ByteOS
 
 Like on Arch, `pacman -Syu` upgrades everything, including the OS itself.

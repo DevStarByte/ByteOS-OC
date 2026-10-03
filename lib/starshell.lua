@@ -74,7 +74,7 @@ local function pushHistory(line)
 end
 
 -- ---- Helpers -----------------------------------------------------------
-local BUILTINS = { cd=true, exit=true, export=true, set=true, help=true }
+local BUILTINS = { cd=true, exit=true, logout=true, export=true, set=true, help=true }
 
 local function commandExists(name)
   if name == nil or name == "" then return false end
@@ -417,6 +417,7 @@ function star.repl()
       local ok, rc = pcall(shell.execute, line)
       if not ok then
         if rc == "__exit__" then return end
+        if rc == "__logout__" then error(rc, 0) end -- up to the login shell
         term.setForeground(C.cmd_bad)
         term.write("error: " .. tostring(rc) .. "\n")
         term.setForeground(C.fg)

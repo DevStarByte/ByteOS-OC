@@ -809,5 +809,8 @@ while true do
     term.cwrite(T.err, "shell crashed: " .. tostring(err) .. "\n")
     k.event.pull(2)
   end
+  -- logged out: nothing of this session carries over to the next user
+  _G.SUDO_TIMESTAMPS = nil
+  _G.USER, _G.HOME, _G.SHELL = nil, nil, nil
   _G.PWD = "/"
 end
