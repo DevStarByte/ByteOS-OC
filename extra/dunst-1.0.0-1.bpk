@@ -1,0 +1,60 @@
+BPK1
+190 - .PKGINFO
+name = dunst
+version = 1.0.0-1
+desc = notification pop-ups for Hyprbyte, with history and do-not-disturb
+depend = libnotify
+depend = hyprbyte>=1.2.0
+backup = /etc/dunst/dunstrc
+isize = 6508
+114 - .INSTALL
+function post_install()
+  print("Start it with Hyprbyte: add  exec-once = dunst  to ~/.config/hyprbyte.conf")
+end
+247 - /etc/dunst/dunstrc
+# /etc/dunst/dunstrc - copy to ~/.config/dunst/dunstrc to change it
+
+# how wide the pop-ups are (columns)
+width = 36
+# seconds before one goes away (critical ones stay until clicked)
+timeout = 6
+# how many are shown at once; the rest wait
+max = 3
+4092 z /usr/bin/dunst.lua
+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1396 - /usr/bin/dunstctl.lua
+--[[
+  dunstctl - control dunst
+
+    dunstctl close             close the newest pop-up
+    dunstctl close-all         close them all
+    dunstctl history           the last notifications
+    dunstctl set-paused true|false|toggle
+                               do not disturb: hold back all but critical
+    dunstctl is-paused
+    dunstctl count             shown, waiting and in the history
+]]--
+local notify = require("notify")
+local d = package.loaded["dunst.state"]
+local args = arg or {}
+local cmd = args[1] or "count"
+if cmd == "history" then
+  for _, n in ipairs(notify.history) do
+    term.write(("%s%s: %s%s\n"):format(n.app ~= "" and ("[" .. n.app .. "] ") or "", n.summary,
+      n.body, n.urgency == "critical" and " (critical)" or ""))
+  end
+  return 0
+end
+if not d then term.write("dunstctl: dunst is not running\n"); return 1 end
+if cmd == "close" then d.close()
+elseif cmd == "close-all" then d.closeAll()
+elseif cmd == "set-paused" then
+  local v = args[2]
+  if v == "toggle" then d.setPaused(not d.paused) else d.setPaused(v == "true") end
+elseif cmd == "is-paused" then term.write(tostring(d.paused) .. "\n")
+elseif cmd == "count" then
+  term.write(("shown %d, waiting %d, history %d\n"):format(#d.shown, #d.waiting, #notify.history))
+else
+  term.write("usage: dunstctl close | close-all | history | set-paused true|false|toggle | is-paused | count\n")
+  return 1
+end
+return 0

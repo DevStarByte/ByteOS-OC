@@ -11,7 +11,9 @@ START
 
 KEYS (Mod = Alt unless the config says otherwise)
   Mod+Enter          a new terminal
-  Mod+D              run a program in a new window
+  Mod+D              run a program (rofi when installed, else a small box)
+  Mod+W              switch to any window (needs rofi)
+  Mod+L              lock the screen (needs hyprlock)
   Mod+Q              close the window in focus
   Mod+Arrows, Tab    focus the previous / next window; a click focuses too
   Mod+Shift+Arrows   move the window back / forward in the layout
@@ -29,11 +31,18 @@ SETTINGS
     animations = yes     rounding = yes     bar = yes
     open = btop          a window at the start (any number of them)
     exec-once = quickshell   a program in the background, no window
+    bind = MOD SHIFT, R, spawn, rofi -show run
+          mods (MOD, SHIFT, CTRL), a key (A-Z, 0-9, RETURN, SPACE, TAB,
+          LEFT, F1 ...), a dispatcher (see hyprctl) and what it gets;
+          the same keys again replace a built-in binding
+
+THE ECOSYSTEM (packages, each started with exec-once or a key)
+  quickshell   your own bars         dunst       notification pop-ups
+  rofi         launcher, windows     hyprlock    lock screen
+  hypridle     act on idle time      hyprpaper   wallpapers
 
 LAYERS
-  Panels along the top or bottom edge come from other programs, like
-  quickshell (a package). The built-in bar makes way for one at the top.
-  A program adds one through the state Hyprbyte shares:
+  Other programs draw through the state Hyprbyte shares:
 
     local hypr = package.loaded["hyprbyte.state"]   -- nil: not running
     local layer = hypr.addLayer({ namespace = "mybar", anchor = "bottom",
@@ -42,16 +51,27 @@ LAYERS
       click = function(x, y, button) end })
     hypr.removeLayer(layer)
 
-  draw is called whenever the bar would be drawn: every second and when
-  focus, workspaces or titles change. hypr.workspaces, hypr.active,
-  hypr.focused() and hypr.dispatchers (as for hyprctl dispatch) tell
-  and do the rest.
+  anchor   "top" / "bottom": a panel; its rows stay free of windows (the
+           built-in bar makes way for one at the top)
+           "overlay": above the windows, where place(SW, SH) returns
+           x, y, w, h (default: everything); exclusive = true hides the
+           windows meanwhile (a lock screen)
+           "background": below the windows (a wallpaper)
+  hypr.grab(layer) sends every key to layer.key(event, card, char, code)
+  until hypr.ungrab(layer) or removeLayer; hypr.refresh() draws again.
+
+  Panels and overlays are drawn every second and when focus, workspaces
+  or titles change. hypr.workspaces, hypr.active, hypr.focused(),
+  hypr.lastInput (uptime of the last key or click) and hypr.dispatchers
+  (as for hyprctl dispatch) tell and do the rest. A layer goes away with
+  the program that added it.
 
 HYPRCTL
-  hyprctl clients | workspaces | activewindow | version
+  hyprctl clients | workspaces | activewindow | layers | version
   hyprctl dispatch exec btop
   hyprctl dispatch workspace 2 | movetoworkspace 3 | killactive
-  hyprctl dispatch fullscreen | cyclenext | exit
+  hyprctl dispatch spawn rofi | focuswindow 3
+  hyprctl dispatch fullscreen | cyclenext | cycleprev | exit
 
 MEMORY
   Each window is a shell and a screen buffer; on a Tier 2 screen two or

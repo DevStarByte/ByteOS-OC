@@ -4,9 +4,12 @@
     hyprctl clients                 every window: id, workspace, title, pid
     hyprctl workspaces              the workspaces and how many windows each has
     hyprctl activewindow            the window in focus
+    hyprctl layers                  panels, pop-ups and wallpapers of other programs
     hyprctl version
     hyprctl dispatch <what> [arg]   do something, as a key would:
         exec <command>              open a window running it
+        spawn <command>             run it in the background (rofi, hyprlock, ...)
+        focuswindow <id>            bring that window into focus
         workspace <n>               go to workspace n
         movetoworkspace <n>         send the window in focus there
         killactive                  close the window in focus
@@ -44,6 +47,11 @@ elseif cmd == "workspaces" then
         #space.list, #space.list == 1 and "" or "s"))
     end
   end
+elseif cmd == "layers" then
+  for _, l in ipairs(state.layers) do
+    term.write(("%-12s %-10s pid %s%s\n"):format(tostring(l.namespace), tostring(l.anchor or "top"),
+      tostring(l.pid), l.exclusive and " (exclusive)" or ""))
+  end
 elseif cmd == "version" then
   term.write("Hyprbyte " .. state.version .. "\n")
 elseif cmd == "dispatch" then
@@ -54,7 +62,7 @@ elseif cmd == "dispatch" then
   end
   state.queue[#state.queue + 1] = { what, table.concat(args, " ", 3) }
 else
-  term.write("usage: hyprctl clients | workspaces | activewindow | version | dispatch <what> [arg]\n")
+  term.write("usage: hyprctl clients | workspaces | activewindow | layers | version | dispatch <what> [arg]\n")
   return 1
 end
 return 0

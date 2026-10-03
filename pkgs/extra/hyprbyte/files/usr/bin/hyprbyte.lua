@@ -8,7 +8,9 @@
 
   Keys (Mod is Alt; mod = super in the config makes it the Windows key):
     Mod+Enter         a new terminal
-    Mod+D             run a program in a new window (a launcher)
+    Mod+D             run a program (rofi, if it is installed)
+    Mod+W             switch to a window (needs rofi)
+    Mod+L             lock the screen (needs hyprlock)
     Mod+Q             close the window in focus
     Mod+Arrows/Tab    focus the previous / next window
     Mod+Shift+Arrows  move the window in focus back / forward
@@ -18,11 +20,11 @@
     Mod+Shift+E       quit Hyprbyte (closes every window)
   A click on a window focuses it. hyprctl controls Hyprbyte from a window.
 
-  Settings: /etc/hyprbyte.conf, then ~/.config/hyprbyte.conf (see there).
+  Settings: /etc/hyprbyte.conf, then ~/.config/hyprbyte.conf (see there);
+  bind = lines add or change keys.
 
-  Layers: a program such as quickshell can put panels at the top or bottom
-  of the screen (package.loaded["hyprbyte.state"].addLayer, see man
-  hyprbyte); the built-in bar makes way for a panel at the top.
+  Layers: other programs (quickshell, dunst, rofi, hyprlock, hyprpaper)
+  draw panels, pop-ups and wallpapers; see LAYERS in man hyprbyte.
 ]]--
 local surface = require("surface")
 local tty = require("tty")
@@ -44,14 +46,16 @@ local SW, SH = screen.getResolution()
 -- ---- settings ------------------------------------------------------------------
 local conf = {
   gaps_in = SW >= 120 and 1 or 0, gaps_out = SW >= 120 and 1 or 0,
-  animations = true, bar = true, mod = "alt", rounding = true, exec_once = {}, open = {},
+  animations = true, bar = true, mod = "alt", rounding = true,
+  exec_once = {}, open = {}, bind = {},
 }
+local LISTS = { exec_once = true, open = true, bind = true }
 local function readConf(path)
   for line in (fs.readAll(path) or ""):gmatch("[^\r\n]+") do
     local key, value = line:match("^%s*([%w_%-]+)%s*=%s*(.-)%s*$")
     if key then
       key = key:gsub("%-", "_")
-      if key == "exec_once" or key == "open" then conf[key][#conf[key] + 1] = value
+      if LISTS[key] then conf[key][#conf[key] + 1] = value
       elseif value == "yes" or value == "true" then conf[key] = true
       elseif value == "no" or value == "false" then conf[key] = false
       else conf[key] = tonumber(value) or value end
@@ -64,31 +68,46 @@ for _, a in ipairs(args) do if a == "--no-animations" then conf.animations = fal
 
 local MODS = { alt = { [56] = true, [184] = true }, super = { [219] = true, [220] = true },
                ctrl = { [29] = true, [157] = true } }
-local MOD = MODS[tostring(conf.mod):lower()] or MODS.alt
+local MODNAME = MODS[tostring(conf.mod):lower()] and tostring(conf.mod):lower() or "alt"
+local MOD = MODS[MODNAME]
 
--- ---- state (hyprctl reads it) ---------------------------------------------------------
-local state = { workspaces = {}, active = 1, queue = {}, history = {}, version = "1.1.0", conf = conf, layers = {} }
+-- ---- state (hyprctl and the other programs see it) ---------------------------------------
+local state = { workspaces = {}, active = 1, queue = {}, history = {}, version = "1.2.0",
+                conf = conf, layers = {}, grabs = {}, lastInput = computer.uptime() }
 for i = 1, 9 do state.workspaces[i] = { list = {}, focus = 1, fullscreen = false } end
 package.loaded["hyprbyte.state"] = state
+state.size = function() return SW, SH end
 local nextId, running = 1, true
 local held, swallowed, pending = {}, {}, {}
 
 local function ws() return state.workspaces[state.active] end
+local function focused()
+  local w = ws()
+  return w.list[w.focus]
+end
 
--- ---- layers: panels other programs put along the edges ------------------------------
--- layer = { namespace, anchor = "top" | "bottom", height = rows,
---           draw = function(gpu, x, y, w, h), click = function(x, y, button) }
--- Hyprbyte keeps the rows free and calls draw whenever the bar is drawn.
+-- ---- layers --------------------------------------------------------------------------
+-- layer = { namespace, anchor, draw = function(gpu, x, y, w, h), click = function(x, y, button),
+--           key = function(event, char, code) (with state.grab), place = function(SW, SH) -> x, y, w, h }
+--   anchor "top" | "bottom": a panel; its height rows are kept free of windows
+--   anchor "overlay": above the windows (pop-ups, a launcher, a lock screen);
+--                     exclusive = true hides the windows while it is there
+--   anchor "background": below the windows (a wallpaper)
+local function edge(l) return l.anchor == nil or l.anchor == "top" or l.anchor == "bottom" end
 local function hasTopLayer()
-  for _, l in ipairs(state.layers) do if l.anchor ~= "bottom" then return true end end
+  for _, l in ipairs(state.layers) do if l.anchor == nil or l.anchor == "top" then return true end end
   return false
 end
 local function builtinBar() return conf.bar and not hasTopLayer() end
+local function exclusive()
+  for _, l in ipairs(state.layers) do if l.anchor == "overlay" and l.exclusive then return true end end
+  return false
+end
 -- the space for windows: x, y, w, h
 local function area()
   local top, bottom = builtinBar() and 1 or 0, 0
   for _, l in ipairs(state.layers) do
-    if l.anchor == "bottom" then bottom = bottom + l.height else top = top + l.height end
+    if l.anchor == "bottom" then bottom = bottom + l.height elseif edge(l) then top = top + l.height end
   end
   return 1, 1 + top, SW, math.max(3, SH - top - bottom)
 end
@@ -101,11 +120,33 @@ function state.addLayer(l)
 end
 function state.removeLayer(l)
   for i = #state.layers, 1, -1 do if state.layers[i] == l then table.remove(state.layers, i) end end
+  state.ungrab(l)
   state.relayout = true
 end
-local function focused()
-  local w = ws()
-  return w.list[w.focus]
+-- the keyboard goes to layer l (its key function) until ungrab
+function state.grab(l) state.grabs[#state.grabs + 1] = l end
+function state.ungrab(l)
+  for i = #state.grabs, 1, -1 do if state.grabs[i] == l then table.remove(state.grabs, i) end end
+end
+-- draw the panels and overlays again soon (their content changed)
+function state.refresh() state.dirty = true end
+
+-- layers of programs that ended go away
+local function prune()
+  for i = #state.layers, 1, -1 do
+    local l = state.layers[i]
+    local p = l.pid and k.process.info(l.pid)
+    if l.pid and not (p and p.state == "running") then
+      table.remove(state.layers, i); state.ungrab(l); state.relayout = true
+    end
+  end
+end
+local function topGrab()
+  for i = #state.grabs, 1, -1 do
+    local l = state.grabs[i]
+    for _, x in ipairs(state.layers) do if x == l then return l end end
+    table.remove(state.grabs, i)
+  end
 end
 
 -- ---- drawing ------------------------------------------------------------------------
@@ -115,6 +156,7 @@ local function paint(x, y, text, fg, bg)
 end
 
 local CORNERS = conf.rounding and { "╭", "╮", "╰", "╯" } or { "┌", "┐", "└", "┘" }
+state.corners = CORNERS
 local function border(win, active)
   local r = win.rect
   if not r then return end
@@ -128,56 +170,70 @@ local function border(win, active)
   if w > 6 and name ~= "" then paint(x + 2, y, term.usub(title, 1, w - 4), active and T.bright or T.muted) end
 end
 
-local function drawLayers()
-  for i = #state.layers, 1, -1 do
-    local l = state.layers[i]
-    local p = l.pid and k.process.info(l.pid)
-    if l.pid and not (p and p.state == "running") then table.remove(state.layers, i); state.relayout = true end
-  end
+local function drawLayer(l, x, y, w, h)
+  l.rect = { x, y, w, h }
+  local ok, err = pcall(l.draw, screen, x, y, w, h)
+  if not ok then paint(x, y, term.pad((l.namespace or "layer") .. ": " .. tostring(err), w), T.bright, T.red) end
+end
+
+local function drawEdges()
   local top, bottom = builtinBar() and 1 or 0, 0
   for _, l in ipairs(state.layers) do
-    local y
-    if l.anchor == "bottom" then bottom = bottom + l.height; y = SH - bottom + 1
-    else y = top + 1; top = top + l.height end
-    l.rect = { 1, y, SW, l.height }
-    screen.setBackground(T.base); screen.fill(1, y, SW, l.height, " ")
-    local ok, err = pcall(l.draw, screen, 1, y, SW, l.height)
-    if not ok then paint(1, y, term.pad((l.namespace or "layer") .. ": " .. tostring(err), SW), T.bright, T.red) end
+    if edge(l) then
+      local y
+      if l.anchor == "bottom" then bottom = bottom + l.height; y = SH - bottom + 1
+      else y = top + 1; top = top + l.height end
+      screen.setBackground(T.base); screen.fill(1, y, SW, l.height, " ")
+      drawLayer(l, 1, y, SW, l.height)
+    end
+  end
+  screen.setBackground(T.bg)
+end
+
+local function drawOverlays()
+  for _, l in ipairs(state.layers) do
+    if l.anchor == "overlay" then
+      local x, y, w, h = 1, 1, SW, SH
+      if l.place then x, y, w, h = l.place(SW, SH) end
+      if w and w > 0 and h > 0 then drawLayer(l, x, y, w, h) end
+    end
   end
   screen.setBackground(T.bg)
 end
 
 local function bar()
-  drawLayers()
-  if not builtinBar() then return end
-  screen.setBackground(T.base); screen.fill(1, 1, SW, 1, " ")
-  local last = 5
-  for i = 1, 9 do if #state.workspaces[i].list > 0 then last = math.max(last, i) end end
-  local x = 1
-  for i = 1, last do
-    local label = " " .. i .. " "
-    if i == state.active then paint(x, 1, label, T.bright, T.accent)
-    elseif #state.workspaces[i].list > 0 then paint(x, 1, label, T.fg, T.base)
-    else paint(x, 1, label, T.dim, T.base) end
-    x = x + 3
-  end
-  local okC, clock = pcall(require, "clock")
-  local right = ("mem %d%%"):format(math.floor(100 * (1 - computer.freeMemory() / computer.totalMemory()) + 0.5))
-  if computer.maxEnergy and computer.maxEnergy() > 0 then
-    right = right .. ("  ⚡%d%%"):format(math.floor(100 * computer.energy() / computer.maxEnergy() + 0.5))
-  end
-  if okC then right = right .. "  " .. clock.date("%H:%M") end
-  right = right .. " "
-  paint(SW - term.ulen(right) + 1, 1, right, T.muted, T.base)
-  local win = focused()
-  if win then
-    local room = SW - term.ulen(right) - x - 2
-    if room > 4 then
-      local t = term.usub(win.term.title or win.title, 1, room)
-      paint(math.max(x + 1, (SW - term.ulen(t)) // 2), 1, t, T.fg, T.base)
+  drawEdges()
+  if builtinBar() then
+    screen.setBackground(T.base); screen.fill(1, 1, SW, 1, " ")
+    local last = 5
+    for i = 1, 9 do if #state.workspaces[i].list > 0 then last = math.max(last, i) end end
+    local x = 1
+    for i = 1, last do
+      local label = " " .. i .. " "
+      if i == state.active then paint(x, 1, label, T.bright, T.accent)
+      elseif #state.workspaces[i].list > 0 then paint(x, 1, label, T.fg, T.base)
+      else paint(x, 1, label, T.dim, T.base) end
+      x = x + 3
     end
+    local okC, clock = pcall(require, "clock")
+    local right = ("mem %d%%"):format(math.floor(100 * (1 - computer.freeMemory() / computer.totalMemory()) + 0.5))
+    if computer.maxEnergy and computer.maxEnergy() > 0 then
+      right = right .. ("  ⚡%d%%"):format(math.floor(100 * computer.energy() / computer.maxEnergy() + 0.5))
+    end
+    if okC then right = right .. "  " .. clock.date("%H:%M") end
+    right = right .. " "
+    paint(SW - term.ulen(right) + 1, 1, right, T.muted, T.base)
+    local win = focused()
+    if win then
+      local room = SW - term.ulen(right) - x - 2
+      if room > 4 then
+        local t = term.usub(win.term.title or win.title, 1, room)
+        paint(math.max(x + 1, (SW - term.ulen(t)) // 2), 1, t, T.fg, T.base)
+      end
+    end
+    screen.setBackground(T.bg)
   end
-  screen.setBackground(T.bg)
+  drawOverlays()
 end
 
 -- dwindle: the first window takes half of the space, the rest share the
@@ -199,13 +255,15 @@ local function tile(list, from, x, y, w, h, out)
 end
 
 local function layout()
-  state.relayout = false
+  state.relayout, state.dirty = false, false
   local g = conf.gaps_out
   local x0, y0, w0, h0 = area()
   local ax, ay, aw, ah = x0 + g, y0 + g, w0 - 2 * g, h0 - 2 * g
   local rects = {}
   local cur = ws()
-  if cur.fullscreen and focused() then rects[focused()] = { x0, y0, w0, h0 }
+  local hidden = exclusive()
+  if hidden then -- a lock screen: no window shows
+  elseif cur.fullscreen and focused() then rects[focused()] = { x0, y0, w0, h0 }
   else tile(cur.list, 1, ax, ay, aw, ah, rects) end
   -- hide everything first, then place and show this workspace's windows
   for _, space in ipairs(state.workspaces) do
@@ -213,6 +271,11 @@ local function layout()
   end
   screen.setBackground(T.bg); screen.setForeground(T.fg)
   screen.fill(1, 1, SW, SH, " ")
+  if not hidden then
+    for _, l in ipairs(state.layers) do
+      if l.anchor == "background" then drawLayer(l, 1, 1, SW, SH) end
+    end
+  end
   for win, r in pairs(rects) do
     if r[3] >= 4 and r[4] >= 3 then
       win.rect = r
@@ -222,6 +285,7 @@ local function layout()
       win.surface.place(r[1] + 1, r[2] + 1, iw, ih, drop)
       win.term.resize(drop)
       win.surface.show(true)
+      win.surface.touched = false
     end
   end
   for _, win in ipairs(cur.list) do border(win, win == focused()) end
@@ -268,7 +332,7 @@ local function open(cmd)
   local x0, y0, w0, h0 = area()
   local g = conf.gaps_out
   tile(cur.list, 1, x0 + g, y0 + g, w0 - 2 * g, h0 - 2 * g, rects)
-  popin(rects[win])
+  if not exclusive() then popin(rects[win]) end
   layout()
   return win
 end
@@ -277,8 +341,8 @@ local function close(win)
   if win then k.tty.hangup(win.term) end
 end
 
--- exec-once: a program in the background (a panel, a daemon), no window;
--- what it prints goes to the system log
+-- exec-once and spawn: a program in the background (a panel, a daemon, a
+-- launcher), no window; what it prints goes to the system log
 local daemons = {}
 local function exec(cmd)
   local pid = k.process.spawn(function()
@@ -289,6 +353,7 @@ local function exec(cmd)
     return shell.withIO({ output = log }, shell.execute, cmd)
   end, { name = cmd })
   daemons[#daemons + 1] = pid
+  return pid
 end
 
 -- forget windows whose programs ended
@@ -309,8 +374,8 @@ end
 
 local function focus(delta)
   local cur = ws()
-  if #cur.list < 2 then return end
-  cur.focus = (cur.focus - 1 + delta) % #cur.list + 1
+  if #cur.list < 2 and delta ~= 0 then return end
+  cur.focus = (cur.focus - 1 + delta) % math.max(1, #cur.list) + 1
   if cur.fullscreen then layout()
   else
     for _, win in ipairs(cur.list) do border(win, win == focused()) end
@@ -345,7 +410,20 @@ local function moveTo(n)
   layout()
 end
 
--- Mod+D: a box in the middle that asks for a command line
+-- the window with this id, wherever it is, comes into focus
+local function focusWindow(id)
+  for n, space in ipairs(state.workspaces) do
+    for i, win in ipairs(space.list) do
+      if win.id == tonumber(id) then
+        space.focus = i
+        if n ~= state.active then state.active = n; layout() else focus(0) end
+        return true
+      end
+    end
+  end
+end
+
+-- Mod+D without rofi: a box in the middle that asks for a command line
 local function launcher()
   local w = math.min(SW - 4, 50)
   local x, y = (SW - w) // 2 + 1, SH // 3
@@ -361,70 +439,125 @@ local function launcher()
   if line ~= "" then open(line) end
 end
 
--- ---- hyprctl dispatch ---------------------------------------------------------------
+-- ---- dispatchers (keys, hyprctl dispatch, other programs) ---------------------------
 local DISPATCH = {
   exec = function(a) if a ~= "" then open(a) end end,
+  spawn = function(a) if a ~= "" then exec(a) end end,
   killactive = function() close(focused()) end,
   workspace = function(a) workspace(tonumber(a) or state.active) end,
   movetoworkspace = function(a) moveTo(tonumber(a) or state.active) end,
   fullscreen = function() ws().fullscreen = not ws().fullscreen; layout() end,
   cyclenext = function() focus(1) end,
+  cycleprev = function() focus(-1) end,
+  swapnext = function() swap(1) end,
+  swapprev = function() swap(-1) end,
+  focuswindow = function(a) focusWindow(a) end,
+  launcher = function() launcher() end,
   exit = function() running = false end,
 }
 state.dispatchers = DISPATCH
 state.focused = focused
 
 -- ---- keys ---------------------------------------------------------------------------
-local BIND = {
-  [28] = function() open() end,                -- Enter
-  [32] = launcher,                             -- D
-  [16] = function() close(focused()) end,      -- Q
-  [33] = DISPATCH.fullscreen,                  -- F
-  [15] = function() focus(1) end,              -- Tab
-  [203] = function() focus(-1) end, [200] = function() focus(-1) end,
-  [205] = function() focus(1) end, [208] = function() focus(1) end,
+local KEYS = {
+  RETURN = 28, ENTER = 28, SPACE = 57, TAB = 15, ESCAPE = 1, BACKSPACE = 14,
+  LEFT = 203, RIGHT = 205, UP = 200, DOWN = 208, HOME = 199, END = 207,
+  MINUS = 12, EQUAL = 13, COMMA = 51, PERIOD = 52, SLASH = 53,
 }
-local SHIFT_BIND = {
-  [18] = DISPATCH.exit,                        -- Shift+E
-  [203] = function() swap(-1) end, [200] = function() swap(-1) end,
-  [205] = function() swap(1) end, [208] = function() swap(1) end,
-}
-for i = 1, 9 do
-  BIND[i + 1] = function() workspace(i) end    -- keys 1..9 are codes 2..10
-  SHIFT_BIND[i + 1] = function() moveTo(i) end
+do
+  local rows = { { 16, "QWERTYUIOP" }, { 30, "ASDFGHJKL" }, { 44, "ZXCVBNM" } }
+  for _, r in ipairs(rows) do for i = 1, #r[2] do KEYS[r[2]:sub(i, i)] = r[1] + i - 1 end end
+  for i = 1, 9 do KEYS[tostring(i)] = i + 1 end
+  KEYS["0"] = 11
+  for i = 1, 10 do KEYS["F" .. i] = 58 + i end
+  KEYS.F11, KEYS.F12 = 87, 88
 end
 
-local function modHeld() for c in pairs(MOD) do if held[c] then return true end end return false end
-local function shiftHeld() return held[42] or held[54] end
+local function combo(mod, shift, ctrl, code)
+  return (mod and "M" or "") .. (shift and "S" or "") .. (ctrl and "C" or "") .. ":" .. code
+end
+local binds = {}
+local function bind(mods, key, fn)
+  local code = KEYS[key:upper()]
+  if not code then return nil, "unknown key " .. key end
+  local m, s, c = false, false, false
+  for word in mods:upper():gmatch("%a+") do
+    if word == "MOD" or word == MODNAME:upper() or (word == "SUPER" and MODNAME == "super") then m = true
+    elseif word == "SHIFT" then s = true
+    elseif word == "CTRL" or word == "CONTROL" then c = true
+    elseif word == "ALT" or word == "SUPER" then return nil, word .. " is not the mod key (mod = " .. MODNAME .. ")" end
+  end
+  binds[combo(m, s, c, code)] = fn
+  return true
+end
+local function has(program) return fs.exists("/usr/bin/" .. program .. ".lua") end
+
+bind("MOD", "RETURN", function() open() end)
+bind("MOD", "D", has("rofi") and function() exec("rofi -show run") end or launcher)
+if has("rofi") then bind("MOD", "W", function() exec("rofi -show window") end) end
+if has("hyprlock") then bind("MOD", "L", function() exec("hyprlock") end) end
+bind("MOD", "Q", DISPATCH.killactive)
+bind("MOD", "F", DISPATCH.fullscreen)
+bind("MOD", "TAB", DISPATCH.cyclenext)
+for _, key in ipairs({ "LEFT", "UP" }) do bind("MOD", key, DISPATCH.cycleprev); bind("MOD SHIFT", key, DISPATCH.swapprev) end
+for _, key in ipairs({ "RIGHT", "DOWN" }) do bind("MOD", key, DISPATCH.cyclenext); bind("MOD SHIFT", key, DISPATCH.swapnext) end
+bind("MOD SHIFT", "E", DISPATCH.exit)
+for i = 1, 9 do
+  bind("MOD", tostring(i), function() workspace(i) end)
+  bind("MOD SHIFT", tostring(i), function() moveTo(i) end)
+end
+-- bind = MOD SHIFT, R, spawn, rofi -show run      (as in hyprland.conf)
+for _, line in ipairs(conf.bind) do
+  local mods, key, what, arg = line:match("^([^,]*),%s*([^,]+),%s*([^,]+),?%s*(.*)$")
+  what = what and what:gsub("%s+$", "")
+  if not (mods and DISPATCH[what]) then
+    k.log("bad bind: " .. line, "hyprbyte")
+  else
+    local ok, err = bind(mods, (key:gsub("%s", "")), function() DISPATCH[what](arg or "") end)
+    if not ok then k.log("bind " .. line .. ": " .. err, "hyprbyte") end
+  end
+end
+
+local function held_(set) for c in pairs(set) do if held[c] then return true end end return false end
+local SHIFT, CTRL = { [42] = true, [54] = true }, { [29] = true, [157] = true }
 
 local function handle(sig)
   local ev, code = sig[1], sig[4]
+  if ev == "key_down" or ev == "key_up" or ev == "clipboard" or ev == "touch" then state.lastInput = computer.uptime() end
+  if ev == "key_down" or ev == "key_up" then held[code] = ev == "key_down" or nil end
+  -- a lock screen or a launcher has the keyboard
+  local g = topGrab()
+  if g and (ev == "key_down" or ev == "key_up" or ev == "clipboard") then
+    local ok, e = pcall(g.key, table.unpack(sig, 1, sig.n))
+    if not ok then k.log("layer " .. tostring(g.namespace) .. ": " .. tostring(e), "hyprbyte") end
+    state.dirty = true
+    return
+  end
   if ev == "key_down" or ev == "key_up" then
-    held[code] = ev == "key_down" or nil
     if MOD[code] then return end
-    if ev == "key_down" and modHeld() then
-      local fn = (shiftHeld() and SHIFT_BIND[code]) or (not shiftHeld() and BIND[code])
+    if ev == "key_down" and held_(MOD) then
+      local fn = binds[combo(true, held_(SHIFT), MODNAME ~= "ctrl" and held_(CTRL), code)]
       if fn then swallowed[code] = true; fn(); return end
     end
     if ev == "key_up" and swallowed[code] then swallowed[code] = nil; return end
-    if focused() then k.tty.input(focused().term, table.unpack(sig, 1, sig.n)) end
+    if focused() and not exclusive() then k.tty.input(focused().term, table.unpack(sig, 1, sig.n)) end
   elseif ev == "clipboard" then
-    if focused() then k.tty.input(focused().term, table.unpack(sig, 1, sig.n)) end
+    if focused() and not exclusive() then k.tty.input(focused().term, table.unpack(sig, 1, sig.n)) end
   elseif ev == "touch" then
     local x, y = sig[3], sig[4]
-    for _, l in ipairs(state.layers) do
-      local r = l.rect
-      if r and l.click and y >= r[2] and y < r[2] + r[4] then
-        local ok, e = pcall(l.click, x - r[1] + 1, y - r[2] + 1, sig[5])
+    local function inside(r) return r and x >= r[1] and x < r[1] + r[3] and y >= r[2] and y < r[2] + r[4] end
+    for i = #state.layers, 1, -1 do -- the top one first
+      local l = state.layers[i]
+      if l.anchor ~= "background" and l.click and inside(l.rect) then
+        local ok, e = pcall(l.click, x - l.rect[1] + 1, y - l.rect[2] + 1, sig[5])
         if not ok then k.log("layer " .. tostring(l.namespace) .. ": " .. tostring(e), "hyprbyte") end
+        state.dirty = true
         return
       end
     end
+    if exclusive() then return end
     for i, win in ipairs(ws().list) do
-      local r = win.rect
-      if r and x >= r[1] and x < r[1] + r[3] and y >= r[2] and y < r[2] + r[4] then
-        if i ~= ws().focus then ws().focus = i; focus(0) end
-      end
+      if inside(win.rect) and i ~= ws().focus then ws().focus = i; focus(0) end
     end
   end
 end
@@ -447,19 +580,31 @@ local okRun, err = pcall(function()
       local q = table.remove(state.queue, 1)
       if DISPATCH[q[1]] then DISPATCH[q[1]](q[2] or "") end
     end
+    prune()
     sweep()
     if state.relayout then layout() end
     -- a window's title follows what runs in it (its shell sets term.title)
-    local changed = false
+    local changed = state.dirty
     for _, win in ipairs(ws().list) do
       local title = win.term.title or win.title
       if title ~= win.shown then win.shown = title; changed = true end
     end
     if changed then
-      for _, win in ipairs(ws().list) do border(win, win == focused()) end
+      state.dirty = false
+      if not exclusive() then for _, win in ipairs(ws().list) do border(win, win == focused()) end end
       bar()
+    elseif computer.uptime() >= nextBar then
+      bar(); nextBar = computer.uptime() + 1
+    else
+      -- a window drew over an overlay: put the overlays back on top
+      local over = false
+      for _, win in ipairs(ws().list) do
+        if win.surface.touched then win.surface.touched = false; over = true end
+      end
+      if over then
+        for _, l in ipairs(state.layers) do if l.anchor == "overlay" then drawOverlays(); break end end
+      end
     end
-    if computer.uptime() >= nextBar then bar(); nextBar = computer.uptime() + 1 end
   end
 end)
 k.event.interruptible = savedInterrupt

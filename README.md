@@ -42,8 +42,14 @@ Bigger or more demo-y packages. Enabled by default in `/etc/pacman.conf`.
 | [power](pkgs/extra/power)     | 1.0.0 | Energy stored, use per second, time left. `power -w` keeps watching. |
 | [rsh](pkgs/extra/rsh)         | 1.0.0 | Remote shell over ByteNet: `rsh alice@box2 uptime`, or a prompt there. |
 | [netfs](pkgs/extra/netfs)     | 1.0.0 | Shared folders over ByteNet: share in `/etc/netfs.conf`, `netfs mount box2:pub /mnt/pub`. |
-| [hyprbyte](pkgs/extra/hyprbyte) | 1.1.0 | Tiling window manager like Hyprland: terminals side by side, 9 workspaces, a bar, `hyprctl`. Alt+Enter opens a terminal; also a login session (F2). Layers for panels (1.1). |
+| [hyprbyte](pkgs/extra/hyprbyte) | 1.2.0 | Tiling window manager like Hyprland: terminals side by side, 9 workspaces, a bar, `hyprctl`. Alt+Enter opens a terminal; also a login session (F2). Layers, key grabs and `bind =` for the ecosystem below (1.2). |
 | [quickshell](pkgs/extra/quickshell) | 1.0.0 | Your own bars and widgets for Hyprbyte, from `~/.config/quickshell/shell.lua` (reloads on save). `exec-once = quickshell` |
+| [libnotify](pkgs/extra/libnotify) | 1.0.0 | `notify-send` and the notification library. |
+| [dunst](pkgs/extra/dunst)     | 1.0.0 | Notification pop-ups for Hyprbyte; `dunstctl` history and do-not-disturb. `exec-once = dunst` |
+| [rofi](pkgs/extra/rofi)       | 1.0.0 | Launcher with fuzzy search (Alt+D) and window switcher (Alt+W). |
+| [hyprlock](pkgs/extra/hyprlock) | 1.0.0 | Lock screen with a big clock (Alt+L). |
+| [hypridle](pkgs/extra/hypridle) | 1.0.0 | Run commands when idle, e.g. lock after 5 minutes. `exec-once = hypridle` |
+| [hyprpaper](pkgs/extra/hyprpaper) | 1.0.0 | Wallpapers: text art and patterns behind the windows. `exec-once = hyprpaper` |
 
 ## Quick demo run
 

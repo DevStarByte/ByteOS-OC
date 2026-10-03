@@ -1,0 +1,3 @@
+function post_install()
+  print("Start it with Hyprbyte: add  exec-once = dunst  to ~/.config/hyprbyte.conf")
+end

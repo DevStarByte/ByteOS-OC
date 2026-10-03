@@ -11,6 +11,7 @@
     s.place(x, y, w, h [, drop])             move or resize; drop rows from the
                                              top (to keep the cursor's line)
     s.redraw()                               draw everything again
+    s.touched                                true once it drew on the screen
 
   The buffer is a string per row for the characters and one byte per cell
   for each colour (an index into the colours used so far), which keeps a
@@ -40,10 +41,11 @@ function surface.new(real, x, y, w, h)
     return i
   end
 
-  local function blank(row)
-    text[row] = string.rep(" ", W)
-    fgs[row] = string.rep(idx(fg), W)
-    bgs[row] = string.rep(idx(bg), W)
+  local function blank(row, width)
+    width = width or W
+    text[row] = string.rep(" ", width)
+    fgs[row] = string.rep(idx(fg), width)
+    bgs[row] = string.rep(idx(bg), width)
   end
   for row = 1, H do blank(row) end
 
@@ -89,7 +91,7 @@ function surface.new(real, x, y, w, h)
     local f, b = idx(fg), idx(bg)
     for row = 1, nh do
       if not text[row] then
-        blank(row)
+        blank(row, nw)
       elseif nw < W then
         text[row] = usub(text[row], 1, nw); fgs[row] = fgs[row]:sub(1, nw); bgs[row] = bgs[row]:sub(1, nw)
       elseif nw > W then
@@ -137,6 +139,7 @@ function surface.new(real, x, y, w, h)
     if shown then
       real.setForeground(fg); real.setBackground(bg)
       real.set(ox + x0 - 1, oy + y0 - 1, str)
+      s.touched = true
     end
     return true
   end
@@ -152,6 +155,7 @@ function surface.new(real, x, y, w, h)
     if shown then
       real.setForeground(fg); real.setBackground(bg)
       real.fill(ox + x1 - 1, oy + y1 - 1, n, y2 - y1 + 1, ch)
+      s.touched = true
     end
     return true
   end
@@ -180,6 +184,7 @@ function surface.new(real, x, y, w, h)
       end
     end
     if shown then
+      s.touched = true
       if inside then real.copy(ox + x1 - 1, oy + y1 - 1, n, y2 - y1 + 1, tx, ty)
       else s.redraw() end
     end

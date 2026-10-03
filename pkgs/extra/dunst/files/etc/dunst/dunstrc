@@ -1,0 +1,8 @@
+# /etc/dunst/dunstrc - copy to ~/.config/dunst/dunstrc to change it
+
+# how wide the pop-ups are (columns)
+width = 36
+# seconds before one goes away (critical ones stay until clicked)
+timeout = 6
+# how many are shown at once; the rest wait
+max = 3

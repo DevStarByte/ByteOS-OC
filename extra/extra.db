@@ -26,6 +26,18 @@ csize = 1578
 crc32 = b4249cf9
 sha256 = 062efaf5011221b988b1e34813505e2c1423a43e06ad31fefeb20f25fc19002c
 
+name = dunst
+version = 1.0.0-1
+desc = notification pop-ups for Hyprbyte, with history and do-not-disturb
+depend = libnotify
+depend = hyprbyte>=1.2.0
+backup = /etc/dunst/dunstrc
+isize = 6508
+filename = dunst-1.0.0-1.bpk
+csize = 6154
+crc32 = 4ce9efec
+sha256 = caa6d4a1ecf56c28964b7e511e6068bd7328af059454ee0f3bfc726af0b06619
+
 name = figlet
 version = 1.0.0-1
 desc = ascii-art big-letters renderer (demo bundle)
@@ -36,15 +48,56 @@ crc32 = 6edfaa47
 sha256 = 72d447d776829ef786f549fac6c66f136991d6b2930939a1efcdf85d3477ca7d
 
 name = hyprbyte
-version = 1.1.0-1
+version = 1.2.0-1
 desc = tiling window manager in the spirit of Hyprland: windows, workspaces, a bar
 depend = byteos>=1.13.0
 backup = /etc/hyprbyte.conf
-isize = 31159
-filename = hyprbyte-1.1.0-1.bpk
-csize = 22705
-crc32 = 94cc8696
-sha256 = fe43a1ab6d0781fbab4b2fc5ee490d7bf978628ca3ba8de2f235002880b4ab78
+isize = 39242
+filename = hyprbyte-1.2.0-1.bpk
+csize = 28238
+crc32 = 72984558
+sha256 = ec934a75d37ef2997e6bb0322ed9dbf1803695975aeb9058402c07fec7da58da
+
+name = hypridle
+version = 1.0.0-1
+desc = run commands after a while without input in Hyprbyte, e.g. lock the screen
+depend = hyprbyte>=1.2.0
+backup = /etc/hypr/hypridle.conf
+isize = 1834
+filename = hypridle-1.0.0-1.bpk
+csize = 2100
+crc32 = fbc22045
+sha256 = 29bc34ff48f08738718d4cab02a26d9801f29c47b042f86db03ce00ace94a2d1
+
+name = hyprlock
+version = 1.0.0-1
+desc = lock screen for Hyprbyte with a big clock; your password unlocks it
+depend = hyprbyte>=1.2.0
+isize = 3923
+filename = hyprlock-1.0.0-1.bpk
+csize = 3492
+crc32 = 73b8101a
+sha256 = faec36541acd178db116a34511455c5e7ff93b1154870a52a6f797c6416474a0
+
+name = hyprpaper
+version = 1.0.0-1
+desc = wallpapers for Hyprbyte: text art and patterns behind the windows
+depend = hyprbyte>=1.2.0
+backup = /etc/hypr/hyprpaper.conf
+isize = 4121
+filename = hyprpaper-1.0.0-1.bpk
+csize = 4495
+crc32 = 9b00ae87
+sha256 = 0c7a5fe08f4cb6680c30c7f7d3856172a569120456dc2050a2d20ce0be8b5df0
+
+name = libnotify
+version = 1.0.0-1
+desc = notifications: notify-send and the library programs use to send them
+isize = 3005
+filename = libnotify-1.0.0-1.bpk
+csize = 3208
+crc32 = cb58f6b5
+sha256 = 44bed636a35830a1d122086232288eb7fc305d6429b5451b59c8e41f6edb7002
 
 name = nano
 version = 1.0.0-1
@@ -85,6 +138,16 @@ filename = quickshell-1.0.0-1.bpk
 csize = 12228
 crc32 = 704cd00f
 sha256 = 9d5352ef5c2cf40eee7917e1cad79e057b22ad34d641d9529b54b9e994b9fb5e
+
+name = rofi
+version = 1.0.0-1
+desc = launcher and window switcher for Hyprbyte, with fuzzy search
+depend = hyprbyte>=1.2.0
+isize = 6316
+filename = rofi-1.0.0-1.bpk
+csize = 5033
+crc32 = b781a34c
+sha256 = d1c4206b42329e5a7eac2907ddb81a76c340312651cdccc3dcf270c5cabe8147
 
 name = rsh
 version = 1.0.0-1
