@@ -499,6 +499,7 @@ Besides the small tools and games, the repositories have:
 | `rsh`      | remote shell over ByteNet |
 | `netfs`    | shared folders over ByteNet |
 | `hyprbyte` | a tiling window manager, see below |
+| `quickshell` | build your own bars and widgets for Hyprbyte, see below |
 
 `pacman -Ss` lists everything.
 
@@ -526,8 +527,31 @@ root@byteos ~# hyprbyte                  # Alt+Enter: a terminal, Alt+Shift+E: b
 
 `hyprctl` controls it from a window (`hyprctl clients`,
 `hyprctl dispatch exec btop`, ...); settings such as gaps, the mod key
-(`mod = super`) and programs to start are in `~/.config/hyprbyte.conf`.
+(`mod = super`), windows to open (`open = btop`) and programs to run in
+the background (`exec-once = ...`) are in `~/.config/hyprbyte.conf`.
 See `man hyprbyte`.
+
+**Quickshell** (`pacman -S quickshell`) replaces the bar with your own
+panels, as Quickshell does for Hyprland, with Lua where that one has QML.
+Add `exec-once = quickshell` to `~/.config/hyprbyte.conf` and describe the
+panels in `~/.config/quickshell/shell.lua`; saving the file shows the
+change at once:
+
+```lua
+return {
+  PanelWindow {
+    anchor = "top",
+    Workspaces {},                                   -- click one to go there
+    ActiveWindow { max = 30 },
+    Spacer {},
+    Command { cmd = "uptime", interval = 60 },       -- what a command prints
+    Button { text = "btop", onClick = "btop" },      -- opens it in a window
+    Clock { format = "%H:%M " },
+  },
+}
+```
+
+`man quickshell` lists every widget.
 
 **Login sessions:** like a display manager, the login screen offers every
 session a package installs (`/usr/share/sessions/*.session`): press **F2**

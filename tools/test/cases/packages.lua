@@ -245,3 +245,46 @@ test("Ctrl+C in a window stops its program, not Hyprbyte", function()
   local _, rc = run("hyprbyte --no-animations")
   eq(rc, 0); eq(file("/tmp/hst"), "130\n")
 end)
+
+test("quickshell puts its panels into Hyprbyte and follows its file", function()
+  lacks(run(P .. "-S quickshell"), "error")
+  put("/home/root/.config/hyprbyte.conf", "exec-once = quickshell\n")
+  local SHELL = "/home/root/.config/quickshell/shell.lua"
+  put(SHELL, [[return {
+    PanelWindow { anchor = "top", Text { text = "hello from quickshell" }, Spacer {}, Workspaces {} },
+    PanelWindow { anchor = "bottom", Command { cmd = "echo cmd output", interval = 100 }, Spacer {},
+      Button { text = "run", onClick = function() hypr.clicked = true end } },
+  }]])
+  local seq, before, active, edited, broken = {}, nil, nil, nil, nil
+  local function settle() for _ = 1, 4 do seq[#seq + 1] = { "noop" } end end
+  local function wait(s) seq[#seq + 1] = function() local t = os.clock(); while os.clock() - t < s do end end end
+  settle()
+  seq[#seq + 1] = function() before = rows(1, 200) end
+  seq[#seq + 1] = { "touch", "screen", 70, 1, 0, "player" }   -- workspace 2 in the top panel
+  seq[#seq + 1] = { "touch", "screen", 78, 200, 0, "player" }  -- the button at the bottom
+  settle()
+  local clicked
+  seq[#seq + 1] = function()
+    active = package.loaded["hyprbyte.state"].active
+    clicked = package.loaded["hyprbyte.state"].clicked
+  end
+  seq[#seq + 1] = function() put(SHELL, 'return PanelWindow { Text { text = "changed text" } }') end
+  wait(2.3); settle()
+  seq[#seq + 1] = function() edited = rows(1, 3) end
+  seq[#seq + 1] = function() put(SHELL, "return {") end
+  wait(2.3); settle()
+  seq[#seq + 1] = function() broken = rows(1, 1) end
+  mod(18, 69, seq, true)
+  signals(seq)
+  local _, rc = run("hyprbyte --no-animations")
+  eq(rc, 0)
+  ok(before:find("^ hello from quickshell"), "the top panel in place of the built-in bar:\n" .. before:sub(1, 240))
+  ok(before:match("\n╭"), "the windows start below it")
+  has(before:sub(-200), "cmd output", "the bottom panel")
+  eq(active, 2, "a click on 2 went to workspace 2")
+  eq(clicked, true, "the button's onClick ran")
+  ok(package.loaded["hyprbyte.state"] == nil, "Hyprbyte ended")
+  has(edited, "changed text"); lacks(edited, "hello from quickshell")
+  has(broken, "quickshell:")
+  for _, p in ipairs(kernel.process.list()) do lacks(p.name, "quickshell", "stopped with Hyprbyte") end
+end)
