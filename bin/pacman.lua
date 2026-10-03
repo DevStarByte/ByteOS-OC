@@ -16,7 +16,7 @@
     pacman -Qi <pkg>         show information about an installed package
     pacman -D --asdeps|--asexplicit <pkg>...  change why a package is installed
     pacman -Ss [pattern]     search the repositories
-    pacman -Sy               synchronize the package databases
+    pacman -Sy               synchronize the package databases (-Syy: the same)
     pacman -Syu              upgrade packages and the byteos base system
     pacman --rollback        undo the last byteos upgrade
 
@@ -202,13 +202,39 @@ local function verifySignature(data, sig, keyPath)
   return nil, "the signature is invalid; the database may have been tampered with"
 end
 
+-- ---- GitHub servers ------------------------------------------------------------
+-- raw.githubusercontent.com keeps a branch's files cached for minutes, so
+-- right after a push a database could come from before it and point to
+-- packages that are gone. A branch URL is therefore pinned to the
+-- branch's newest commit (asked from the GitHub API); the database, its
+-- signature and later the packages all come from that one commit. Without
+-- an answer from the API the branch URL is used as it is.
+local pins = {}
+local function pinServer(server)
+  local owner, repo, branch, rest = server:match("^https://raw%.githubusercontent%.com/([^/]+)/([^/]+)/([^/]+)(.*)$")
+  if not owner or (#branch == 40 and branch:match("^%x+$")) then return server end
+  local key = owner .. "/" .. repo .. "/" .. branch
+  if pins[key] == nil then
+    pins[key] = false
+    local okI, internet = pcall(require, "internet")
+    if okI and internet.available() then
+      local body = internet.fetch(("https://api.github.com/repos/%s/%s/commits/%s"):format(owner, repo, branch),
+        { Accept = "application/vnd.github.sha" })
+      local sha = body and body:match("^%s*(%x+)%s*$")
+      if sha and #sha == 40 then pins[key] = sha end
+    end
+  end
+  if not pins[key] then return server end
+  return ("https://raw.githubusercontent.com/%s/%s/%s%s"):format(owner, repo, pins[key], rest)
+end
+
 local warnedNoCard = false
-local function checkSignature(name, conf, dbPath)
+local function checkSignature(name, conf, dbPath, server)
   local opts = readRepos().options or {}
   local level = ((conf.SigLevel or opts.SigLevel or "Optional"):match("%a+")) or "Optional"
   if level == "Never" then return true end
   local sigPath = dbPath .. ".sig"
-  if not download(conf.Server, name .. ".db.sig", sigPath) then
+  if not download(server or conf.Server, name .. ".db.sig", sigPath) then
     if level == "Required" then return nil, "the database is not signed (SigLevel = Required)" end
     return true
   end
@@ -233,12 +259,13 @@ local function syncRepo(name, conf)
   local dest = SYNC_DIR .. "/" .. name .. ".db"
   -- databases from before .bpk lived in <sync>/<repo>/repo.db
   if fs.isDirectory(SYNC_DIR .. "/" .. name) then fs.remove(SYNC_DIR .. "/" .. name) end
-  local size, e = download(conf.Server, name .. ".db", dest .. ".part")
+  local server = pinServer(conf.Server)
+  local size, e = download(server, name .. ".db", dest .. ".part")
   if not size then
     err("failed to synchronize " .. name .. ": " .. e)
     return false
   end
-  local signed, why = checkSignature(name, conf, dest .. ".part")
+  local signed, why = checkSignature(name, conf, dest .. ".part", server)
   if not signed then
     fs.remove(dest .. ".part")
     err(name .. ": " .. why)
@@ -253,7 +280,17 @@ local function syncRepo(name, conf)
     fs.rename(dest .. ".part", dest)
     progress(name, 1); term.write("\n")
   end
+  -- where this database came from: its packages are fetched from there
+  fs.writeAll(dest .. ".server", conf.Server .. "\n" .. server .. "\n")
   return true
+end
+
+-- The server to fetch repo's packages from: the one its database came
+-- from, as long as pacman.conf still names the same Server.
+local function packageServer(repo, conf)
+  local configured, used = (readIf(SYNC_DIR .. "/" .. repo .. ".db.server") or ""):match("^([^\n]*)\n([^\n]*)")
+  if configured == conf.Server and used and used ~= "" then return used end
+  return conf.Server
 end
 
 local dbs -- name -> repo package info, loaded on first use
@@ -295,7 +332,7 @@ local function syncdb()
   for _, repo in ipairs(names) do
     for _, p in ipairs(bpk.parseDb(readIf(SYNC_DIR .. "/" .. repo .. ".db"))) do
       if not dbs[p.name] then
-        p.repo, p.server = repo, repos[repo].Server
+        p.repo, p.server = repo, packageServer(repo, repos[repo])
         dbs[p.name] = p
       end
     end
@@ -1317,9 +1354,9 @@ if k.user() == "root" then ensureDirs() end
 if not op or op == "-h" or op == "--help" then
   usage()
   return op and 0 or 1
-elseif op == "-Syu" or op == "-Su" then
+elseif op == "-Syu" or op == "-Su" or op == "-Syyu" then
   return upgrade()
-elseif op == "-Sy" then
+elseif op == "-Sy" or op == "-Syy" then
   if not sync() then return 1 end
   if #targets > 0 then return install(targets) end
   return 0

@@ -189,4 +189,43 @@ test("install reasons; -Rs takes unneeded dependencies along, -Rn the config fil
   end)
 end)
 
+test("GitHub servers: the database and its packages come from one commit", function()
+  build()
+  local SHA = string.rep("ab", 20)
+  local RAW = "https://raw.githubusercontent.com/owner/repo/"
+  local routes = {
+    ["https://api.github.com/repos/owner/repo/commits/packages"] = function(h)
+      return h.Accept == "application/vnd.github.sha" and (SHA .. "\n") or nil
+    end,
+    -- what a cache may still hand out for the branch: a database from before
+    [RAW .. "packages/test/test.db"] = "name = ghost\nversion = 9-1\n",
+    [RAW .. SHA .. "/test/test.db"] = file("/srv/test/test.db"),
+    [RAW .. SHA .. "/test/test.db.sig"] = file("/srv/test/test.db.sig"),
+    [RAW .. SHA .. "/test/toolbase-1.0-1.bpk"] = file("/srv/test/toolbase-1.0-1.bpk"),
+  }
+  local asked = internetCard(routes)
+  local conf = file("/etc/pacman.conf")
+  put("/etc/pacman.conf", (conf:gsub("Server = /srv/test", "Server = " .. RAW .. "packages/test")))
+  lacks(run(P .. "-Syy"), "error")
+  lacks(file("/var/lib/pacman/sync/test.db"), "ghost", "not the cached branch copy")
+  lacks(run(P .. "-S toolbase"), "error")
+  ok(file("/var/lib/pacman/local/toolbase/desc"), "installed from the pinned commit")
+  has(table.concat(asked, "\n"), RAW .. SHA .. "/test/toolbase-1.0-1.bpk")
+  lacks(table.concat(asked, "\n"), RAW .. "packages/test/test.db", "the branch URL was not used")
+  run(P .. "-R toolbase")
+  put("/etc/pacman.conf", conf)
+  undisk("inet0000-test")
+end)
+
+test("mkrepo keeps the previous version of a package for one more build", function()
+  pkg("toolbase", 'return { name = "toolbase", version = "1.1" }')
+  build()
+  ok(file("/srv/test/toolbase-1.1-1.bpk"), "the new one")
+  ok(file("/srv/test/toolbase-1.0-1.bpk"), "the old one is kept for a stale database")
+  pkg("toolbase", 'return { name = "toolbase", version = "1.2" }')
+  build()
+  ok(file("/srv/test/toolbase-1.1-1.bpk"), "the previous one stays")
+  eq(file("/srv/test/toolbase-1.0-1.bpk"), nil, "the one before goes")
+end)
+
 os.remove(KEY)

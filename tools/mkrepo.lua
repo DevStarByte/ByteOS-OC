@@ -9,7 +9,9 @@
     <checkout>/<repo>/<repo>.db
     <checkout>/<repo>/<repo>.db.sig   with --key: the database's signature
                                       (openssl, ECDSA P-256 + SHA-256)
-  .bpk files in <checkout>/<repo>/ without a source are deleted. Nothing is
+  .bpk files in <checkout>/<repo>/ without a source are deleted, except the
+  ones the previous database listed: a computer that got that database
+  from a cache a few minutes old still finds its packages. Nothing is
   written for a repo in which any package fails to build.
 
   Needs Lua 5.3 or newer, a POSIX shell (for listing directories) and, to
@@ -90,10 +92,14 @@ for _, repoEntry in ipairs(fsx.list(root .. "/pkgs")) do
           local f = assert(io.open(outDir .. "/" .. file, "wb")); f:write(blob); f:close()
         end
       end
-      for _, f in ipairs(fsx.list(outDir)) do
-        if f:match("%.bpk$") and not keep[f] then os.remove(outDir .. "/" .. f) end
-      end
       local dbPath = outDir .. "/" .. repo .. ".db"
+      local previous = {}
+      for _, old in ipairs(bpk.parseDb(fsx.readAll(dbPath) or "")) do
+        if old.filename then previous[old.filename] = true end
+      end
+      for _, f in ipairs(fsx.list(outDir)) do
+        if f:match("%.bpk$") and not keep[f] and not previous[f] then os.remove(outDir .. "/" .. f) end
+      end
       local f = assert(io.open(dbPath, "wb"))
       f:write(bpk.formatDb(db)); f:close()
       if key then

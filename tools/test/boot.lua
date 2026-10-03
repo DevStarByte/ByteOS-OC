@@ -26,6 +26,9 @@
     network(peers [, address])   a network card and other computers on it;
     incoming(...)                what it sends to its own address comes back
     plug(kind, addr, proxy)      any other component (undisk takes it out)
+    internetCard(routes)         an internet card: routes[url] = the body,
+                                 or function(headers) -> body; else a 404.
+                                 Returns the list of URLs asked for
     machine{ energy, maxEnergy, devices }  what computer.energy & co. say
     useDatacard(true|false)      put a tier 3 data card in (or take it out)
     file(path)  put(path, data)  read/write the fake disk directly
@@ -241,6 +244,24 @@ function disk(dir, addr, label)
 end
 function undisk(addr) COMPONENTS[addr] = nil end
 function plug(kind, addr, proxy) proxy.address = addr; COMPONENTS[addr] = { kind, proxy } end
+function internetCard(routes)
+  local asked = {}
+  COMPONENTS["inet0000-test"] = { "internet", { address = "inet0000-test",
+    request = function(url, _, headers)
+      asked[#asked + 1] = url
+      local r = routes[url]
+      local body = type(r) == "function" and r(headers or {}) or r
+      local given = false
+      return {
+        finishConnect = function() return true end,
+        response = function() if body then return 200, "OK", {} end return 404, "Not Found", {} end,
+        read = function() if not body or given then return nil end given = true; return body end,
+        close = function() end,
+      }
+    end,
+  } }
+  return asked
+end
 function machine(t) for key, v in pairs(t) do MACHINE[key] = v end end
 
 -- A network card. peers[address] = { distance = n, reply = fn(kind, id, ...) }

@@ -211,7 +211,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.14.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.14.1 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -243,7 +243,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.14.0
+byteos 1.14.1
 cowsay 0.2.0
 ```
 
@@ -615,10 +615,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.14.0.g35a565a  cowsay-0.3.0
+Packages (2) byteos-1.14.1.gb889d47  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.14.0.g35a565a from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.14.1.gb889d47 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...
@@ -702,6 +702,12 @@ lua tools/mkrepo.lua --key ~/.config/byteos/repo-key.pem <checkout of the packag
 
 That writes `<repo>/<name>-<version>.bpk`, the database `<repo>/<repo>.db`
 which `pacman -Sy` downloads, and with `--key` its signature `<repo>.db.sig`.
+
+GitHub's raw file server caches files for a few minutes. pacman therefore
+asks GitHub for the branch's newest commit and takes the database and its
+packages from that commit, so it never mixes an old database with new
+packages. mkrepo also keeps each package's previous version for one more
+build, for anyone whose database is a few minutes old.
 
 ### Signed repositories
 
