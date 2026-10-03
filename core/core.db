@@ -34,6 +34,34 @@ csize = 591
 crc32 = d8ac361b
 sha256 = 2075abcd259a1a6874cf9a862497e2ee3737014b2aa0dba2656597d64fe19062
 
+name = lshw
+version = 1.0.0-1
+desc = list every component of this computer with its details
+isize = 2135
+filename = lshw-1.0.0-1.bpk
+csize = 2285
+crc32 = 39e365ca
+sha256 = 35e719ae270e9dac266cbddda02055a9b7f5d3d9ee4c8a26bea238f49bdba094
+
+name = redstone
+version = 1.0.0-1
+desc = read and set redstone signals, bundled cables included
+isize = 3208
+filename = redstone-1.0.0-1.bpk
+csize = 2842
+crc32 = d177488f
+sha256 = 723868286d37a053a5f2216b52e3abb10836d0ae7327780219c15127b54c6168
+
+name = timers
+version = 1.0.0-1
+desc = start services on a schedule (systemd-style .timer units)
+depend = byteos>=1.12.1
+isize = 11333
+filename = timers-1.0.0-1.bpk
+csize = 10115
+crc32 = 841a5952
+sha256 = d53f444f03af90c6b7e10f4b0f0567d0a2a90ed9dc9bf088b9b31dba2e60e8cc
+
 name = tree
 version = 1.0.0-1
 desc = recursive coloured directory listing

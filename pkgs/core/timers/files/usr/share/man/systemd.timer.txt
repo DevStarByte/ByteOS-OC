@@ -1,0 +1,41 @@
+systemd.timer - start a service on a schedule
+
+A timer starts a service now and then, like cron. It lives next to the
+service, as /etc/systemd/system/<name>.timer, and starts <name>.service
+unless Unit= names another one:
+
+  [Unit]
+  Description=Back up every night
+
+  [Timer]
+  OnCalendar=daily          at midnight (see below)
+  OnBootSec=2min            once, two minutes after boot
+  OnUnitActiveSec=1h        again an hour after each start
+  Unit=backup.service       the service to start (default: same name)
+
+A timer needs at least one of OnCalendar, OnBootSec or OnUnitActiveSec.
+The service it starts usually does its job and ends (Restart=no).
+
+OnCalendar
+  hourly  daily  weekly     every hour, at midnight, Monday at midnight
+  14:30                     every day at half past two
+  *:15                      every hour at quarter past
+  *:00/10                   every ten minutes
+  Mon,Fri 08:00             Mondays and Fridays at eight
+The times are local (see timedatectl); without an internet card they are
+the Minecraft world's time.
+
+Spans
+  90  30s  5min  2h  1d  1h 30min
+
+COMMANDS
+  timers                         every timer, when it runs next and last ran
+  sudo timers enable <name>      turn it on
+  sudo timers disable <name>
+  sudo timers start <name>       start its service now
+
+timerd, a service, does the starting; installing the timers package
+enabled it. Each start shows up in journalctl -u timerd.
+
+SEE ALSO
+  man systemd.service, man timers

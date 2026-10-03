@@ -21,6 +21,9 @@ Small, everyday tools. Always enabled.
 | [fortune](pkgs/core/fortune) | 1.0.0 | Random pithy programmer quotes (ships its own data file). |
 | [tree](pkgs/core/tree)       | 1.0.0 | Recursive coloured directory listing. `tree /etc` |
 | [uptime](pkgs/core/uptime)   | 1.0.0 | Print how long the system has been running. |
+| [lshw](pkgs/core/lshw)       | 1.0.0 | Every component with its details. `lshw -short`, `lshw memory` |
+| [redstone](pkgs/core/redstone) | 1.0.0 | Read and set redstone signals and bundled cables. `redstone set top 15` |
+| [timers](pkgs/core/timers)   | 1.0.0 | Start services on a schedule, like cron: `.timer` units, `timers`, `man systemd.timer`. |
 
 ## extra/
 
@@ -35,6 +38,10 @@ Bigger or more demo-y packages. Enabled by default in `/etc/pacman.conf`.
 | [nano](pkgs/extra/nano)       | 1.0.0 | Tiny line-buffer editor. `:w` save, `:q` quit, `:wq`, `:d` drop last line. |
 | [snake](pkgs/extra/snake)     | 1.0.0 | **Game.** Classic snake. Arrow keys (or WASD) to steer, `q` to quit. |
 | [2048](pkgs/extra/2048)       | 1.0.0 | **Game.** Slide-the-tiles puzzle. Arrows to move, `r` restart, `q` quit. |
+| [btop](pkgs/extra/btop)       | 1.0.0 | Full-screen monitor: memory, energy, disks, network, services, processes (`k` stops one). |
+| [power](pkgs/extra/power)     | 1.0.0 | Energy stored, use per second, time left. `power -w` keeps watching. |
+| [rsh](pkgs/extra/rsh)         | 1.0.0 | Remote shell over ByteNet: `rsh alice@box2 uptime`, or a prompt there. |
+| [netfs](pkgs/extra/netfs)     | 1.0.0 | Shared folders over ByteNet: share in `/etc/netfs.conf`, `netfs mount box2:pub /mnt/pub`. |
 
 ## Quick demo run
 

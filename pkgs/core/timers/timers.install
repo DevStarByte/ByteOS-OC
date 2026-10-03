@@ -1,0 +1,13 @@
+function post_install()
+  local systemd = require("systemd")
+  systemd.enable("timerd")
+  systemd.start("timerd")
+  print("timerd is enabled and running; see man systemd.timer")
+end
+function post_upgrade() require("systemd").restart("timerd") end
+function pre_remove()
+  local systemd = require("systemd")
+  systemd.stop("timerd")
+  systemd.disable("timerd")
+  package.loaded.timers = nil
+end

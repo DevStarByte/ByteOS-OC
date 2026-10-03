@@ -1,0 +1,6 @@
+[Unit]
+Description=Shared Folders Server
+
+[Service]
+ExecStart=netfsd
+Restart=on-failure

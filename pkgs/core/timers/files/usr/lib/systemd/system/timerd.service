@@ -1,0 +1,6 @@
+[Unit]
+Description=Timer Daemon
+
+[Service]
+ExecStart=timerd
+Restart=on-failure

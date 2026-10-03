@@ -1,0 +1,72 @@
+BPK1
+108 - .PKGINFO
+name = power
+version = 1.0.0-1
+desc = the computer's energy: stored, use per second, time left
+isize = 2300
+2300 - /usr/bin/power.lua
+--[[
+  power [-w] - this computer's energy
+
+  Shows the energy stored and the maximum, how much it uses (or gains) per
+  second, measured over one second, and how long the rest lasts.
+
+    -w   keep watching, updated every second (q or Ctrl+C ends it)
+]]--
+local T = term.theme
+local args = arg or {}
+local watch = args[1] == "-w"
+
+local function bar(frac, width)
+  local n = math.floor(width * math.max(0, math.min(1, frac)) + 0.5)
+  return string.rep("█", n) .. string.rep("░", width - n)
+end
+
+local function duration(sec)
+  if sec == math.huge or sec ~= sec then return "forever" end
+  sec = math.floor(sec)
+  if sec >= 3600 then return ("%dh %02dmin"):format(sec // 3600, sec % 3600 // 60) end
+  if sec >= 60 then return ("%dmin %02ds"):format(sec // 60, sec % 60) end
+  return sec .. "s"
+end
+
+-- energy now and the change per second over `span` seconds
+local function sample(span)
+  local e1, t1 = computer.energy(), computer.uptime()
+  local deadline = t1 + span
+  local key
+  while computer.uptime() < deadline do
+    local ev, _, ch = k.event.pull(deadline - computer.uptime())
+    if ev == "key_down" and (ch == 113 or ch == 81) then key = "q" end
+  end
+  local e2, t2 = computer.energy(), computer.uptime()
+  return e2, (e2 - e1) / math.max(t2 - t1, 0.001), key
+end
+
+local function show(energy, rate)
+  local max = computer.maxEnergy()
+  local W = term.size()
+  term.cwrite(T.bright, "Energy  ")
+  term.write(("%.0f / %.0f (%d%%)\n"):format(energy, max, math.floor(100 * energy / math.max(max, 1) + 0.5)))
+  term.cwrite(rate < 0 and T.yellow or T.green, "        " .. bar(energy / math.max(max, 1), math.max(10, W - 12)) .. "\n")
+  if rate < 0 then
+    term.cwrite(T.bright, "Using   "); term.write(("%.1f per second\n"):format(-rate))
+    term.cwrite(T.bright, "Lasts   "); term.write(duration(energy / -rate) .. "\n")
+  else
+    term.cwrite(T.bright, "Gaining "); term.write(("%.1f per second\n"):format(rate))
+    term.cwrite(T.bright, "Full in "); term.write((rate > 0 and duration((max - energy) / rate) or "-") .. "\n")
+  end
+end
+
+if not watch then
+  local energy, rate = sample(1)
+  show(energy, rate)
+  return 0
+end
+while true do
+  local energy, rate, key = sample(1)
+  term.clear()
+  show(energy, rate)
+  term.cwrite(T.muted, "q quits\n")
+  if key == "q" then return 0 end
+end

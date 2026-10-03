@@ -7,6 +7,16 @@ csize = 3742
 crc32 = d6cc3ea7
 sha256 = 42718903e758d01372c7372b270fae557046a6e6ead75bd1a566a51b5c83ee8a
 
+name = btop
+version = 1.0.0-1
+desc = full-screen system monitor: memory, energy, disks, network, processes
+depend = byteos>=1.12.1
+isize = 8155
+filename = btop-1.0.0-1.bpk
+csize = 6309
+crc32 = 77df4b5b
+sha256 = 800069cfd059207c7472115a1c5b4d87c9fb1a2c32e1069184187eae4a5b6318
+
 name = cmatrix
 version = 1.0.0-1
 desc = falling green matrix rain (any key to quit)
@@ -33,6 +43,36 @@ filename = nano-1.0.0-1.bpk
 csize = 1655
 crc32 = 45d9e379
 sha256 = 557a546ad4bb4afb62832152f34ecdea1e661826723d8dc78acd43e8e47b2165
+
+name = netfs
+version = 1.0.0-1
+desc = shared folders: use another computer's directories over the network
+depend = byteos>=1.12.1
+backup = /etc/netfs.conf
+isize = 12644
+filename = netfs-1.0.0-1.bpk
+csize = 10838
+crc32 = d22122fe
+sha256 = 29c7ad67b66c920d2a325615e560de1d06c16de6f0b04d3fbcfa6c3a541f49b3
+
+name = power
+version = 1.0.0-1
+desc = the computer's energy: stored, use per second, time left
+isize = 2300
+filename = power-1.0.0-1.bpk
+csize = 2454
+crc32 = 91a26fa4
+sha256 = 0ca469d3b1ba4407513b9e276630e49f11f2d304c39b69feb7c4a856a986e1fb
+
+name = rsh
+version = 1.0.0-1
+desc = remote shell: run commands on another ByteOS computer
+depend = byteos>=1.12.1
+isize = 6217
+filename = rsh-1.0.0-1.bpk
+csize = 6482
+crc32 = 19093363
+sha256 = d789a01247597e509c5599a6273261e1a1c038ef52c7c17809e4bafd05b7d829
 
 name = sl
 version = 1.0.0-1

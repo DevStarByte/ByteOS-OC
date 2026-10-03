@@ -1,0 +1,6 @@
+[Unit]
+Description=Remote Shell Daemon
+
+[Service]
+ExecStart=rshd
+Restart=on-failure

@@ -1,0 +1,12 @@
+function post_install()
+  local systemd = require("systemd")
+  systemd.enable("rshd")
+  systemd.start("rshd")
+  print("rshd is enabled: other computers can now log in here with rsh")
+end
+function post_upgrade() require("systemd").restart("rshd") end
+function pre_remove()
+  local systemd = require("systemd")
+  systemd.stop("rshd")
+  systemd.disable("rshd")
+end

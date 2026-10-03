@@ -1,0 +1,12 @@
+function post_install()
+  local systemd = require("systemd")
+  systemd.enable("netfsd")
+  systemd.start("netfsd")
+  print("netfsd is running; share folders in /etc/netfs.conf")
+end
+function post_upgrade() require("systemd").restart("netfsd") end
+function pre_remove()
+  local systemd = require("systemd")
+  systemd.stop("netfsd")
+  systemd.disable("netfsd")
+end

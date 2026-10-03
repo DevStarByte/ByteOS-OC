@@ -1,0 +1,92 @@
+BPK1
+127 - .PKGINFO
+name = rsh
+version = 1.0.0-1
+desc = remote shell: run commands on another ByteOS computer
+depend = byteos>=1.12.1
+isize = 6217
+362 - .INSTALL
+function post_install()
+  local systemd = require("systemd")
+  systemd.enable("rshd")
+  systemd.start("rshd")
+  print("rshd is enabled: other computers can now log in here with rsh")
+end
+function post_upgrade() require("systemd").restart("rshd") end
+function pre_remove()
+  local systemd = require("systemd")
+  systemd.stop("rshd")
+  systemd.disable("rshd")
+end
+2744 z /usr/bin/rsh.lua
+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3039 - /usr/bin/rshd.lua
+--[[
+  rshd - lets rsh run commands on this computer (a service)
+
+  Every request carries a user name and password; a command runs as that
+  user, in a process of its own, and what it prints goes back. A wrong
+  password makes rshd ignore that computer for a few seconds. A command
+  that is still running after two minutes is stopped; it cannot read the
+  keyboard here.
+]]--
+local net = require("net")
+local MAX_OUTPUT, CHUNK, LIMIT, PENALTY = 65536, 4096, 120, 3
+local blocked = {} -- address -> uptime until which it is ignored
+
+local function reply(to, id, buf, ok, status, pwd)
+  local out = table.concat(buf)
+  if #out > MAX_OUTPUT then out = out:sub(1, MAX_OUTPUT) .. "\n[rsh: output cut at 64 KiB]\n" end
+  for i = 1, #out, CHUNK do net.send(to, "rsh-out", id, out:sub(i, i + CHUNK - 1)) end
+  net.send(to, "rsh-reply", id, ok, status, pwd)
+end
+
+local function handle(from, id, user, password, cwd, line)
+  if (blocked[from] or 0) > computer.uptime() then
+    return net.send(from, "rsh-reply", id, false, "too many wrong passwords, wait a moment")
+  end
+  if type(user) ~= "string" or type(password) ~= "string" or not k.checkPassword(user, password) then
+    blocked[from] = computer.uptime() + PENALTY
+    print(("refused %s from %s"):format(tostring(user), from:sub(1, 8)))
+    return net.send(from, "rsh-reply", id, false, "Permission denied")
+  end
+  if line == nil then -- just a login check: answer with the home directory
+    local u = require("auth").user(fs, user)
+    return net.send(from, "rsh-reply", id, true, 0, u and u.home or "/")
+  end
+  print(("%s from %s: %s"):format(user, from:sub(1, 8), tostring(line)))
+  local buf, pwd = {}, nil
+  local pid, err = k.process.spawn(function()
+    shell.setErrorSink(function(t) buf[#buf + 1] = t end)
+    if type(cwd) == "string" and fs.isDirectory(cwd) then _G.PWD = cwd end
+    local rc = shell.withIO({ output = buf }, shell.execute, tostring(line))
+    pwd = _G.PWD
+    return rc
+  end, { name = "rsh: " .. user, user = user, onexit = function(p)
+    if p.state == "done" then reply(from, id, buf, true, tonumber(p.result) or 0, pwd)
+    elseif p.state == "killed" then buf[#buf + 1] = "rsh: stopped after " .. LIMIT .. " seconds\n"; reply(from, id, buf, true, 124, cwd)
+    else buf[#buf + 1] = "rsh: " .. tostring(p.result) .. "\n"; reply(from, id, buf, true, 1, cwd) end
+  end })
+  if not pid then return net.send(from, "rsh-reply", id, false, tostring(err)) end
+  k.process.spawn(function()
+    k.event.pull(LIMIT)
+    local info = k.process.info(pid)
+    if info and info.state == "running" then k.process.kill(pid) end
+  end, { name = "rsh watchdog" })
+end
+
+while not net.card() do k.event.pull(30, "component_added") end
+print("listening on port " .. net.PORT)
+while true do
+  local sig = table.pack(k.event.pull(math.huge, "modem_message"))
+  if sig[4] == net.PORT and sig[6] == net.MAGIC and sig[7] == "rsh" then
+    local ok, err = pcall(handle, sig[3], sig[8], table.unpack(sig, 9, sig.n))
+    if not ok then print("error: " .. tostring(err)) end
+  end
+end
+84 - /usr/lib/systemd/system/rshd.service
+[Unit]
+Description=Remote Shell Daemon
+
+[Service]
+ExecStart=rshd
+Restart=on-failure
