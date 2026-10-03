@@ -2,41 +2,39 @@
   pacman - ByteOS package manager (Arch-style CLI)
 
   Operations:
-    pacman -S <pkg>...    install package(s) from configured repos
-    pacman -R <pkg>...    remove installed package(s)
-    pacman -Q             list installed packages
-    pacman -Qi <pkg>      show info about installed package
-    pacman -Sy            sync repository databases
-    pacman -Syu           sync + upgrade everything
-    pacman -Ss <regex>    search repos
+    pacman -S <pkg>...       install packages and their dependencies
+    pacman -U <file.bpk>...  install package files from disk
+    pacman -R <pkg>...       remove packages
+    pacman -Q                list installed packages
+    pacman -Qi <pkg>         show information about an installed package
+    pacman -Ss [pattern]     search the repositories
+    pacman -Sy               synchronize the package databases
+    pacman -Syu              upgrade packages and the byteos base system
+    pacman --rollback        undo the last byteos upgrade
 
-  Repo layout (very simple):
-    A repo is a directory containing:
-      repo.db          : "name version description url\n" per line
-      <name>-<ver>.pkg : a Lua table:
-          return {
-            files = { ["/path"] = "raw contents" },
-            post_install = function() ... end,   -- optional
-          }
-      <name>-<ver>.pkg.z : same, but with `format = "lzw1"` and each file
-        value is a base64-encoded LZW stream produced by lib/compress.lua.
-        The compressed form is preferred when both exist.
+  Packages are .bpk archives (see /lib/bpk.lua). A repository is the
+  Server from pacman.conf, a URL or a directory holding <repo>.db and the
+  .bpk files it lists.
 
-  Local DB:
-    /var/lib/pacman/local/<name>/desc      version + meta
-    /var/lib/pacman/local/<name>/files     newline-separated installed paths
+  Local database, one directory per installed package:
+    /var/lib/pacman/local/<name>/desc     package info; each backup line
+                                          also carries the CRC-32 of the
+                                          file as shipped ("<path> <crc>")
+    /var/lib/pacman/local/<name>/files    installed paths, one per line
+    /var/lib/pacman/local/<name>/install  the package's hooks, if any
 ]]--
 
-local fs       = k.fs
-local args     = arg or {}
-local compress = require("compress")
+local fs   = k.fs
+local args = arg or {}
+local bpk  = require("bpk")
 
 local CONF_PATH = "/etc/pacman.conf"
 local LOCAL_DIR = "/var/lib/pacman/local"
 local SYNC_DIR  = "/var/lib/pacman/sync"
+local CACHE_DIR = "/var/cache/pacman/pkg"
 
 local function ensureDirs()
-  for _, d in ipairs({ "/var", "/var/lib", "/var/lib/pacman", LOCAL_DIR, SYNC_DIR }) do
+  for _, d in ipairs({ LOCAL_DIR, SYNC_DIR, CACHE_DIR }) do
     if not fs.exists(d) then fs.makeDirectory(d) end
   end
 end
@@ -84,13 +82,13 @@ local function progress(label, frac)
   local labelW = W - barW - 9
   local _, y = term.getCursor()
   term.setCursor(1, y)
-  term.cwrite(T.fg, term.pad(" " .. label, labelW))
-  local filled = math.floor(barW * frac + 0.5)
+  term.cwrite(T.fg, term.pad(term.usub(" " .. label, 1, labelW), labelW))
+  local filled = math.floor(barW * math.min(1, frac) + 0.5)
   term.cwrite(T.muted, " [")
   term.cwrite(T.accent, string.rep("#", filled))
   term.cwrite(T.dim, string.rep("-", barW - filled))
   term.cwrite(T.muted, "]")
-  term.cwrite(T.fg, ("%4d%%"):format(math.floor(frac * 100 + 0.5)))
+  term.cwrite(T.fg, ("%4d%%"):format(math.floor(math.min(1, frac) * 100 + 0.5)))
 end
 
 local NOCONFIRM = false
@@ -102,61 +100,177 @@ local function confirm(question)
   return a == "" or a == "y" or a == "yes"
 end
 
--- Very small "downloader". A repo "Server" is either an http(s):// URL
--- (fetched through the internet card) or a path on a mounted disk
--- (e.g. /mnt/<id>/repo/core), which works without internet.
-local function fetch(server, name)
-  local p = server .. "/" .. name
-  if p:match("^https?://") then
-    local internet = require("internet")
-    if not internet.available() then return nil, "no internet card for " .. p end
-    local data, e = internet.fetch(p)
-    if not data then return nil, e .. " " .. p end
-    return data
-  end
+local function kib(n) return ("%.1f KiB"):format((tonumber(n) or 0) / 1024) end
+local function parent(p) return p:match("^(.*)/[^/]*$") or "" end
+local function mkdirp(d)
+  if d ~= "" and not fs.exists(d) then fs.makeDirectory(d) end
+end
+local function readIf(p)
   if fs.exists(p) then return fs.readAll(p) end
-  return nil, "not found: " .. p
+end
+local function crcOf(data) return bpk.hex(bpk.crc32(data or "")) end
+
+-- ---- Repositories ----------------------------------------------------------
+local function repoNames()
+  local repos, names = readRepos(), {}
+  for name, conf in pairs(repos) do if conf.Server then names[#names + 1] = name end end
+  table.sort(names)
+  return names, repos
 end
 
-local function syncRepo(rname, rconf)
-  local data, e = fetch(rconf.Server, "repo.db")
-  if not data then
-    err("failed to synchronize " .. rname .. ": " .. tostring(e))
+-- Copy <server>/<name> into the file `dest`. A server is a URL (through the
+-- internet card) or a directory. Returns size, crc32 or nil, reason.
+local function download(server, name, dest, onBytes)
+  local src = server .. "/" .. name
+  local out = fs.open(dest, "w")
+  if not out then return nil, "cannot write " .. dest end
+  local size, crc = 0, 0
+  local function sink(c)
+    out:write(c)
+    size = size + #c
+    crc = bpk.crc32(c, crc)
+    if onBytes then onBytes(size) end
+  end
+  local ok, e
+  if src:match("^https?://") then
+    local internet = require("internet")
+    if internet.available() then ok, e = internet.get(src, sink)
+    else ok, e = nil, "no internet card" end
+  elseif fs.exists(src) then
+    local h = fs.open(src, "r")
+    while true do
+      local c = h:read(4096)
+      if not c then break end
+      sink(c)
+    end
+    h:close()
+    ok = true
+  else
+    ok, e = nil, "not found"
+  end
+  out:close()
+  if not ok then fs.remove(dest); return nil, tostring(e) .. " (" .. src .. ")" end
+  return size, crc
+end
+
+local function syncRepo(name, conf)
+  local dest = SYNC_DIR .. "/" .. name .. ".db"
+  -- databases from before .bpk lived in <sync>/<repo>/repo.db
+  if fs.isDirectory(SYNC_DIR .. "/" .. name) then fs.remove(SYNC_DIR .. "/" .. name) end
+  local size, e = download(conf.Server, name .. ".db", dest .. ".part")
+  if not size then
+    err("failed to synchronize " .. name .. ": " .. e)
     return false
   end
-  fs.makeDirectory(SYNC_DIR .. "/" .. rname)
-  local old = fs.readAll(SYNC_DIR .. "/" .. rname .. "/repo.db")
-  if old == data then
-    term.cwrite(T.fg, " " .. rname)
+  if readIf(dest) == readIf(dest .. ".part") then
+    fs.remove(dest .. ".part")
+    term.cwrite(T.fg, " " .. name)
     term.cwrite(T.muted, " is up to date\n")
   else
-    fs.writeAll(SYNC_DIR .. "/" .. rname .. "/repo.db", data)
-    progress(rname, 1); term.write("\n")
+    if fs.exists(dest) then fs.remove(dest) end
+    fs.rename(dest .. ".part", dest)
+    progress(name, 1); term.write("\n")
   end
   return true
 end
 
-local function findInRepos(pkg)
-  for _, fname in ipairs(fs.list(SYNC_DIR) or {}) do
-    local rname = fname:gsub("/$", "")
-    local dbp   = SYNC_DIR .. "/" .. rname .. "/repo.db"
-    if fs.exists(dbp) then
-      for line in (fs.readAll(dbp) or ""):gmatch("[^\n]+") do
-        local n, v, d = line:match("(%S+)%s+(%S+)%s+(.+)")
-        if n == pkg then
-          local repos = readRepos()
-          return { name = n, version = v, desc = d, repo = rname, server = repos[rname] and repos[rname].Server }
-        end
+local dbs -- name -> repo package info, loaded on first use
+
+local function sync()
+  header("Synchronizing package databases...")
+  local names, repos = repoNames()
+  local ok = #names > 0
+  for _, name in ipairs(names) do ok = syncRepo(name, repos[name]) and ok end
+  dbs = nil
+  if not ok then
+    -- the usual cause: an old pacman.conf that -Syu kept next to a new one
+    if fs.exists(CONF_PATH .. ".new") then
+      warn("a newer config was saved as " .. CONF_PATH .. ".new; to use it run")
+      term.cwrite(T.blue, "    mv " .. CONF_PATH .. ".new " .. CONF_PATH .. "\n")
+    else
+      warn("check the Server lines in " .. CONF_PATH)
+    end
+  end
+  return ok
+end
+
+-- True once every configured repo has a synced database.
+local function synced()
+  for _, name in ipairs((repoNames())) do
+    if not fs.exists(SYNC_DIR .. "/" .. name .. ".db") then return false end
+  end
+  return true
+end
+
+-- All repo packages by name; the first repo (alphabetically) wins.
+local function syncdb()
+  if dbs then return dbs end
+  dbs = {}
+  local names, repos = repoNames()
+  for _, repo in ipairs(names) do
+    for _, p in ipairs(bpk.parseDb(readIf(SYNC_DIR .. "/" .. repo .. ".db"))) do
+      if not dbs[p.name] then
+        p.repo, p.server = repo, repos[repo].Server
+        dbs[p.name] = p
       end
     end
   end
+  return dbs
 end
 
-local function isInstalled(pkg) return fs.isDirectory(LOCAL_DIR .. "/" .. pkg) end
+-- ---- Local database --------------------------------------------------------
+local function localInfo(name)
+  local d = readIf(LOCAL_DIR .. "/" .. name .. "/desc")
+  if not d then return nil end
+  local i = bpk.parseInfo(d)
+  i.name = i.name or name
+  return i
+end
 
-local function installedVersion(pkg)
-  local d = fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/desc") or ""
-  return d:match("version=(%S+)")
+local function localFiles(name)
+  local out = {}
+  for f in (readIf(LOCAL_DIR .. "/" .. name .. "/files") or ""):gmatch("[^\r\n]+") do
+    out[#out + 1] = f
+  end
+  return out
+end
+
+local function installedNames()
+  local out = {}
+  for _, e_ in ipairs(fs.list(LOCAL_DIR) or {}) do
+    local n = e_:gsub("/$", "")
+    if fs.exists(LOCAL_DIR .. "/" .. n .. "/desc") then out[#out + 1] = n end
+  end
+  table.sort(out)
+  return out
+end
+
+local function isInstalled(name) return fs.exists(LOCAL_DIR .. "/" .. name .. "/desc") end
+
+-- backup lines in the local db: "<path> <crc32 as shipped>"
+local function backupCrcs(i)
+  local out = {}
+  for _, b in ipairs(i and i.backup or {}) do
+    local p, c = b:match("^(%S+)%s*(%x*)$")
+    if p then out[p] = c end
+  end
+  return out
+end
+
+local function depName(d) return d:match("^[^<>=%s]+") end
+
+-- Run hook `fn` from a package's install script, if it defines one.
+local function runHook(code, fn, ...)
+  if not code then return end
+  local env = setmetatable({ fs = fs, term = term, k = k, shell = shell }, { __index = _G })
+  local chunk, e = load(code, "=.INSTALL", "t", env)
+  if not chunk then warn("install script: " .. tostring(e)); return end
+  local ok, e2 = pcall(chunk)
+  if not ok then warn("install script: " .. tostring(e2)); return end
+  if type(env[fn]) == "function" then
+    local ok3, e3 = pcall(env[fn], ...)
+    if not ok3 then warn(fn .. " failed: " .. tostring(e3)) end
+  end
 end
 
 -- ---- ByteBIOS --------------------------------------------------------------
@@ -202,259 +316,382 @@ local function queryBios()
   row("Can restore", bios().canRestore() and "yes, pacman -R bytebios" or "no")
 end
 
--- Install one package. `meta` comes from findInRepos(); idx/total drive the
--- "(1/3) installing foo" progress line.
-local function installPackage(pkg, meta, idx, total)
-  local label = ("(%d/%d) installing %s"):format(idx, total, pkg)
-  local function fail(msg) term.write("\n"); err(msg); return false end
-  progress(label, 0)
-
-  -- Prefer the compressed package (.pkg.z), fall back to the plain .pkg.
-  local stem = pkg .. "-" .. meta.version
-  local data, e = fetch(meta.server, stem .. ".pkg.z")
-  local compressed = data ~= nil
-  if not data then
-    data, e = fetch(meta.server, stem .. ".pkg")
+-- ---- Resolving -------------------------------------------------------------
+local function notFound(name, by)
+  err("target not found: " .. name .. (by and (" (required by " .. by .. ")") or ""))
+  if not synced() then
+    term.cwrite(T.muted, "  the package databases could not be synchronized (see above)\n")
+  else
+    term.cwrite(T.muted, "  try ")
+    term.cwrite(T.blue, "pacman -Sy")
+    term.cwrite(T.muted, " to refresh, or ")
+    term.cwrite(T.blue, "pacman -Ss " .. name)
+    term.cwrite(T.muted, " to search\n")
   end
-  if not data then return fail("download failed: " .. tostring(e)) end
-  progress(label, 0.3)
+end
 
-  -- packages are Lua tables: return { files = {...}, post_install = function() ... end }
-  local fn, perr = load(data, "=" .. pkg, "t", { string = string, table = table, math = math })
-  if not fn then return fail("malformed package: " .. perr) end
-  local ok, pkgtab = pcall(fn)
-  if not ok or type(pkgtab) ~= "table" then return fail("invalid package payload") end
-
-  -- Decompress file contents if the package declares a known format.
-  if pkgtab.format == "lzw1" then
-    for path, content in pairs(pkgtab.files or {}) do
-      local plain, derr = compress.decode(content)
-      if not plain then return fail("decompress failed for " .. path .. ": " .. tostring(derr)) end
-      pkgtab.files[path] = plain
+-- Repo packages for `targets` plus every dependency that is not installed
+-- yet, dependencies first. `provided` names count as installed. Returns
+-- the list, or nil after printing why.
+local function resolve(targets, provided)
+  if not synced() then sync() end
+  local db = syncdb()
+  local order, seen = {}, {}
+  local function visit(name, by)
+    if seen[name] then return true end
+    seen[name] = true
+    local p = db[name]
+    if not p then notFound(name, by); return false end
+    for _, d in ipairs(p.depend) do
+      local dn = depName(d)
+      if dn and not isInstalled(dn) and not (provided and provided[dn]) then
+        if not visit(dn, name) then return false end
+      end
     end
-  elseif pkgtab.format and pkgtab.format ~= "raw" then
-    return fail("unknown package format: " .. tostring(pkgtab.format))
+    order[#order + 1] = p
+    return true
   end
-  progress(label, 0.6)
-
-  local installed = {}
-  for path, content in pairs(pkgtab.files or {}) do
-    local dir = path:match("(.+)/[^/]+$")
-    if dir and not fs.exists(dir) then fs.makeDirectory(dir) end
-    fs.writeAll(path, content)
-    installed[#installed+1] = path
+  for _, t in ipairs(targets) do
+    if not visit(t) then return nil end
   end
-
-  fs.makeDirectory(LOCAL_DIR .. "/" .. pkg)
-  fs.writeAll(LOCAL_DIR .. "/" .. pkg .. "/desc",
-              "name=" .. pkg .. "\nversion=" .. meta.version ..
-              "\ndesc=" .. meta.desc ..
-              "\nformat=" .. (pkgtab.format or "raw") .. "\n")
-  fs.writeAll(LOCAL_DIR .. "/" .. pkg .. "/files", table.concat(installed, "\n") .. "\n")
-
-  progress(label, 1); term.write("\n")
-  if pkgtab.post_install then pcall(pkgtab.post_install) end
-  return true
+  return order
 end
 
-local function removePackage(pkg, idx, total)
-  local label = ("(%d/%d) removing %s"):format(idx, total, pkg)
-  progress(label, 0)
-  local files = fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/files") or ""
-  for f in files:gmatch("[^\n]+") do if fs.exists(f) then fs.remove(f) end end
-  for _, e_ in ipairs(fs.list(LOCAL_DIR .. "/" .. pkg) or {}) do
-    fs.remove(LOCAL_DIR .. "/" .. pkg .. "/" .. e_)
+-- "Packages (2) foo-1.0  bar-2.0", sizes, then the confirmation prompt.
+local function confirmPackages(names, question, dlSize, inSize)
+  term.write("\n")
+  term.cwrite(T.bright, ("Packages (%d) "):format(#names))
+  term.cwrite(T.fg, table.concat(names, "  ") .. "\n\n")
+  if dlSize and dlSize > 0 then
+    term.cwrite(T.bright, "Total Download Size:   ")
+    term.cwrite(T.fg, kib(dlSize) .. "\n")
   end
-  fs.remove(LOCAL_DIR .. "/" .. pkg)
-  progress(label, 1); term.write("\n")
-  return true
+  if inSize then
+    term.cwrite(T.bright, "Total Installed Size:  ")
+    term.cwrite(T.fg, kib(inSize) .. "\n")
+  end
+  if dlSize or inSize then term.write("\n") end
+  return confirm(question)
 end
 
-local function queryAll()
-  for _, e_ in ipairs(fs.list(LOCAL_DIR) or {}) do
-    local n   = e_:gsub("/$", "")
-    local d   = fs.readAll(LOCAL_DIR .. "/" .. n .. "/desc") or ""
-    local ver = d:match("version=(%S+)") or "?"
-    term.cwrite(T.bright, n .. " ")
-    term.cwrite(T.green, ver .. "\n")
-  end
-  local st, i = biosStatus()
-  if st == "current" or st == "outdated" then
-    term.cwrite(T.bright, "bytebios ")
-    term.cwrite(T.green, i.installed .. "\n")
-  end
-end
-
-local function queryInfo(pkg)
-  if not pkg then err("no targets specified"); return end
-  if pkg == "bytebios" then return queryBios() end
-  if not isInstalled(pkg) then err("package '" .. pkg .. "' was not found"); return end
-  local d = fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/desc") or ""
-  local fields = {}
-  for key, v in d:gmatch("(%w+)=([^\n]*)") do fields[key] = v end
-  local files = {}
-  for f in (fs.readAll(LOCAL_DIR .. "/" .. pkg .. "/files") or ""):gmatch("[^\n]+") do files[#files + 1] = f end
-  local function row(label, value)
-    term.cwrite(T.bright, term.pad(label, 14))
-    term.cwrite(T.muted, ": ")
-    term.cwrite(T.fg, (value or "None") .. "\n")
-  end
-  row("Name", fields.name or pkg)
-  row("Version", fields.version)
-  row("Description", fields.desc)
-  row("Format", fields.format or "raw")
-  row("Files", tostring(#files))
-  for _, f in ipairs(files) do term.cwrite(T.muted, string.rep(" ", 16) .. f .. "\n") end
-end
-
-local function search(pat)
-  for _, fname in ipairs(fs.list(SYNC_DIR) or {}) do
-    local rname = fname:gsub("/$", "")
-    local dbp   = SYNC_DIR .. "/" .. rname .. "/repo.db"
-    if fs.exists(dbp) then
-      for line in (fs.readAll(dbp) or ""):gmatch("[^\n]+") do
-        local n, v, d = line:match("(%S+)%s+(%S+)%s+(.+)")
-        if n and (not pat or n:find(pat) or (d or ""):find(pat)) then
-          term.cwrite(T.magenta, rname .. "/")
-          term.cwrite(T.bright, n .. " ")
-          term.cwrite(T.green, v)
-          if isInstalled(n) then term.cwrite(T.cyan, " [installed]") end
-          term.write("\n")
-          term.cwrite(T.fg, "    " .. (d or "") .. "\n")
+-- ---- Transactions ----------------------------------------------------------
+-- Conflicts between the packages `infos` (about to be installed) and the
+-- installed packages or each other. The repo database has everything this
+-- needs, so it runs before the confirmation prompt.
+local function pkgConflicts(infos)
+  local problems, names = {}, {}
+  for _, p in ipairs(infos) do names[p.name] = true end
+  for _, p in ipairs(infos) do
+    for _, c in ipairs(p.conflict or {}) do
+      local cn = depName(c)
+      if cn and cn ~= p.name and (isInstalled(cn) or names[cn]) then
+        problems[#problems + 1] = ("%s and %s are in conflict"):format(p.name, cn)
+      end
+    end
+    for _, n in ipairs(installedNames()) do
+      if n ~= p.name and not names[n] then
+        for _, c in ipairs((localInfo(n) or {}).conflict or {}) do
+          if depName(c) == p.name then
+            problems[#problems + 1] = ("%s and %s are in conflict"):format(p.name, n)
+          end
         end
       end
     end
   end
+  return problems
 end
 
--- ===== argument dispatch =====
-local function usage()
-  term.cwrite(T.bright, "usage: ")
-  term.write("pacman <operation> [...]\n")
-  term.cwrite(T.bright, "operations:\n")
-  local ops = {
-    { "-S <pkg>...", "install packages" },
-    { "-R <pkg>...", "remove packages" },
-    { "-Q",          "list installed packages" },
-    { "-Qi <pkg>",   "show package information" },
-    { "-Ss [regex]", "search the repositories" },
-    { "-Sy",         "synchronize package databases" },
-    { "-Syu",        "upgrade packages and the byteos base system" },
-    { "--rollback",  "undo the last byteos upgrade" },
-    { "-S bytebios", "flash ByteBIOS to the EEPROM" },
-  }
-  for _, o in ipairs(ops) do
-    term.cwrite(T.green, "    " .. term.pad(o[1], 14))
-    term.cwrite(T.fg, o[2] .. "\n")
+-- Prints the conflicts among `infos`; true if there are none.
+local function noConflicts(infos)
+  local problems = pkgConflicts(infos)
+  for _, p in ipairs(problems) do err(p) end
+  if #problems > 0 then err("unresolvable package conflicts detected") end
+  return #problems == 0
+end
+
+-- Every problem that stops the transaction, checked before anything is
+-- written: package conflicts and files another package (or the base
+-- system) owns or that already exist on disk.
+local function findConflicts(items)
+  local infos = {}
+  for _, it in ipairs(items) do infos[#infos + 1] = it.pkg.info end
+  local problems = pkgConflicts(infos)
+  local owner = {}
+  for _, n in ipairs(installedNames()) do
+    for _, f in ipairs(localFiles(n)) do owner[f] = n end
   end
-  term.cwrite(T.muted, "options: --noconfirm  do not ask for confirmation\n")
-end
-
-local function sync()
-  header("Synchronizing package databases...")
-  local repos, names = readRepos(), {}
-  for name, conf in pairs(repos) do if conf.Server then names[#names + 1] = name end end
-  table.sort(names)
-  local ok = #names > 0
-  for _, name in ipairs(names) do ok = syncRepo(name, repos[name]) and ok end
-  if not ok then
-    -- the usual cause: an old pacman.conf that -Syu kept next to a new one
-    if fs.exists(CONF_PATH .. ".new") then
-      warn("a newer config was saved as " .. CONF_PATH .. ".new; to use it run")
-      term.cwrite(T.blue, "    mv " .. CONF_PATH .. ".new " .. CONF_PATH .. "\n")
-    else
-      warn("check the Server lines in " .. CONF_PATH)
+  local incoming = {}
+  for _, it in ipairs(items) do
+    local name = it.pkg.info.name
+    for _, p in ipairs(it.pkg.order) do
+      local o = owner[p]
+      if incoming[p] and incoming[p] ~= name then
+        problems[#problems + 1] = ("%s exists in both '%s' and '%s'"):format(p, name, incoming[p])
+      elseif o and o ~= name then
+        problems[#problems + 1] = ("%s exists in both '%s' and '%s'"):format(p, name, o)
+      elseif not o and fs.exists(p) then
+        problems[#problems + 1] = ("%s: %s exists in filesystem"):format(name, p)
+      end
+      incoming[p] = name
     end
   end
-  return ok
+  return problems
 end
 
--- True once every configured repo has a synced database.
-local function synced()
-  for name, conf in pairs(readRepos()) do
-    if conf.Server and not fs.exists(SYNC_DIR .. "/" .. name .. "/repo.db") then return false end
+-- Install one inspected package archive (it.path, it.pkg).
+local function extract(it, idx, total)
+  local pi, name = it.pkg.info, it.pkg.info.name
+  local old = localInfo(name)
+  local label = ("(%d/%d) %s %s"):format(idx, total, old and "upgrading" or "installing", name)
+  progress(label, 0)
+  local oldCrc = backupCrcs(old)
+  local isBackup = {}
+  for _, b in ipairs(pi.backup) do isBackup[b] = true end
+  local newBackup, notes = {}, {}
+
+  local h = fs.open(it.path, "r")
+  local r, e = bpk.open(h)
+  if not r then h:close(); return nil, e end
+  local done, count = 0, #it.pkg.order
+  while true do
+    local n, flag, size = r.next()
+    if not n then
+      if flag then h:close(); return nil, flag end
+      break
+    end
+    if n == ".PKGINFO" or n == ".INSTALL" then
+      r.stream(size)
+    else
+      mkdirp(parent(n))
+      if isBackup[n] then
+        local data; data, e = r.read(flag, size)
+        if not data then h:close(); return nil, n .. ": " .. e end
+        newBackup[#newBackup + 1] = n .. " " .. crcOf(data)
+        local cur = readIf(n)
+        if cur == data then
+          -- unchanged
+        elseif cur == nil or (oldCrc[n] and crcOf(cur) == oldCrc[n]) then
+          fs.writeAll(n, data)
+        else
+          fs.writeAll(n .. ".pacnew", data)
+          notes[#notes + 1] = n .. " installed as " .. n .. ".pacnew"
+        end
+      elseif flag == "z" then
+        local data; data, e = r.read(flag, size)
+        if not data then h:close(); return nil, n .. ": " .. e end
+        fs.writeAll(n, data)
+      else
+        local out = fs.open(n, "w")
+        if not out then h:close(); return nil, "cannot write " .. n end
+        local ok; ok, e = r.stream(size, function(c) out:write(c) end)
+        out:close()
+        if not ok then h:close(); return nil, n .. ": " .. e end
+      end
+      done = done + 1
+      progress(label, 0.9 * done / count)
+    end
   end
+  h:close()
+
+  -- files the old version had and the new one does not
+  if old then
+    for _, p in ipairs(localFiles(name)) do
+      if not it.pkg.files[p] and fs.exists(p) and not fs.isDirectory(p) then
+        if oldCrc[p] and crcOf(readIf(p)) ~= oldCrc[p] then
+          if fs.exists(p .. ".pacsave") then fs.remove(p .. ".pacsave") end
+          fs.rename(p, p .. ".pacsave")
+          notes[#notes + 1] = p .. " saved as " .. p .. ".pacsave"
+        else
+          fs.remove(p)
+        end
+      end
+    end
+  end
+
+  local dir = LOCAL_DIR .. "/" .. name
+  mkdirp(dir)
+  fs.writeAll(dir .. "/desc", bpk.formatInfo({
+    name = name, version = pi.version, desc = pi.desc, url = pi.url,
+    depend = pi.depend, conflict = pi.conflict, backup = newBackup, isize = pi.isize,
+  }))
+  fs.writeAll(dir .. "/files", table.concat(it.pkg.order, "\n") .. "\n")
+  if it.pkg.install then
+    fs.writeAll(dir .. "/install", it.pkg.install)
+  elseif fs.exists(dir .. "/install") then
+    fs.remove(dir .. "/install")
+  end
+  progress(label, 1); term.write("\n")
+
+  if old then runHook(it.pkg.install, "post_upgrade", pi.version, old.version)
+  else runHook(it.pkg.install, "post_install", pi.version) end
+  for _, note in ipairs(notes) do warn(note) end
   return true
 end
 
--- Look every target up in the synced databases. Returns the list of
--- package metadata, or nil after printing why a target is missing.
-local function resolve(targets)
-  if not synced() then sync() end
-  local list = {}
-  for _, pkg in ipairs(targets) do
-    local meta = findInRepos(pkg)
-    if not meta then
-      err("target not found: " .. pkg)
-      if not synced() then
-        term.cwrite(T.muted, "  the package databases could not be synchronized (see above)\n")
-      else
-        term.cwrite(T.muted, "  try ")
-        term.cwrite(T.blue, "pacman -Sy")
-        term.cwrite(T.muted, " to refresh, or ")
-        term.cwrite(T.blue, "pacman -Ss " .. pkg)
-        term.cwrite(T.muted, " to search\n")
+-- Run a transaction. items: { db = repo package } to download, or
+-- { path = local .bpk }. Nothing is written until every package is
+-- downloaded, verified and checked for conflicts.
+local function commit(items)
+  local fetch = {}
+  for _, it in ipairs(items) do if it.db then fetch[#fetch + 1] = it end end
+  if #fetch > 0 then
+    header("Retrieving packages...")
+    for _, it in ipairs(fetch) do
+      local p = it.db
+      local label = p.name .. "-" .. p.version
+      local csize = tonumber(p.csize) or 0
+      local dest = CACHE_DIR .. "/" .. p.filename
+      progress(label, 0)
+      local size, crc = download(p.server, p.filename, dest, function(n)
+        progress(label, csize > 0 and n / csize or 1)
+      end)
+      if not size then term.write("\n"); err("failed retrieving " .. p.filename .. ": " .. crc); return false end
+      progress(label, 1); term.write("\n")
+      if size ~= csize or bpk.hex(crc) ~= p.crc32 then
+        fs.remove(dest)
+        err(p.filename .. " is corrupted (size or checksum mismatch); try pacman -Sy")
+        return false
       end
-      return nil
+      it.path, it.cached = dest, true
     end
-    if isInstalled(pkg) and installedVersion(pkg) == meta.version then
-      warn(pkg .. "-" .. meta.version .. " is up to date -- reinstalling")
-    end
-    list[#list + 1] = meta
   end
-  return list
-end
 
--- "Packages (2) foo-1.0  bar-2.0" followed by the confirmation prompt.
-local function confirmPackages(names, question)
-  term.write("\n")
-  term.cwrite(T.bright, ("Packages (%d) "):format(#names))
-  term.cwrite(T.fg, table.concat(names, "  ") .. "\n\n")
-  return confirm(question)
-end
+  info("loading package files...")
+  for _, it in ipairs(items) do
+    local h = fs.open(it.path, "r")
+    if not h then err("cannot read " .. it.path); return false end
+    local pkg, e = bpk.inspect(h)
+    h:close()
+    if not pkg then err(it.path .. ": " .. e); return false end
+    if it.db and (pkg.info.name ~= it.db.name or pkg.info.version ~= it.db.version) then
+      err(it.path .. " does not match the database entry")
+      return false
+    end
+    it.pkg = pkg
+  end
 
-local function installAll(list)
+  info("checking for file conflicts...")
+  local problems = findConflicts(items)
+  if #problems > 0 then
+    for _, p in ipairs(problems) do err(p) end
+    err("errors occurred, no packages were upgraded.")
+    return false
+  end
+
   header("Processing package changes...")
   local ok = true
-  for i, m in ipairs(list) do ok = installPackage(m.name, m, i, #list) and ok end
+  for i, it in ipairs(items) do
+    local done, e = extract(it, i, #items)
+    if not done then term.write("\n"); err(it.pkg.info.name .. ": " .. tostring(e)); ok = false end
+    if it.cached then fs.remove(it.path) end
+  end
   return ok
 end
 
+local function names(list)
+  local out = {}
+  for _, p in ipairs(list) do out[#out + 1] = p.name .. "-" .. p.version end
+  return out
+end
+
+local function sizes(list)
+  local dl, ins = 0, 0
+  for _, p in ipairs(list) do
+    dl = dl + (tonumber(p.csize) or 0)
+    ins = ins + (tonumber(p.isize) or 0)
+  end
+  return dl, ins
+end
+
+-- ---- Operations ------------------------------------------------------------
 local function install(targets)
   if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
   local wantBios, rest = false, {}
   for _, t in ipairs(targets) do
     if t == "bytebios" then wantBios = true else rest[#rest + 1] = t end
   end
-  local names = {}
+  local labels = {}
   if wantBios then
     local st, i = biosStatus()
     if st == "unknown" then err("bytebios needs a newer byteos; run pacman -Syu first"); return 1 end
     if st == "none" then err("this computer has no EEPROM"); return 1 end
     if st == "current" then warn("bytebios-" .. i.installed .. " is up to date -- reinstalling") end
     if st == "foreign" then info("the current BIOS is kept; pacman -R bytebios puts it back") end
-    names[1] = "bytebios-" .. (i.available or "?")
+    labels[1] = "bytebios-" .. (i.available or "?")
   end
   local list = {}
   if #rest > 0 then
+    info("resolving dependencies...")
     list = resolve(rest)
     if not list then return 1 end
+    for _, t in ipairs(rest) do
+      local i, p = localInfo(t), syncdb()[t]
+      if i and p and bpk.vercmp(i.version, p.version) == 0 then
+        warn(t .. "-" .. p.version .. " is up to date -- reinstalling")
+      end
+    end
+    info("looking for conflicting packages...")
+    if not noConflicts(list) then return 1 end
   end
-  info("resolving dependencies...")
-  info("looking for conflicting packages...")
-  for _, m in ipairs(list) do names[#names + 1] = m.name .. "-" .. m.version end
-  if not confirmPackages(names, "Proceed with installation?") then return 1 end
+  for _, n in ipairs(names(list)) do labels[#labels + 1] = n end
+  local dl, ins = sizes(list)
+  if not confirmPackages(labels, "Proceed with installation?", #list > 0 and dl, #list > 0 and ins) then return 1 end
   local ok = true
   if wantBios then
     header("Flashing ByteBIOS...")
     ok = flashBios()
   end
-  if #list > 0 then ok = installAll(list) and ok end
+  if #list > 0 then
+    local items = {}
+    for _, p in ipairs(list) do items[#items + 1] = { db = p } end
+    ok = commit(items) and ok
+  end
   return ok and 0 or 1
 end
 
+-- -U: install package files; missing dependencies come from the repos.
+local function installFiles(paths)
+  if #paths == 0 then err("no targets specified (use -h for help)"); return 1 end
+  local items, provided, labels, missing, ins, infos = {}, {}, {}, {}, 0, {}
+  for _, p in ipairs(paths) do
+    local path = shell.normalize(p)
+    local h = fs.open(path, "r")
+    if not h then err("'" .. p .. "': file not found"); return 1 end
+    local pkg, e = bpk.inspect(h)
+    h:close()
+    if not pkg then err("'" .. p .. "': " .. e); return 1 end
+    items[#items + 1] = { path = path }
+    infos[#infos + 1] = pkg.info
+    provided[pkg.info.name] = true
+    labels[#labels + 1] = pkg.info.name .. "-" .. pkg.info.version
+    ins = ins + (tonumber(pkg.info.isize) or 0)
+    for _, d in ipairs(pkg.info.depend) do missing[#missing + 1] = depName(d) end
+  end
+  info("resolving dependencies...")
+  local need = {}
+  for _, d in ipairs(missing) do
+    if d and not isInstalled(d) and not provided[d] then need[#need + 1] = d end
+  end
+  local deps = {}
+  if #need > 0 then
+    deps = resolve(need, provided)
+    if not deps then return 1 end
+  end
+  for _, p in ipairs(deps) do infos[#infos + 1] = p end
+  info("looking for conflicting packages...")
+  if not noConflicts(infos) then return 1 end
+  local all = names(deps)
+  for _, l in ipairs(labels) do all[#all + 1] = l end
+  local dl, dins = sizes(deps)
+  if not confirmPackages(all, "Proceed with installation?", dl, ins + dins) then return 1 end
+  local tx = {}
+  for _, p in ipairs(deps) do tx[#tx + 1] = { db = p } end
+  for _, it in ipairs(items) do tx[#tx + 1] = it end
+  return commit(tx) and 0 or 1
+end
+
 -- ---- Base system -----------------------------------------------------------
--- The OS itself is the "byteos" package. It is not in a repo.db: pacman
+-- The OS itself is the "byteos" package. It is in no repo database: pacman
 -- upgrades it file by file from the git repository named in pacman.conf.
 local function baseRepo()
   local o = readRepos().options or {}
@@ -502,27 +739,32 @@ local function upgrade()
   sync()
   header("Starting full system upgrade...")
   local base = checkBase()
-  local outdated = {}
-  for _, e_ in ipairs(fs.list(LOCAL_DIR) or {}) do
-    local n = e_:gsub("/$", "")
-    local meta = findInRepos(n)
-    if meta and meta.version ~= installedVersion(n) then outdated[#outdated + 1] = meta end
+  local db, outdated = syncdb(), {}
+  for _, n in ipairs(installedNames()) do
+    local i, p = localInfo(n), db[n]
+    if p and i and bpk.vercmp(p.version, i.version or "0") > 0 then outdated[#outdated + 1] = n end
+  end
+  local list = {}
+  if #outdated > 0 then
+    list = resolve(outdated)
+    if not list or not noConflicts(list) then return 1 end
   end
   -- ByteBIOS is only reflashed if it is already on the EEPROM; another
   -- BIOS is never replaced without an explicit `pacman -S bytebios`.
   local biosState, biosInfo = biosStatus()
   local biosNow = not base and biosState == "outdated"
-  if not base and #outdated == 0 and not biosNow then
+  if not base and #list == 0 and not biosNow then
     info(" there is nothing to do")
     if biosState == "foreign" then biosHint() end
     return 0
   end
 
-  local names = {}
-  if base then names[1] = "byteos-" .. base.version end
-  if biosNow then names[#names + 1] = "bytebios-" .. (biosInfo.available or "?") end
-  for _, m in ipairs(outdated) do names[#names + 1] = m.name .. "-" .. m.version end
-  if not confirmPackages(names, "Proceed with installation?") then return 1 end
+  local labels = {}
+  if base then labels[1] = "byteos-" .. base.version end
+  if biosNow then labels[#labels + 1] = "bytebios-" .. (biosInfo.available or "?") end
+  for _, n in ipairs(names(list)) do labels[#labels + 1] = n end
+  local dl = sizes(list)
+  if not confirmPackages(labels, "Proceed with installation?", dl) then return 1 end
 
   local ok = true
   if base then
@@ -534,7 +776,11 @@ local function upgrade()
     header("Updating ByteBIOS on the EEPROM...")
     ok = flashBios()
   end
-  if ok and #outdated > 0 then ok = installAll(outdated) end
+  if ok and #list > 0 then
+    local items = {}
+    for _, p in ipairs(list) do items[#items + 1] = { db = p } end
+    ok = commit(items)
+  end
   if base and ok then
     term.cwrite(T.accent, ":: ")
     term.cwrite(T.bright, "byteos was upgraded; reboot to start the new version\n")
@@ -559,10 +805,34 @@ local function held()
   return set
 end
 
+local function removePackage(name, idx, total)
+  local label = ("(%d/%d) removing %s"):format(idx, total, name)
+  progress(label, 0)
+  local i = localInfo(name)
+  local hooks = readIf(LOCAL_DIR .. "/" .. name .. "/install")
+  runHook(hooks, "pre_remove", i.version)
+  local crcs, notes = backupCrcs(i), {}
+  for _, f in ipairs(localFiles(name)) do
+    if fs.exists(f) and not fs.isDirectory(f) then
+      if crcs[f] and crcOf(readIf(f)) ~= crcs[f] then
+        if fs.exists(f .. ".pacsave") then fs.remove(f .. ".pacsave") end
+        fs.rename(f, f .. ".pacsave")
+        notes[#notes + 1] = f .. " saved as " .. f .. ".pacsave"
+      else
+        fs.remove(f)
+      end
+    end
+  end
+  fs.remove(LOCAL_DIR .. "/" .. name)
+  progress(label, 1); term.write("\n")
+  runHook(hooks, "post_remove", i.version)
+  for _, note in ipairs(notes) do warn(note) end
+end
+
 local function remove(targets)
   if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
-  local hold = held()
-  local names = {}
+  local hold, set, labels = held(), {}, {}
+  for _, t in ipairs(targets) do set[t] = true end
   for _, pkg in ipairs(targets) do
     if pkg == "bytebios" then
       local st, i = biosStatus()
@@ -571,18 +841,30 @@ local function remove(targets)
         err("the BIOS from before ByteBIOS was not saved, so bytebios cannot be removed")
         return 1
       end
-      names[#names + 1] = "bytebios-" .. i.installed
+      labels[#labels + 1] = "bytebios-" .. i.installed
     elseif not isInstalled(pkg) then
       err("target not found: " .. pkg); return 1
     elseif hold[pkg] then
       err(pkg .. " is part of the base system and cannot be removed (HoldPkg)")
       return 1
     else
-      names[#names + 1] = pkg .. "-" .. (installedVersion(pkg) or "?")
+      labels[#labels + 1] = pkg .. "-" .. (localInfo(pkg).version or "?")
     end
   end
   info("checking dependencies...")
-  if not confirmPackages(names, "Do you want to remove these packages?") then return 1 end
+  local broken = false
+  for _, n in ipairs(installedNames()) do
+    if not set[n] then
+      for _, d in ipairs(localInfo(n).depend) do
+        if set[depName(d)] then
+          err(("removing %s breaks dependency '%s' required by %s"):format(depName(d), d, n))
+          broken = true
+        end
+      end
+    end
+  end
+  if broken then return 1 end
+  if not confirmPackages(labels, "Do you want to remove these packages?") then return 1 end
   header("Processing package changes...")
   local ok = true
   for i, pkg in ipairs(targets) do
@@ -599,6 +881,101 @@ local function remove(targets)
   return ok and 0 or 1
 end
 
+local function queryAll()
+  for _, n in ipairs(installedNames()) do
+    term.cwrite(T.bright, n .. " ")
+    term.cwrite(T.green, (localInfo(n).version or "?") .. "\n")
+  end
+  local st, i = biosStatus()
+  if st == "current" or st == "outdated" then
+    term.cwrite(T.bright, "bytebios ")
+    term.cwrite(T.green, i.installed .. "\n")
+  end
+end
+
+local function row(label, value)
+  term.cwrite(T.bright, term.pad(label, 16))
+  term.cwrite(T.muted, ": ")
+  term.cwrite(T.fg, ((value and value ~= "") and value or "None") .. "\n")
+end
+
+local function queryInfo(pkg)
+  if not pkg then err("no targets specified"); return 1 end
+  if pkg == "bytebios" then return queryBios() end
+  local i = localInfo(pkg)
+  if not i then err("package '" .. pkg .. "' was not found"); return 1 end
+  local requiredBy = {}
+  for _, n in ipairs(installedNames()) do
+    for _, d in ipairs(localInfo(n).depend) do
+      if depName(d) == pkg then requiredBy[#requiredBy + 1] = n end
+    end
+  end
+  local backups = {}
+  for p in pairs(backupCrcs(i)) do backups[#backups + 1] = p end
+  table.sort(backups)
+  local files = localFiles(pkg)
+  row("Name", i.name)
+  row("Version", i.version)
+  row("Description", i.desc)
+  row("URL", i.url)
+  row("Depends On", table.concat(i.depend, "  "))
+  row("Required By", table.concat(requiredBy, "  "))
+  row("Conflicts With", table.concat(i.conflict, "  "))
+  row("Installed Size", i.isize and kib(i.isize))
+  row("Backup Files", table.concat(backups, "  "))
+  row("Files", tostring(#files))
+  for _, f in ipairs(files) do term.cwrite(T.muted, string.rep(" ", 18) .. f .. "\n") end
+  return 0
+end
+
+local function search(pat)
+  if not synced() then sync() end
+  local names_ = repoNames()
+  for _, repo in ipairs(names_) do
+    for _, p in ipairs(bpk.parseDb(readIf(SYNC_DIR .. "/" .. repo .. ".db"))) do
+      local okn, hitn = pcall(string.find, p.name, pat or "")
+      local okd, hitd = pcall(string.find, p.desc or "", pat or "")
+      if (okn and hitn) or (okd and hitd) then
+        term.cwrite(T.magenta, repo .. "/")
+        term.cwrite(T.bright, p.name .. " ")
+        term.cwrite(T.green, p.version)
+        local i = localInfo(p.name)
+        if i then
+          term.cwrite(T.cyan, i.version == p.version and " [installed]"
+            or (" [installed: " .. tostring(i.version) .. "]"))
+        end
+        term.write("\n")
+        term.cwrite(T.fg, "    " .. (p.desc or "") .. "\n")
+      end
+    end
+  end
+  return 0
+end
+
+-- ===== argument dispatch =====
+local function usage()
+  term.cwrite(T.bright, "usage: ")
+  term.write("pacman <operation> [...]\n")
+  term.cwrite(T.bright, "operations:\n")
+  local ops = {
+    { "-S <pkg>...",  "install packages" },
+    { "-U <file>...", "install .bpk package files" },
+    { "-R <pkg>...",  "remove packages" },
+    { "-Q",           "list installed packages" },
+    { "-Qi <pkg>",    "show package information" },
+    { "-Ss [pattern]", "search the repositories" },
+    { "-Sy",          "synchronize package databases" },
+    { "-Syu",         "upgrade packages and the byteos base system" },
+    { "--rollback",   "undo the last byteos upgrade" },
+    { "-S bytebios",  "flash ByteBIOS to the EEPROM" },
+  }
+  for _, o in ipairs(ops) do
+    term.cwrite(T.green, "    " .. term.pad(o[1], 15))
+    term.cwrite(T.fg, o[2] .. "\n")
+  end
+  term.cwrite(T.muted, "options: --noconfirm  do not ask for confirmation\n")
+end
+
 ensureDirs()
 local rest = {}
 for _, a in ipairs(args) do
@@ -613,21 +990,24 @@ if not op or op == "-h" or op == "--help" then
 elseif op == "-Syu" or op == "-Su" then
   return upgrade()
 elseif op == "-Sy" then
-  sync()
+  if not sync() then return 1 end
   if #targets > 0 then return install(targets) end
   return 0
 elseif op == "--rollback" then
   return rollback()
 elseif op == "-S" then
   return install(targets)
+elseif op == "-U" then
+  return installFiles(targets)
 elseif op == "-R" then
   return remove(targets)
 elseif op == "-Q" then
-  if targets[1] == "-i" or targets[1] == "i" then queryInfo(targets[2]) else queryAll() end
+  if targets[1] == "-i" or targets[1] == "i" then return queryInfo(targets[2]) end
+  queryAll()
 elseif op == "-Qi" then
-  queryInfo(targets[1])
+  return queryInfo(targets[1])
 elseif op == "-Ss" then
-  search(targets[1])
+  return search(targets[1])
 else
   err("invalid option '" .. op .. "' (use -h for help)"); return 1
 end

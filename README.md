@@ -50,7 +50,8 @@ ByteOS/
 ├── bin/                  ← user commands (.lua)
 ├── etc/                  ← system configuration
 ├── home/root/            ← root's home
-└── var/lib/pacman/       ← pacman local DB
+├── var/lib/pacman/       ← pacman local DB
+└── tools/mkrepo.lua      ← builds the package repos (runs on a PC)
 ```
 
 The pacman repositories (`core/`, `extra/`) live on the separate
@@ -238,60 +239,92 @@ when there is a new version.
 
 ## Writing your own packages
 
-A package is just a Lua file that returns a table. The plain (uncompressed)
-form looks like this and lives at `<name>-<version>.pkg`:
+Packages are built from a source directory, much like Arch's `PKGBUILD` and
+`makepkg`:
+
+```
+mytool/
+├── PKGBUILD.lua          what the package is
+├── mytool.install        optional hooks
+└── files/                the files, laid out as on the target disk
+    ├── usr/bin/mytool.lua
+    └── etc/mytool.conf
+```
 
 ```lua
+-- PKGBUILD.lua
 return {
-  files = {
-    ["/usr/bin/mytool.lua"] = "term.write('hi\\n') return 0\n",
-  },
-  post_install = function() --[[ optional ]] end,
+  name      = "mytool",
+  version   = "1.0.0",
+  rel       = 1,                       -- bump when only the packaging changes
+  desc      = "my cool tool",
+  depends   = { "lolcat" },            -- installed automatically
+  conflicts = { },
+  backup    = { "/etc/mytool.conf" },  -- user edits survive upgrades (.pacnew)
+  install   = "mytool.install",
 }
 ```
 
-Drop it into a repo directory (on the `packages` branch, or a floppy) next
-to `repo.db`, add a line
-`mytool 1.0.0 my cool tool`, and `pacman -Sy && pacman -S mytool`.
-
-### Compressed packages (`.pkg.z`)
-
-For larger payloads ByteOS supports a compressed package format. It's the
-same Lua-table layout, but each entry in `files` is a base64-encoded LZW
-stream and the table declares `format = "lzw1"`:
-
 ```lua
-return {
-  format = "lzw1",
-  files = {
-    ["/usr/bin/figlet.lua"]            = "AAAAv1...base64...",
-    ["/usr/share/figlet/standard.flf"] = "AAA...base64...",
-  },
-}
+-- mytool.install: every function is optional
+function post_install(version) term.write("thanks for installing!\n") end
+function post_upgrade(new, old) end
+function pre_remove(version) end
+function post_remove(version) end
 ```
 
-`pacman` always prefers `<name>-<ver>.pkg.z` over `<name>-<ver>.pkg`, so you
-can ship both side by side without touching `repo.db`. Decompression happens
-in pure Lua via [`/lib/compress.lua`](lib/compress.lua) — no native zlib
-required.
-
-Build a compressed package from an existing plain one with `mkpkg`:
+Inside ByteOS, build and install it with:
 
 ```sh
-[root@byteos ~]# mkpkg /mnt/<repo>/extra/figlet-1.0.0.pkg
-::   /usr/bin/figlet.lua             145 ->   216  (149%)
-::   /usr/share/figlet/standard.flf  5627 ->  2916  (52%)
-:: wrote /mnt/<repo>/extra/figlet-1.0.0.pkg.z  payload 5772 -> 3132 (54%)
-
-[root@byteos ~]# mkpkg -d figlet-1.0.0.pkg.z   # round-trip back to plain
+[root@byteos mytool]# makepkg
+==> Making package: mytool 1.0.0-1
+==> Finished making: mytool-1.0.0-1.bpk (412 bytes)
+[root@byteos mytool]# pacman -U mytool-1.0.0-1.bpk
 ```
 
-Tiny scripts (a few hundred bytes) actually grow because of the base64 +
-header overhead; compression starts to pay off above ~1 KiB and reaches
-roughly **35–55 %** of the original size on real Lua source and ASCII-art
-data files. The bundled [`extra/figlet-1.0.0.pkg.z`](https://github.com/DevStarByte/ByteOS-OC/blob/packages/extra/figlet-1.0.0.pkg.z)
-(on the `packages` branch)
-is a working example.
+To publish it, put the directory into `pkgs/<repo>/` on the
+[`packages`](https://github.com/DevStarByte/ByteOS-OC/tree/packages) branch
+and rebuild the repo on a PC (Lua 5.3+):
+
+```sh
+lua tools/mkrepo.lua <checkout of the packages branch>
+```
+
+That writes `<repo>/<name>-<version>.bpk` and the database `<repo>/<repo>.db`
+which `pacman -Sy` downloads.
+
+### The `.bpk` format
+
+A `.bpk` is a simple archive, read and written by [`lib/bpk.lua`](lib/bpk.lua):
+
+```
+BPK1
+<size> <flag> .PKGINFO      package info: "key = value" lines
+<size bytes>
+<size> <flag> .INSTALL      optional hooks
+<size bytes>
+<size> <flag> /usr/bin/mytool.lua
+<size bytes>
+...
+```
+
+Entries are raw bytes, so any content works, including binary data. `flag` is
+`-` for stored or `z` for LZW-compressed (pure Lua,
+[`lib/compress.lua`](lib/compress.lua)); entries of 512 bytes or more are
+compressed when that saves at least 10 %. pacman streams packages to disk
+instead of holding them in memory, and checks size and CRC-32 against the
+repo database before installing anything.
+
+Before a package is installed, pacman checks:
+
+- dependencies, which it installs from the repos first
+- conflicts with installed packages
+- files that another package or the base system already owns, or that
+  already exist on disk
+
+Files the package lists under `backup` that you changed are kept. The new
+version is saved as `.pacnew` on upgrade, and your copy as `.pacsave` on
+removal.
 
 ## Hacking on ByteOS
 
