@@ -5,6 +5,7 @@ isize = 4754
 filename = 2048-1.0.0-1.bpk
 csize = 3742
 crc32 = d6cc3ea7
+sha256 = 42718903e758d01372c7372b270fae557046a6e6ead75bd1a566a51b5c83ee8a
 
 name = cmatrix
 version = 1.0.0-1
@@ -13,6 +14,7 @@ isize = 1434
 filename = cmatrix-1.0.0-1.bpk
 csize = 1578
 crc32 = b4249cf9
+sha256 = 062efaf5011221b988b1e34813505e2c1423a43e06ad31fefeb20f25fc19002c
 
 name = figlet
 version = 1.0.0-1
@@ -21,6 +23,7 @@ isize = 5772
 filename = figlet-1.0.0-1.bpk
 csize = 3137
 crc32 = 6edfaa47
+sha256 = 72d447d776829ef786f549fac6c66f136991d6b2930939a1efcdf85d3477ca7d
 
 name = nano
 version = 1.0.0-1
@@ -29,6 +32,7 @@ isize = 1522
 filename = nano-1.0.0-1.bpk
 csize = 1655
 crc32 = 45d9e379
+sha256 = 557a546ad4bb4afb62832152f34ecdea1e661826723d8dc78acd43e8e47b2165
 
 name = sl
 version = 1.0.0-1
@@ -37,6 +41,7 @@ isize = 1481
 filename = sl-1.0.0-1.bpk
 csize = 1340
 crc32 = cbc263aa
+sha256 = 2d46f2519adee070b66e89d6431415d3a6816b6f1dfdfb87cb06e1192a6a4e7b
 
 name = snake
 version = 1.0.0-1
@@ -45,6 +50,7 @@ isize = 3152
 filename = snake-1.0.0-1.bpk
 csize = 2895
 crc32 = 240b0a7d
+sha256 = 4176cccac9e98725aed824f0a6b80e2cbb6b381c057b359cf932113c7153e330
 
 name = vim
 version = 0.1.0-1
@@ -53,3 +59,4 @@ isize = 71
 filename = vim-0.1.0-1.bpk
 csize = 182
 crc32 = 9599ee9a
+sha256 = 8bbe7cf7441ccac547968839abcc2db5e4026501cddd2feddceb54cd2872dea3

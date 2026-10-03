@@ -58,6 +58,7 @@ pkgs/<repo>/<name>/PKGBUILD.lua   package sources (edit these)
 pkgs/<repo>/<name>/files/...
 <repo>/<name>-<version>.bpk       built packages  (generated)
 <repo>/<repo>.db                  repo database   (generated)
+<repo>/<repo>.db.sig              its signature   (generated with --key)
 ```
 
 The format is described in the ByteOS README on `master` and in
@@ -67,9 +68,12 @@ The format is described in the ByteOS README on `master` and in
 
 1. Create or edit `pkgs/<repo>/<name>/` (`PKGBUILD.lua` + `files/`). When
    only the packaging changes, bump `rel`; otherwise bump `version`.
-2. Rebuild with the tool from a `master` checkout:
+2. Rebuild and sign with the tool from a `master` checkout:
    ```sh
-   lua <ByteOS-OC>/tools/mkrepo.lua .
+   lua <ByteOS-OC>/tools/mkrepo.lua --key ~/.config/byteos/repo-key.pem .
    ```
+   This also writes `<repo>.db.sig`, which pacman checks with a tier 3 data
+   card. Without `--key` the databases are unsigned and computers set to
+   `SigLevel = Required` will refuse them.
 3. Commit the sources together with the regenerated `<repo>/` files and push.
    Computers pick the change up on their next `pacman -Syu`.

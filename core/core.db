@@ -5,6 +5,7 @@ isize = 446
 filename = cowsay-0.2.0-1.bpk
 csize = 564
 crc32 = df4028b5
+sha256 = dc2f41f926bc7a96a064feacdc8688d5d0d7c1a369dff6c74cf047954c3595ee
 
 name = fortune
 version = 1.0.0-1
@@ -13,6 +14,7 @@ isize = 1930
 filename = fortune-1.0.0-1.bpk
 csize = 2105
 crc32 = dd5da3ea
+sha256 = 5d96887c87b6aea12b02004e38f6517879857f978423f39ed25c1dfb0c89a9f9
 
 name = hello
 version = 1.0.0-1
@@ -21,6 +23,7 @@ isize = 90
 filename = hello-1.0.0-1.bpk
 csize = 209
 crc32 = 9a8f4eb6
+sha256 = c0c73a54d56e691d13478a5aed8000b3dc0855c4ea1f4d9ead9c28ecd0b70a19
 
 name = lolcat
 version = 1.0.0-1
@@ -29,6 +32,7 @@ isize = 461
 filename = lolcat-1.0.0-1.bpk
 csize = 591
 crc32 = d8ac361b
+sha256 = 2075abcd259a1a6874cf9a862497e2ee3737014b2aa0dba2656597d64fe19062
 
 name = tree
 version = 1.0.0-1
@@ -37,6 +41,7 @@ isize = 1116
 filename = tree-1.0.0-1.bpk
 csize = 1247
 crc32 = 425f20d4
+sha256 = f9dc5cc8e6d23a3adc93696679ffec8efce4a3e0e755b8769c5cd7fb5f67e431
 
 name = uptime
 version = 1.0.0-1
@@ -45,3 +50,4 @@ isize = 511
 filename = uptime-1.0.0-1.bpk
 csize = 650
 crc32 = 3971d29a
+sha256 = b3bee23e91cf0e376ca2911a9453435e55177abb2580933d8d3c0c1fb07bbb7a
