@@ -105,10 +105,14 @@ function tty.new(gpu)
 
   -- The surface changed size (a window was resized): take the new size,
   -- keep the cursor on it. drop: rows the surface dropped from its top.
+  -- term.resizes counts the changes and term.dropped the rows, so a line
+  -- being edited can follow (lib/lineedit.lua).
+  term.resizes, term.dropped = 0, 0
   function term.resize(drop)
     W, H = gpu.getResolution()
     term.width, term.height = W, H
     cx, cy = math.min(cx, W + 1), math.max(1, math.min(cy - (drop or 0), H))
+    term.resizes, term.dropped = term.resizes + 1, term.dropped + (drop or 0)
   end
   function term.setForeground(c) return gpu.setForeground(c) end
   function term.setBackground(c) return gpu.setBackground(c) end

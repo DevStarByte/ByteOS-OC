@@ -69,11 +69,23 @@ local function readLine(opts)
   local hidx, search, stash = #history + 1, "", ""
   local final = false
 
+  local resizes, dropped
   local function anchor()
     startX, startY = term.getCursor()
     startX = math.min(startX, W)
+    resizes, dropped = term.resizes, term.dropped
   end
   anchor()
+
+  -- the window was resized while the line is edited: new width, and the
+  -- line moved up by the rows the window dropped
+  local function follow()
+    if term.resizes == resizes then return end
+    W = term.size()
+    startY = math.max(1, startY - ((term.dropped or 0) - (dropped or 0)))
+    startX = math.min(startX, W)
+    resizes, dropped = term.resizes, term.dropped
+  end
 
   local function suggestion()
     if final or buf == "" or pos ~= ulen(buf) or not opts.suggest then return nil end
@@ -82,6 +94,7 @@ local function readLine(opts)
   end
 
   local function paint()
+    follow()
     local room = math.max(1, W - startX) -- one column stays free for the cursor
     local line = {}
     if opts.highlight then

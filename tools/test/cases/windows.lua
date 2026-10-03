@@ -9,6 +9,7 @@ local screen = term.console.gpu
 local function band(top, w, h)
   local g = setmetatable({}, { __index = screen })
   function g.getResolution() return w, h end
+  function g.setWidth(nw) w = nw end
   function g.set(x, y, s) if y >= 1 and y <= h then return screen.set(x, top + y - 1, s) end end
   function g.fill(x, y, fw, fh, ch) return screen.fill(x, top + y - 1, math.min(fw, w - x + 1), math.min(fh, h - y + 1), ch) end
   function g.copy(x, y, cw, ch, tx, ty) return screen.copy(x, top + y - 1, cw, ch, tx, ty) end
@@ -86,6 +87,18 @@ test("only its user (or root) types into a window", function()
     local done, err = kernel.tty.input(t, "key_down", "kb", 97, 0)
     ok(not done, "bob is refused"); has(tostring(err), "denied")
   end)
+  kernel.tty.hangup(t)
+  eq(kernel.process.info(pid).state, "killed")
+end)
+
+test("a line being typed follows when its window gets wider", function()
+  local s = band(130, 12, 4)
+  local t = tty.new(s)
+  local pid = kernel.process.spawn(function() shell.loop() end, { name = "window", tty = t })
+  kernel.event.pull(0)
+  s.fill(1, 1, 60, 4, " "); s.setWidth(60); t.resize(0)    -- the window manager makes it wider
+  type(t, "echo hello wide world")
+  ok(shows(s, "echo hello wide world"), "the whole line on one row:\n" .. s.line(1) .. "\n" .. s.line(2))
   kernel.tty.hangup(t)
   eq(kernel.process.info(pid).state, "killed")
 end)

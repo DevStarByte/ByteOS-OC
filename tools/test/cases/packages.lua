@@ -375,3 +375,18 @@ test("hypridle locks the screen with hyprlock; only the password opens it", func
   has(open, "root@byteos"); lacks(open, "Locked")
   has(file("/var/log/messages"), "hyprlock: wrong password for root")
 end)
+
+test("a new window's shell starts at the window's size, also while it pops open", function()
+  put("/home/root/.config/hyprbyte.conf", "")
+  local seq, shot = {}, nil
+  -- each animation frame waits 0.04 s and takes what is queued meanwhile:
+  -- let real time pass in each of the two frames of an opening window
+  spin(seq, 0.1); spin(seq, 0.1); settle(seq)      -- the first window
+  mod(28, 13, seq)                                 -- a second one
+  spin(seq, 0.1); spin(seq, 0.1); settle(seq, 8)
+  seq[#seq + 1] = function() shot = rows(1, 200) end
+  mod(18, 69, seq, true)
+  signals(seq)
+  run("hyprbyte")                                  -- animations on
+  eq(select(2, shot:gsub("│root@byteos /# ", "")), 2, "both prompts on one line:\n" .. shot:sub(1, 800))
+end)

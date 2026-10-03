@@ -211,7 +211,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.13.1 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.13.2 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -243,7 +243,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.13.1
+byteos 1.13.2
 cowsay 0.2.0
 ```
 
@@ -615,10 +615,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.13.1.g45c0c7e  cowsay-0.3.0
+Packages (2) byteos-1.13.2.g00ffd0f  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.13.1.g45c0c7e from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.13.2.g00ffd0f from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...
