@@ -1,0 +1,13 @@
+local args = arg or {}
+local msg = table.concat(args, " ")
+if msg == "" then msg = "Moo!" end
+local bar = string.rep("-", #msg + 2)
+term.write(" " .. bar .. "\n")
+term.write("< " .. msg .. " >\n")
+term.write(" " .. bar .. "\n")
+term.write("        \\   ^__^\n")
+term.write("         \\  (oo)\\_______\n")
+term.write("            (__)\\       )\\/\\\n")
+term.write("                ||----w |\n")
+term.write("                ||     ||\n")
+return 0

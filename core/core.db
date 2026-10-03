@@ -1,0 +1,55 @@
+name = cowsay
+version = 0.2.0-1
+desc = ascii-art talking cow
+isize = 446
+filename = cowsay-0.2.0-1.bpk
+csize = 564
+crc32 = df4028b5
+
+name = fortune
+version = 1.0.0-1
+desc = random pithy quotes from the data file
+isize = 1930
+filename = fortune-1.0.0-1.bpk
+csize = 2105
+crc32 = dd5da3ea
+
+name = hello
+version = 1.0.0-1
+desc = a friendly greeter package
+isize = 90
+filename = hello-1.0.0-1.bpk
+csize = 209
+crc32 = 9a8f4eb6
+
+name = lolcat
+version = 1.0.0-1
+desc = cycle terminal colors across text
+isize = 461
+filename = lolcat-1.0.0-1.bpk
+csize = 591
+crc32 = d8ac361b
+
+name = sudo
+version = 1.0.0-1
+desc = run a command as another user (wheel only)
+isize = 1266
+filename = sudo-1.0.0-1.bpk
+csize = 1403
+crc32 = d4f4d978
+
+name = tree
+version = 1.0.0-1
+desc = recursive coloured directory listing
+isize = 1116
+filename = tree-1.0.0-1.bpk
+csize = 1247
+crc32 = 425f20d4
+
+name = uptime
+version = 1.0.0-1
+desc = print how long the system has been running
+isize = 511
+filename = uptime-1.0.0-1.bpk
+csize = 650
+crc32 = 3971d29a

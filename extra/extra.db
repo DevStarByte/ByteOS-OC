@@ -1,0 +1,55 @@
+name = 2048
+version = 1.0.0-1
+desc = slide-the-tiles puzzle game
+isize = 4754
+filename = 2048-1.0.0-1.bpk
+csize = 3742
+crc32 = d6cc3ea7
+
+name = cmatrix
+version = 1.0.0-1
+desc = falling green matrix rain (any key to quit)
+isize = 1434
+filename = cmatrix-1.0.0-1.bpk
+csize = 1578
+crc32 = b4249cf9
+
+name = figlet
+version = 1.0.0-1
+desc = ascii-art big-letters renderer (demo bundle)
+isize = 5772
+filename = figlet-1.0.0-1.bpk
+csize = 3137
+crc32 = 6edfaa47
+
+name = nano
+version = 1.0.0-1
+desc = the worlds smallest line-buffer editor
+isize = 1522
+filename = nano-1.0.0-1.bpk
+csize = 1655
+crc32 = 45d9e379
+
+name = sl
+version = 1.0.0-1
+desc = steam locomotive that chugs across the screen
+isize = 1481
+filename = sl-1.0.0-1.bpk
+csize = 1340
+crc32 = cbc263aa
+
+name = snake
+version = 1.0.0-1
+desc = classic snake game (arrows to move, q to quit)
+isize = 3152
+filename = snake-1.0.0-1.bpk
+csize = 2895
+crc32 = 240b0a7d
+
+name = vim
+version = 0.1.0-1
+desc = a not-quite-vim editor
+isize = 71
+filename = vim-0.1.0-1.bpk
+csize = 182
+crc32 = 9599ee9a
