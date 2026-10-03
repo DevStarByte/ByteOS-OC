@@ -46,11 +46,16 @@ for attempt = 1, 3 do
     password = term.read({ mask = "•" })
     if password == nil then term.write("\n"); return 1 end
   end
-  local ok, rc = k.sudo(password, shell.execute, line)
+  local ok, rc = k.sudo(password, function()
+    k.log(("%s : PWD=%s ; USER=root ; COMMAND=%s"):format(user, tostring(_G.PWD), line), "sudo")
+    return shell.execute(line)
+  end)
   if ok then return rc end
   if rc == "notsudoer" then
+    k.log(user .. " : user NOT in sudoers ; COMMAND=" .. line, "sudo")
     return fail(user .. " is not in the sudoers file. This incident will be reported.")
   end
   if attempt < 3 then term.write("Sorry, try again.\n") end
 end
+k.log(user .. " : 3 incorrect password attempts ; COMMAND=" .. line, "sudo")
 return fail("3 incorrect password attempts")

@@ -4,6 +4,7 @@
 /bin/curl.lua
 /bin/date.lua
 /bin/df.lua
+/bin/dmesg.lua
 /bin/du.lua
 /bin/echo.lua
 /bin/edit.lua
@@ -16,7 +17,10 @@
 /bin/help.lua
 /bin/hostname.lua
 /bin/id.lua
+/bin/journalctl.lua
+/bin/kill.lua
 /bin/less.lua
+/bin/logger.lua
 /bin/lsblk.lua
 /bin/ls.lua
 /bin/makepkg.lua
@@ -26,6 +30,7 @@
 /bin/neofetch.lua
 /bin/pacman.lua
 /bin/passwd.lua
+/bin/ps.lua
 /bin/pwd.lua
 /bin/reboot.lua
 /bin/rm.lua
@@ -35,6 +40,7 @@
 /bin/starshell.lua
 /bin/sudo.lua
 /bin/su.lua
+/bin/systemctl.lua
 /bin/tail.lua
 /bin/touch.lua
 /bin/umount.lua
@@ -59,9 +65,9 @@
 /lib/lineedit.lua
 /lib/shell.lua
 /lib/starshell.lua
+/lib/systemd.lua
 /lib/sysupgrade.lua
 /lib/term.lua
 /lib/theme.lua
-/lib/thread.lua
 /lib/units.lua
 /sbin/init.lua

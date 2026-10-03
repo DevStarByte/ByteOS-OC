@@ -26,16 +26,33 @@ function kernel.event.listen(name, fn)
   table.insert(listeners[name], fn)
 end
 
+-- The background processes (see "Processes" below); declared here
+-- because waiting for signals is what lets them run.
+local procs = {}        -- pid -> process
+local currentProc       -- the process being resumed right now, if any
+local runProcesses      -- function(sig): give the processes their turn
+
+-- Wait for a signal (or `timeout` seconds) and return it. In the
+-- foreground this is where background processes run; inside a background
+-- process it hands control back to the scheduler instead.
 function kernel.event.pull(timeout, filter)
   local deadline = computer.uptime() + (timeout or math.huge)
+  if currentProc and coroutine.running() == currentProc.co then
+    return coroutine.yield(deadline, filter)
+  end
   while true do
-    local remaining = deadline - computer.uptime()
-    if remaining <= 0 then return nil end
-    local sig = { computer.pullSignal(math.min(remaining, 1)) }
-    if sig[1] then
+    local now = computer.uptime()
+    local remaining = deadline - now
+    if remaining <= 0 then runProcesses(); return nil end
+    local wait = math.min(remaining, 1)
+    for _, p in pairs(procs) do wait = math.min(wait, math.max(0, p.wake - now)) end
+    local sig = table.pack(computer.pullSignal(wait))
+    if not sig[1] then
+      runProcesses()
+    else
       if listeners[sig[1]] then
         for _, fn in ipairs(listeners[sig[1]]) do
-          pcall(fn, table.unpack(sig))
+          pcall(fn, table.unpack(sig, 1, sig.n))
         end
       end
       -- Ctrl+C stops the running program while one is (the shell sets
@@ -48,8 +65,9 @@ function kernel.event.pull(timeout, filter)
           error("interrupted", 0)
         end
       end
+      runProcesses(sig)
       if not filter or sig[1] == filter then
-        return table.unpack(sig)
+        return table.unpack(sig, 1, sig.n)
       end
     end
   end
@@ -375,29 +393,167 @@ function kernel.changePassword(name, old, new)
 end
 
 -- ============================================================
--- Process model (very small cooperative)
+-- Logging
 -- ============================================================
-kernel.process = { current = nil, list = {} }
+-- kernel.log(message, tag) keeps the line in memory for dmesg (everything
+-- since boot) and appends it to /var/log/messages as
+-- "Oct 03 12:00:01 byteos tag: message". Any user may log.
+local ring = _G.BOOTLOG or {}   -- what init.lua printed before the kernel ran
+local LOGFILE, LOGMAX = "/var/log/messages", 32768
 
-function kernel.process.spawn(fn, name)
-  local co = coroutine.create(fn)
-  local pid = #kernel.process.list + 1
-  kernel.process.list[pid] = { co = co, name = name or "proc", pid = pid }
-  return pid
+local function writeLog(entries)
+  pcall(asKernel, function()
+    if not kernel.fs.isDirectory("/var/log") then kernel.fs.makeDirectory("/var/log") end
+    local f = kernel.fs.open(LOGFILE, "a")
+    if not f then return end
+    for _, e in ipairs(entries) do
+      f:write(("%s %s %s: %s\n"):format(e.date, _G.HOSTNAME or "byteos", e.tag, e.msg))
+    end
+    f:close()
+    if kernel.fs.size(LOGFILE) > LOGMAX then -- keep the newer half
+      local text = kernel.fs.readAll(LOGFILE) or ""
+      local cut = text:find("\n", #text - LOGMAX // 2, true) or 0
+      kernel.fs.writeAll(LOGFILE, text:sub(cut + 1))
+    end
+  end)
 end
 
-function kernel.process.run(pid, ...)
-  local p = kernel.process.list[pid]; if not p then return end
-  kernel.process.current = p
-  local ok, err = coroutine.resume(p.co, ...)
-  kernel.process.current = nil
-  if not ok then
-    _G.kprint("[panic] " .. p.name .. ": " .. tostring(err), 0xFF4444)
+function kernel.log(msg, tag)
+  local e = { t = computer.uptime(), tag = tostring(tag or "kernel"), msg = tostring(msg),
+              date = os.date("%b %d %H:%M:%S") }
+  ring[#ring + 1] = e
+  if #ring > 300 then table.remove(ring, 1) end
+  writeLog({ e })
+end
+
+-- The messages since boot: { t = uptime, tag, msg }, oldest first.
+function kernel.dmesg()
+  local out = {}
+  for i, e in ipairs(ring) do out[i] = { t = e.t, tag = e.tag, msg = e.msg } end
+  return out
+end
+
+-- the boot lines init.lua collected before the kernel existed
+for _, e in ipairs(ring) do e.date = e.date or os.date("%b %d %H:%M:%S") end
+writeLog(ring)
+_G.klog = function(msg) kernel.log(msg, "kernel") end
+
+-- ============================================================
+-- Processes
+-- ============================================================
+-- A background process is a coroutine. Processes run whenever the
+-- foreground waits in kernel.event.pull (at the prompt, in sleep, ...):
+-- each one is resumed with the signal it waits for, or with nothing when
+-- its timeout passes. A process waits with kernel.event.pull as well,
+-- which yields back here. Keyboard input stays with the foreground, and
+-- every process runs with the permissions of the user who started it.
+local FOREGROUND_ONLY = { key_down = true, key_up = true, clipboard = true }
+local nextPid = 2      -- 1 is init
+local finished = {}    -- pid -> process that ended (the last 50)
+local finishedOrder = {}
+
+local function ended(p, state, result)
+  procs[p.pid] = nil
+  p.state, p.result, p.ended = state, result, computer.uptime()
+  finished[p.pid] = p
+  finishedOrder[#finishedOrder + 1] = p.pid
+  if #finishedOrder > 50 then finished[table.remove(finishedOrder, 1)] = nil end
+  if state == "failed" then
+    kernel.log(("process %d (%s) failed: %s"):format(p.pid, p.name, tostring(result)), "kernel")
   end
+  if p.onexit then pcall(p.onexit, p) end
+end
+
+local function resume(p, ...)
+  local prevUser, prevEnv = currentUser, _G.USER
+  currentUser, _G.USER = p.user, p.user
+  currentProc = p
+  local res = table.pack(coroutine.resume(p.co, ...))
+  currentProc = nil
+  currentUser, _G.USER = prevUser, prevEnv
   if coroutine.status(p.co) == "dead" then
-    kernel.process.list[pid] = nil
+    if res[1] then ended(p, "done", res[2]) else ended(p, "failed", tostring(res[2])) end
+  else
+    p.wake, p.filter = res[2] or math.huge, res[3]
   end
-  return ok, err
+end
+
+runProcesses = function(sig)
+  local now = computer.uptime()
+  local list = {}
+  for _, p in pairs(procs) do list[#list + 1] = p end
+  table.sort(list, function(a, b) return a.pid < b.pid end)
+  for _, p in ipairs(list) do
+    if procs[p.pid] then
+      if sig and sig[1] and not FOREGROUND_ONLY[sig[1]] and (not p.filter or p.filter == sig[1]) then
+        resume(p, table.unpack(sig, 1, sig.n))
+      elseif now >= p.wake then
+        resume(p)
+      end
+    end
+  end
+end
+
+kernel.process = {}
+
+-- Start fn(...) as a background process. opts: name, user (only root may
+-- start one as someone else), onexit = function(process). Returns the pid.
+function kernel.process.spawn(fn, opts, ...)
+  opts = opts or {}
+  local user = currentUser
+  if opts.user and opts.user ~= currentUser then
+    if currentUser ~= "root" then return nil, DENIED end
+    user = opts.user
+  end
+  local args = table.pack(...)
+  local p = {
+    pid = nextPid, name = opts.name or "?", user = user, started = computer.uptime(),
+    wake = 0, onexit = opts.onexit,
+    co = coroutine.create(function() return fn(table.unpack(args, 1, args.n)) end),
+  }
+  nextPid = nextPid + 1
+  procs[p.pid] = p
+  return p.pid
+end
+
+-- The pid of the process that is running, nil in the foreground.
+function kernel.process.current() return currentProc and currentProc.pid end
+
+local function describe(p, state)
+  return { pid = p.pid, name = p.name, user = p.user, started = p.started, ended = p.ended,
+           state = state or p.state, result = p.result }
+end
+
+-- All processes, init (pid 1) first; state "running" or "sleeping".
+function kernel.process.list()
+  local out = { { pid = 1, name = "init", user = "root", started = 0, state = "running" } }
+  local now = computer.uptime()
+  for _, p in pairs(procs) do
+    out[#out + 1] = describe(p, (p == currentProc or p.wake <= now) and "running" or "sleeping")
+  end
+  table.sort(out, function(a, b) return a.pid < b.pid end)
+  return out
+end
+
+-- A running or recently ended process ("done", "failed", "killed"), or nil.
+function kernel.process.info(pid)
+  local p = procs[pid]
+  if p then return describe(p, "running") end
+  if finished[pid] then return describe(finished[pid]) end
+end
+
+-- Stop a process; only root or the user who started it may.
+function kernel.process.kill(pid)
+  if pid == 1 then return nil, "init cannot be killed" end
+  local p = procs[pid]
+  if not p then return nil, "no such process" end
+  if currentUser ~= "root" and currentUser ~= p.user then return nil, DENIED end
+  if p == currentProc then
+    p.wake = 0
+    p.co = coroutine.create(function() end) -- ends at its next turn
+  end
+  ended(p, "killed")
+  return true
 end
 
 -- ============================================================

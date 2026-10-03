@@ -293,6 +293,7 @@ local function flashBios()
   local ok, e = bios().flash()
   if not ok then term.write("\n"); err("bytebios: " .. e); return false end
   progress(label, 1); term.write("\n")
+  k.log("flashed bytebios to the EEPROM", "pacman")
   return true
 end
 
@@ -521,6 +522,8 @@ local function extract(it, idx, total)
     fs.remove(dir .. "/install")
   end
   progress(label, 1); term.write("\n")
+  k.log(old and ("upgraded %s (%s -> %s)"):format(name, tostring(old.version), pi.version)
+    or ("installed %s (%s)"):format(name, pi.version), "pacman")
 
   if old then runHook(it.pkg.install, "post_upgrade", pi.version, old.version)
   else runHook(it.pkg.install, "post_install", pi.version) end
@@ -729,6 +732,7 @@ local function upgradeBase(up)
   if not ok then term.write("\n"); err(e); return false end
   progress(("upgraded byteos to %s"):format(up.version), 1)
   term.write("\n")
+  k.log(("upgraded byteos (%s -> %s)"):format(tostring(up.oldVersion), up.version), "pacman")
   for _, path in ipairs(up.pacnew) do
     warn(path .. " installed as " .. path .. ".new")
   end
@@ -825,6 +829,7 @@ local function removePackage(name, idx, total)
   end
   fs.remove(LOCAL_DIR .. "/" .. name)
   progress(label, 1); term.write("\n")
+  k.log(("removed %s (%s)"):format(name, tostring(i.version)), "pacman")
   runHook(hooks, "post_remove", i.version)
   for _, note in ipairs(notes) do warn(note) end
 end

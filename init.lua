@@ -56,8 +56,14 @@ local cy = 1
 gpu.setBackground(0x000000)
 gpu.fill(1, 1, W, H, " ")
 
+-- Boot messages also go to the system log (dmesg, /var/log/messages):
+-- collected in BOOTLOG until the kernel is there, then through klog.
+_G.BOOTLOG = {}
+
 local function kprint(msg, color)
   msg = tostring(msg)
+  if _G.klog then _G.klog(msg)
+  else _G.BOOTLOG[#_G.BOOTLOG + 1] = { t = computer.uptime(), tag = "kernel", msg = msg } end
   local stamp = ("[%8.3f] "):format(computer.uptime() - T0)
   gpu.setForeground(0x8A96A8)
   gpu.set(1, cy, stamp)

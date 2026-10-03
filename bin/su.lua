@@ -19,7 +19,9 @@ end
 -- the shell keeps one set of aliases/history; give them back afterwards
 local saved = { aliases = shell.aliases, history = shell.history, status = shell.status,
                 greeting = _G.GREETING }
+local from = k.user()
 local ok, why = k.su(target, password, function()
+  k.log("(to " .. target .. ") " .. from .. " on tty1", "su")
   local okStart, e = pcall(shell.startup)
   if not okStart and e ~= "__exit__" then error(e, 0) end
   if okStart then shell.loop(nil, true) end
@@ -27,6 +29,7 @@ end)
 shell.aliases, shell.history, shell.status, _G.GREETING = saved.aliases, saved.history, saved.status, saved.greeting
 
 if not ok then
+  k.log("FAILED su (to " .. target .. ") " .. from .. " on tty1", "su")
   term.cwrite(T.err, "su: ")
   term.write(why == "unknown" and ("user " .. target .. " does not exist\n") or "Authentication failure\n")
   return 1

@@ -60,6 +60,8 @@ local OBSOLETE = {
   "lib/tty.lua", "lib/note.lua", "lib/uuid.lua", "lib/transforms.lua",
   -- replaced by pacman -Syu and makepkg
   "bin/sysupdate.lua", "etc/sysupdate.conf", "bin/mkpkg.lua",
+  -- a second, unused scheduler; the kernel has processes since 1.7.0
+  "lib/thread.lua",
 }
 
 local function classify(path)

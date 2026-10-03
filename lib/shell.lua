@@ -14,10 +14,30 @@ local out = term
 local shell = {}
 shell.history = {}   -- this user's command history, oldest first
 shell.status  = 0    -- exit status of the last command ($status, $?)
-shell.params  = { [0] = "byteshell" } -- $0 $1 ... of the running script
+shell.jobs    = {}   -- background jobs of this session: { id, pid, cmd }
+
+-- Script parameters ($0 $1 ...) and a script's default input/output belong
+-- to whoever runs the script: the foreground or one background process.
+local contexts = {}
+local function ctx()
+  local pid = k.process.current() or 0
+  local c = contexts[pid]
+  if not c then
+    c = { params = { [0] = "byteshell" }, ambient = {} }
+    contexts[pid] = c
+  end
+  return c
+end
+
+-- Send this process's error messages to fn(text) instead of the screen
+-- (services log them). shell.errorSink() returns the current one.
+function shell.setErrorSink(fn) ctx().errors = fn end
+function shell.errorSink() return ctx().errors end
 
 -- Print an error message: "<prog>: " in red, the message in the default colour.
 function shell.err(prog, msg)
+  local sink = shell.errorSink and shell.errorSink()
+  if sink then return sink(prog .. ": " .. tostring(msg) .. "\n") end
   term.cwrite(T.err, prog .. ": ")
   term.cwrite(T.fg, tostring(msg) .. "\n")
 end
@@ -73,7 +93,7 @@ end
 function shell.tokenize(line)
   local args, globs, word, inWord, glob = {}, {}, {}, false, false
   local i, n = 1, #line
-  local params = shell.params
+  local params = ctx().params
   local function push(s) word[#word + 1] = s; inWord = true end
   local function finish()
     if inWord then args[#args + 1] = table.concat(word); globs[#args] = glob end
@@ -371,7 +391,7 @@ function shell.builtins.history(args)
 end
 
 -- ---- Running commands ----------------------------------------------------
--- Splits a line at ; && || outside quotes. A # at the start of a word
+-- Splits a line at ; && || & outside quotes. A # at the start of a word
 -- starts a comment. Returns the parts and the operator after each part.
 function shell.split(line)
   local parts, ops, cur = {}, {}, {}
@@ -393,6 +413,8 @@ function shell.split(line)
       cut(";")
     elseif line:sub(i, i + 1) == "&&" or line:sub(i, i + 1) == "||" then
       cut(line:sub(i, i + 1)); i = i + 1
+    elseif c == "&" then
+      cut("&")
     elseif c == "#" and (i == 1 or line:sub(i - 1, i - 1):match("%s")) then
       break
     else
@@ -461,9 +483,8 @@ function shell.glob(word)
 end
 
 -- ---- Pipes and redirection -------------------------------------------------
--- Input and output of the script or `sh -c` that is running: its commands
--- read from / write to these unless they redirect themselves.
-local ambient = {}
+-- Input and output of the script or `sh -c` that is running (ctx().ambient):
+-- its commands read from / write to these unless they redirect themselves.
 
 -- Splits a command at | and takes out < > >> with their file names, all
 -- outside quotes. Returns stages { cmd, inp, out, append } or nil, error.
@@ -580,12 +601,51 @@ end
 -- Run fn with `io` ({ input = text, output = list }) as the default input and
 -- output of the commands it executes.
 function shell.withIO(io, fn, ...)
-  local saved = ambient
-  ambient = io or {}
+  local c = ctx()
+  local saved = c.ambient
+  c.ambient = io or {}
   local res = table.pack(pcall(fn, ...))
-  ambient = saved
+  c.ambient = saved
   if not res[1] then error(res[2], 0) end
   return table.unpack(res, 2, res.n)
+end
+
+-- ---- Jobs ------------------------------------------------------------------
+-- jobs: the background jobs of this session
+function shell.builtins.jobs()
+  for _, j in ipairs(shell.jobs) do
+    local info = k.process.info(j.pid)
+    local state = (info and info.state == "running") and "Running" or "Done"
+    out.write(("[%d]  %-8s %5d  %s\n"):format(j.id, state, j.pid, j.cmd))
+  end
+  return 0
+end
+
+-- wait [%job|pid...]: until those (or all) background jobs have ended
+function shell.builtins.wait(args)
+  local pids = {}
+  for _, a in ipairs(args) do
+    local id = a:match("^%%(%d+)$")
+    if id then
+      for _, j in ipairs(shell.jobs) do if j.id == tonumber(id) then pids[#pids + 1] = j.pid end end
+    elseif tonumber(a) then
+      pids[#pids + 1] = tonumber(a)
+    end
+  end
+  if #args == 0 then for _, j in ipairs(shell.jobs) do pids[#pids + 1] = j.pid end end
+  local ev = k.event
+  ev.interruptible = ev.interruptible + 1
+  local ok, err = pcall(function()
+    for _, pid in ipairs(pids) do
+      while (k.process.info(pid) or {}).state == "running" do k.event.pull(0.25) end
+    end
+  end)
+  ev.interruptible = ev.interruptible - 1
+  if not ok then
+    if err == "interrupted" then term.cwrite(T.muted, "^C\n"); return 130 end
+    error(err, 0)
+  end
+  return 0
 end
 
 -- ---- Scripts ---------------------------------------------------------------
@@ -594,9 +654,10 @@ end
 function shell.runScript(path, args, io)
   local src, e = fs.readAll(path)
   if not src then shell.err("byteshell", path .. ": " .. tostring(e)); return 1 end
-  local saved = shell.params
-  shell.params = { [0] = path }
-  for i, a in ipairs(args or {}) do shell.params[i] = a end
+  local c = ctx()
+  local saved = c.params
+  c.params = { [0] = path }
+  for i, a in ipairs(args or {}) do c.params[i] = a end
   local rc = 0
   local ok, err = pcall(shell.withIO, io, function()
     for line in (src .. "\n"):gmatch("([^\n]*)\n") do
@@ -604,7 +665,7 @@ function shell.runScript(path, args, io)
       if shell.interrupted then break end
     end
   end)
-  shell.params = saved
+  c.params = saved
   if not ok then
     if err == "__exit__" then return shell.exitCode or rc end
     error(err, 0)
@@ -678,9 +739,10 @@ function shell.run(line, io)
 
   -- Ctrl+C while the program waits for a key or an event stops it
   local ev = k.event
-  ev.interruptible = (ev.interruptible or 0) + 1
+  local fg = not k.process.current() -- background jobs never get Ctrl+C
+  if fg then ev.interruptible = (ev.interruptible or 0) + 1 end
   local ok, rc = pcall(fn, table.unpack(args))
-  ev.interruptible = ev.interruptible - 1
+  if fg then ev.interruptible = ev.interruptible - 1 end
   -- programs may leave colours behind; reset to the defaults
   term.setForeground(T.fg); term.setBackground(T.bg)
   if not ok then
@@ -701,6 +763,7 @@ end
 function shell.pipeline(line)
   local stages, perr = shell.parsePipeline(line)
   if not stages then shell.err("byteshell", perr); return 2 end
+  local ambient = ctx().ambient
   local input, rc = ambient.input, 0
   for i, st in ipairs(stages) do
     if st.inp then
@@ -730,21 +793,68 @@ function shell.pipeline(line)
   return rc
 end
 
--- Run a command line: a; b && c || d, each a pipeline. Sets and returns
--- $status.
+-- Start a command line as a background job: prints "[1] 7" (job, pid).
+function shell.background(cmd)
+  cmd = cmd:gsub("^%s+", ""):gsub("%s+$", "")
+  local pid, err = k.process.spawn(shell.execute, { name = cmd }, cmd)
+  if not pid then shell.err("byteshell", err); return 1 end
+  local id = 1
+  for _, j in ipairs(shell.jobs) do id = math.max(id, j.id + 1) end
+  shell.jobs[#shell.jobs + 1] = { id = id, pid = pid, cmd = cmd }
+  out.write(("[%d] %d\n"):format(id, pid))
+  return 0
+end
+
+-- "[1]  Done   cmd" for jobs that ended since the last prompt.
+function shell.reportJobs()
+  local keep = {}
+  for _, j in ipairs(shell.jobs) do
+    local info = k.process.info(j.pid)
+    if info and info.state == "running" then
+      keep[#keep + 1] = j
+    else
+      local how = "Done"
+      if info and info.state == "killed" then how = "Killed"
+      elseif info and info.state == "failed" then how = "Failed"
+      elseif info and tonumber(info.result) and tonumber(info.result) ~= 0 then how = "Exit " .. info.result end
+      term.cwrite(T.muted, ("[%d]  %-10s %s\n"):format(j.id, how, j.cmd))
+      contexts[j.pid] = nil
+    end
+  end
+  shell.jobs = keep
+end
+
+-- Run a command line: lists separated by ; or &, each list a && b || c
+-- of pipelines. A list ending in & runs in the background as a whole.
+-- Sets (in the foreground) and returns $status.
 function shell.execute(line)
   local parts, ops = shell.split(line or "")
-  local go, rc = true, shell.status
-  for i, part in ipairs(parts) do
-    if go and part:match("%S") then
-      rc = shell.pipeline(part)
-      shell.status = rc
-      if shell.interrupted then break end
-    end
+  local fg = not k.process.current()
+  local rc = shell.status
+  local first = 1
+  for i = 1, #parts do
     local op = ops[i]
-    if op == "&&" then go = rc == 0
-    elseif op == "||" then go = rc ~= 0
-    else go = true end
+    if op ~= "&&" and op ~= "||" then -- end of a list: ; & or the line
+      if op == "&" then
+        local text = {}
+        for j = first, i do
+          text[#text + 1] = (parts[j]:gsub("^%s+", ""):gsub("%s+$", ""))
+          if j < i then text[#text + 1] = ops[j] end
+        end
+        rc = shell.background(table.concat(text, " "))
+      else
+        local go = true
+        for j = first, i do
+          if go and parts[j]:match("%S") then
+            rc = shell.pipeline(parts[j])
+            if fg then shell.status = rc end
+            if shell.interrupted then return rc end
+          end
+          if ops[j] == "&&" then go = rc == 0 elseif ops[j] == "||" then go = rc ~= 0 end
+        end
+      end
+      first = i + 1
+    end
   end
   return rc
 end
@@ -953,6 +1063,7 @@ function shell.loop(prompt, nested)
   prompt = prompt or shell.prompt
   local lineedit = require("lineedit")
   while true do
+    shell.reportJobs()
     prompt()
     local line = lineedit.read({
       history = shell.history, highlight = shell.highlight,

@@ -30,6 +30,7 @@ in the classic `[user@host pwd]$` style, an Arch-style **`pacman`** package mana
 - **Commands** —
   files: `ls cat cp mv rm mkdir touch find less edit grep head tail wc`;
   system: `df du free date sleep uname hostname neofetch which env help reboot shutdown`;
+  processes, services and logs: `ps kill systemctl journalctl dmesg logger`;
   users: `whoami id groups passwd su sudo useradd userdel usermod`;
   disks: `mount umount lsblk`; network: `wget curl`.
 - **pacman** — `-S / -R / -Q / -Qi / -Sy / -Syu / -Ss` with a tiny on-disk repo format.
@@ -164,7 +165,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.6.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.7.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -196,7 +197,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.6.0
+byteos 1.7.0
 cowsay 0.2.0
 ```
 
@@ -342,6 +343,58 @@ The shell understands `'single'` and `"double"` quotes (also mid-word, as in
 variable, `export` too, and `set` lists them. Variable names are UPPERCASE
 because they share the global namespace with Lua.
 
+## Processes, services and logs
+
+ByteOS runs programs in the background while the foreground waits (at the
+prompt, in `sleep`, ...): a cooperative scheduler in the kernel, with each
+process running as the user who started it.
+
+```sh
+root@byteos ~# sleep 60 && echo done &     # & runs the whole command in the background
+[1] 4
+root@byteos ~# jobs                         # this session's jobs
+root@byteos ~# ps                           # every process
+root@byteos ~# kill %1                      # or: kill 4 (yours, or any as root)
+root@byteos ~# wait                         # until the jobs have finished
+```
+
+**Services** are described in `/etc/systemd/system/<name>.service`
+(packages put theirs in `/usr/lib/systemd/system`):
+
+```ini
+[Unit]
+Description=Backup every hour
+
+[Service]
+ExecStart=/usr/bin/backupd --quiet
+User=root
+Restart=on-failure
+RestartSec=5
+```
+
+```sh
+root@byteos ~# systemctl                       # every service and its state
+root@byteos ~# systemctl start backupd
+root@byteos ~# systemctl status backupd        # state, PID and the last log lines
+root@byteos ~# systemctl enable --now backupd  # also start it at every boot
+```
+
+What a service prints goes to the system log. `Restart=on-failure` starts a
+crashed service again (five times at most).
+
+**Logs:** boot messages, logins, `sudo`/`su`, package changes, services and
+crashed processes are written to `/var/log/messages`:
+
+```sh
+root@byteos ~# journalctl -n 20             # the last 20 lines
+root@byteos ~# journalctl -u sudo           # one program or service; -f follows new lines
+root@byteos ~# dmesg                        # everything since boot, with seconds since power-on
+root@byteos ~# logger -t backup done        # write your own line
+```
+
+Programs in the background must wait with `k.event.pull` (as `sleep` and
+`term.read` do); keyboard input always goes to the foreground.
+
 ## Disks and network
 
 Extra disks (a second HDD, a floppy) appear under `/mnt/<first 8 characters
@@ -374,10 +427,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.6.0.g1678560  cowsay-0.3.0
+Packages (2) byteos-1.7.0.g3b4fc03  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.6.0.g1678560 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.7.0.g3b4fc03 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...

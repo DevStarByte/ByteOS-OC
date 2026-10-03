@@ -15,12 +15,13 @@ local term = require("term")
 _G.term = term
 local T = term.theme
 
-local function status(msg, kind)
+local function status(msg, kind, quiet)
   local tag, color = "  OK  ", T.ok
   if kind == "fail" then tag, color = "FAILED", T.err
   elseif kind == "info" then tag, color = " INFO ", T.accent
   elseif kind == "warn" then tag, color = " WARN ", T.warn end
   _G.kstatus({ { "[", T.fg }, { tag, color }, { "] ", T.fg }, { msg, T.fg } })
+  if not quiet then k.log((kind == "fail" and "FAILED: " or "") .. msg, "init") end
 end
 
 -- Read /etc/hostname
@@ -58,6 +59,13 @@ status("Started ByteShell.")
 if fs.exists("/var/lib/pacman/byteos/pending") then
   fs.remove("/var/lib/pacman/byteos/pending")
   status("Finished applying system update.")
+end
+
+-- Enabled services (systemctl enable ...) start now, before the login
+-- prompt, and keep running in the background. systemd logs them itself.
+for _, r in ipairs(require("systemd").boot()) do
+  if r.ok then status("Started " .. r.description .. ".", nil, true)
+  else status("Failed to start " .. r.description .. ": " .. tostring(r.err), "fail") end
 end
 status("Reached target Multi-User System.")
 k.event.pull(0.5) -- let the boot log be read before it is cleared
@@ -769,7 +777,9 @@ local function login()
     local pw = term.read({ mask = "•" }) or ""
 
     local entry = lookupUser(user, pw)
+    if not entry then k.log("FAILED LOGIN for '" .. user .. "'", "login") end
     if entry then
+      k.log("session opened for user " .. entry.name, "login")
       _G.USER  = entry.name
       _G.HOME  = entry.home
       _G.SHELL = entry.shell
@@ -797,6 +807,7 @@ while true do
     term.cwrite(T.err, "shell crashed: " .. tostring(err) .. "\n")
     k.event.pull(2)
   end
+  k.log("session closed for user " .. tostring(_G.USER), "login")
   -- logged out: nothing of this session carries over to the next user
   _G.USER, _G.HOME, _G.SHELL = nil, nil, nil
   _G.PWD = "/"
