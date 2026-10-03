@@ -929,7 +929,13 @@ local function queryInfo(pkg)
 end
 
 local function search(pat)
-  if not synced() then sync() end
+  if not synced() then
+    if (_G.USER or "root") == "root" then
+      sync()
+    else
+      warn("the package databases are not synchronized; run sudo pacman -Sy")
+    end
+  end
   local names_ = repoNames()
   for _, repo in ipairs(names_) do
     for _, p in ipairs(bpk.parseDb(readIf(SYNC_DIR .. "/" .. repo .. ".db"))) do
@@ -976,13 +982,22 @@ local function usage()
   term.cwrite(T.muted, "options: --noconfirm  do not ask for confirmation\n")
 end
 
-ensureDirs()
 local rest = {}
 for _, a in ipairs(args) do
   if a == "--noconfirm" then NOCONFIRM = true else rest[#rest + 1] = a end
 end
 local op = rest[1]
 local targets = { table.unpack(rest, 2) }
+
+-- Everything that changes the system needs root; queries work for anyone.
+local QUERY = { ["-Q"] = true, ["-Qi"] = true, ["-Ss"] = true, ["-h"] = true, ["--help"] = true }
+if op and not QUERY[op] and (_G.USER or "root") ~= "root" then
+  err("you cannot perform this operation unless you are root.")
+  term.cwrite(T.muted, "  run it with ")
+  term.cwrite(T.blue, "sudo pacman " .. table.concat(args, " ") .. "\n")
+  return 1
+end
+if (_G.USER or "root") == "root" then ensureDirs() end
 
 if not op or op == "-h" or op == "--help" then
   usage()

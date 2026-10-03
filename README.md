@@ -195,6 +195,23 @@ byteos 1.0.0
 cowsay 0.2.0
 ```
 
+## Users and sudo
+
+Changing the system with pacman needs root. Regular users in the `wheel` group
+(the setup wizard asks whether to add yours) use `sudo`, which is part of the
+base system:
+
+```sh
+[alice@byteos ~]$ pacman -S cowsay
+error: you cannot perform this operation unless you are root.
+[alice@byteos ~]$ sudo pacman -S cowsay
+[sudo] password for alice:
+```
+
+Like on Linux, sudo asks for the user's own password and remembers it for
+5 minutes (`sudo -k` forgets it). Users outside `wheel` are refused.
+Queries such as `pacman -Q`, `-Qi` and `-Ss` work for everyone.
+
 ## Updating ByteOS
 
 Like on Arch, `pacman -Syu` upgrades everything, including the OS itself.

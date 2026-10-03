@@ -1,4 +1,3 @@
-/init.lua
 /bin/cat.lua
 /bin/clear.lua
 /bin/cp.lua
@@ -6,8 +5,8 @@
 /bin/edit.lua
 /bin/help.lua
 /bin/ls.lua
+/bin/makepkg.lua
 /bin/mkdir.lua
-/bin/mkpkg.lua
 /bin/mv.lua
 /bin/neofetch.lua
 /bin/pacman.lua
@@ -16,6 +15,7 @@
 /bin/rm.lua
 /bin/shutdown.lua
 /bin/starshell.lua
+/bin/sudo.lua
 /bin/uname.lua
 /bin/whoami.lua
 /boot/00_base.lua
@@ -34,6 +34,9 @@
 /boot/kernel.lua
 /etc/issue
 /etc/os-release
+/init.lua
+/lib/bpk.lua
+/lib/bytebios.lua
 /lib/compress.lua
 /lib/internet.lua
 /lib/note.lua
