@@ -390,3 +390,42 @@ test("a new window's shell starts at the window's size, also while it pops open"
   run("hyprbyte")                                  -- animations on
   eq(select(2, shot:gsub("│root@byteos /# ", "")), 2, "both prompts on one line:\n" .. shot:sub(1, 800))
 end)
+
+test("nano edits like GNU nano", function()
+  lacks(run(P .. "-S nano vim"), "error")
+  keys({ "hello", "<enter>", "world", "<ctrl+o>", "<ctrl+x>" })
+  answers({ "" })                                  -- File Name to Write: keep it
+  local _, rc = run("nano /tmp/n.txt")
+  eq(rc, 0)
+  eq(file("/tmp/n.txt"), "hello\nworld\n")
+  -- ^W search, ^K cut, ^U paste twice, ^X asks to save: Y, keep the name
+  keys({ "<ctrl+w>", "X", "<ctrl+k>", "<ctrl+u>", "<ctrl+u>", "<ctrl+x>", "y" })
+  answers({ "wor", "" })
+  run("nano /tmp/n.txt")
+  eq(file("/tmp/n.txt"), "Xworld\nXworld\nhello\n")
+  -- ^X without changes just leaves; ^C (Location) does not stop nano
+  keys({ "<ctrl+c>", "<ctrl+x>" })
+  eq(select(2, run("nano /tmp/n.txt")), 0)
+end)
+
+test("vim edits like Vim: modes, operators, undo, :s and search", function()
+  keys({ "i", "hello world", "<escape>", "o", "second line", "<escape>", "g", "g", "d", "w", ":" })
+  answers({ "wq" })
+  run("vim /tmp/v.txt")
+  eq(file("/tmp/v.txt"), "world\nsecond line\n")
+
+  put("/tmp/v.txt", "a\nb\nc\n")
+  keys({ "y", "y", "p",            -- a a b c
+         "G", "d", "d", "u",       -- dd the last line, undo it
+         ":", ":",                 -- :%s/a/z/g, then :q is refused (unsaved)
+         "g", "g", "/", "x",       -- /c, delete it
+         ":" })                    -- :wq
+  answers({ "%s/a/z/g", "q", "c", "wq" })
+  run("vim /tmp/v.txt")
+  eq(file("/tmp/v.txt"), "z\nz\nb\n\n")
+
+  keys({ "3", "x", "Z", "Q" })     -- ZQ: quit without saving
+  put("/tmp/v.txt", "abcdef\n")
+  run("vim /tmp/v.txt")
+  eq(file("/tmp/v.txt"), "abcdef\n")
+end)
