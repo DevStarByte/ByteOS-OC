@@ -27,7 +27,6 @@
 
 local term = require("term")
 local T    = term.theme
-local gpu  = term.gpu
 local ulen, usub = term.ulen, term.usub
 local CHAR = utf8 and utf8.charpattern or "[%z\1-\127\194-\244][\128-\191]*"
 
@@ -95,18 +94,18 @@ local function readLine(opts)
     if pos < off then off = pos end
     if pos > off + room then off = pos - room end
 
-    local oldBg = gpu.setBackground(T.bg)
-    gpu.fill(startX, startY, W - startX + 1, 1, " ")
+    local oldBg = term.gpu.setBackground(T.bg)
+    term.gpu.fill(startX, startY, W - startX + 1, 1, " ")
     local x, i, last = startX, off + 1, math.min(#line, off + room)
     while i <= last do
       local color, run = line[i][2], {}
       while i <= last and line[i][2] == color do run[#run + 1] = line[i][1]; i = i + 1 end
-      gpu.setForeground(color)
-      gpu.set(x, startY, table.concat(run))
+      term.gpu.setForeground(color)
+      term.gpu.set(x, startY, table.concat(run))
       x = x + #run
     end
-    gpu.setForeground(T.fg)
-    gpu.setBackground(oldBg)
+    term.gpu.setForeground(T.fg)
+    term.gpu.setBackground(oldBg)
     term.setCursor(startX + pos - off, startY)
     return sug
   end
@@ -166,7 +165,7 @@ local function readLine(opts)
   -- so it reads correctly in the scrollback.
   function finish(tail)
     final = true
-    gpu.fill(startX, startY, W - startX + 1, 1, " ")
+    term.gpu.fill(startX, startY, W - startX + 1, 1, " ")
     term.setCursor(startX, startY)
     if opts.highlight then
       for _, c in ipairs(opts.highlight(buf)) do term.cwrite(c[2], c[1]) end

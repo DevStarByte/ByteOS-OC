@@ -6,16 +6,17 @@ _G.kstatus = function(parts)
   term.write(table.concat(t) .. "\n")
 end
 -- the login prompt never ends by itself: stop once the queued input is used up
-local readAnswer = term.read
-term.read = function(...)
+local screen = term.console -- the fake screen behind the term module
+local readAnswer = screen.read
+screen.read = function(...)
   local a = readAnswer(...)
   if a == nil then error("__end_of_test__", 0) end
   return a
 end
 -- everything written, also what a later clear() wipes off the screen
 local transcript = {}
-local write = term.write
-term.write = function(s) transcript[#transcript + 1] = tostring(s); return write(s) end
+local write = screen.write
+screen.write = function(s) transcript[#transcript + 1] = tostring(s); return write(s) end
 local function said() return table.concat(transcript) end
 
 local function boot()
@@ -62,4 +63,18 @@ test("a later boot goes straight to the login; wrong passwords are refused", fun
   eq(package.loaded.setup, nil, "no wizard on a later boot")
   has(file("/var/log/messages"), "FAILED LOGIN for 'root'")
   has(file("/var/log/messages"), "session opened for user root")
+end)
+
+test("a package's session is offered at the login and started", function()
+  term.clear()
+  transcript = {}
+  put("/usr/share/sessions/test.session", "[Session]\nName=Testland\nExec=echo $USER in the session > /tmp/sess\n")
+  put("/var/lib/sessions/last", "Testland\n")
+  answers({ "root", "rootpw" })
+  local done, err = boot()
+  ok(done, "init ran: " .. tostring(err))
+  has(said(), "Session: Testland")
+  eq(file("/tmp/sess"), "root in the session\n")
+  has(file("/var/log/messages"), "session closed for user root")
+  os.remove(ROOT .. "/usr/share/sessions/test.session")
 end)

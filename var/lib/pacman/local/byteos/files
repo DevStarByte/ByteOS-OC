@@ -81,6 +81,7 @@
 /lib/sysupgrade.lua
 /lib/term.lua
 /lib/theme.lua
+/lib/tty.lua
 /lib/units.lua
 /sbin/init.lua
 /sbin/netd.lua

@@ -13,8 +13,34 @@ local out = term
 
 local shell = {}
 shell.history = {}   -- this user's command history, oldest first
-shell.status  = 0    -- exit status of the last command ($status, $?)
-shell.jobs    = {}   -- background jobs of this session: { id, pid, cmd }
+
+-- Each terminal (the screen, every window of a window manager) is a
+-- session of its own with these:
+--   shell.status       exit status of the last command ($status, $?)
+--   shell.jobs         background jobs: { id, pid, cmd }
+--   shell.interrupted  Ctrl+C stopped the last command
+local SESSION = { status = true, jobs = true, interrupted = true }
+local sessions = setmetatable({}, { __mode = "k" })
+local screenSession = {}
+local function session()
+  local t = k.process.tty()
+  if not t then return screenSession end
+  local s = sessions[t]
+  if not s then s = {}; sessions[t] = s end
+  return s
+end
+local function fresh(key) if key == "jobs" then return {} elseif key == "status" then return 0 end return false end
+setmetatable(shell, {
+  __index = function(_, key)
+    if not SESSION[key] then return nil end
+    local s = session()
+    if s[key] == nil then s[key] = fresh(key) end
+    return s[key]
+  end,
+  __newindex = function(t, key, v)
+    if SESSION[key] then session()[key] = v else rawset(t, key, v) end
+  end,
+})
 
 -- Script parameters ($0 $1 ...) and a script's default input/output belong
 -- to whoever runs the script: the foreground or one background process.
@@ -770,7 +796,7 @@ function shell.run(line, io)
 
   -- Ctrl+C while the program waits for a key or an event stops it
   local ev = k.event
-  local fg = not k.process.current() -- background jobs never get Ctrl+C
+  local fg = k.process.isForeground() -- background jobs never get Ctrl+C
   if fg then ev.interruptible = (ev.interruptible or 0) + 1 end
   local ok, rc = pcall(fn, table.unpack(args))
   if fg then ev.interruptible = ev.interruptible - 1 end
@@ -860,7 +886,7 @@ end
 -- Sets (in the foreground) and returns $status.
 function shell.execute(line)
   local parts, ops = shell.split(line or "")
-  local fg = not k.process.current()
+  local fg = k.process.isForeground()
   local rc = shell.status
   local first = 1
   for i = 1, #parts do
@@ -1093,6 +1119,7 @@ end
 function shell.loop(prompt, nested)
   prompt = prompt or shell.prompt
   local lineedit = require("lineedit")
+  if k.process.tty() then k.process.tty().title = shell.promptPwd() end
   while true do
     shell.reportJobs()
     prompt()
@@ -1104,7 +1131,11 @@ function shell.loop(prompt, nested)
     if line == nil then return end
     shell.addHistory(line)
     shell.interrupted = false
+    -- in a window, its title says what runs (a window manager shows it)
+    local window = k.process.tty()
+    if window then window.title = line:match("^%s*(.-)%s*$") end
     local ok, err = pcall(shell.execute, line)
+    if window then window.title = shell.promptPwd() end
     if not ok then
       if err == "__logout__" and nested then error(err, 0) end
       if err == "__exit__" or err == "__logout__" then return end

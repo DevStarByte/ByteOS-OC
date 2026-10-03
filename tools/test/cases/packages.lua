@@ -174,3 +174,74 @@ test("removing the packages stops their services", function()
   lacks(file("/etc/systemd/enabled") or "", "rshd")
   lacks(file("/etc/systemd/enabled") or "", "timerd")
 end)
+
+-- ---- hyprbyte: a whole session driven by key presses ------------------------------
+local ALT, SHIFT = 56, 42
+local function down(ch, code) return { "key_down", "kb", ch, code } end
+local function up(ch, code) return { "key_up", "kb", ch, code } end
+local function typed(text, into)
+  for c in text:gmatch(".") do
+    if c == "\n" then into[#into + 1] = down(13, 28); into[#into + 1] = up(13, 28)
+    else into[#into + 1] = down(c:byte(), 0); into[#into + 1] = up(c:byte(), 0) end
+  end
+end
+local function mod(code, ch, into, shift)
+  into[#into + 1] = down(0, ALT)
+  if shift then into[#into + 1] = down(0, SHIFT) end
+  into[#into + 1] = down(ch or 0, code); into[#into + 1] = up(ch or 0, code)
+  if shift then into[#into + 1] = up(0, SHIFT) end
+  into[#into + 1] = up(0, ALT)
+end
+local function row(y)
+  local t = {}
+  for x = 1, 80 do t[x] = (term.console.gpu.get(x, y)) end
+  return table.concat(t)
+end
+local function rows(from, to)
+  local t = {}
+  for y = from, to do t[#t + 1] = row(y) end
+  return table.concat(t, "\n")
+end
+
+test("hyprbyte tiles terminals and hands the keys to the one in focus", function()
+  lacks(run(P .. "-S hyprbyte"), "error")
+  ok(file("/usr/share/sessions/hyprbyte.session"), "it offers a login session")
+  local seq, shot = {}, nil
+  typed("echo one > /tmp/w1\n", seq)              -- the first terminal
+  mod(28, 13, seq)                                 -- Alt+Enter: a second one
+  typed("echo two > /tmp/w2; hyprctl clients > /tmp/clients\n", seq)
+  seq[#seq + 1] = function() shot = rows(1, 200) end
+  mod(203, 0, seq)                                 -- Alt+Left: back to the first
+  typed("hyprctl activewindow > /tmp/active\n", seq)
+  mod(3, 50, seq, true)                            -- Alt+Shift+2: send it to workspace 2
+  typed("hyprctl workspaces > /tmp/spaces\n", seq)
+  mod(18, 69, seq, true)                           -- Alt+Shift+E: quit
+  signals(seq)
+  local _, rc = run("hyprbyte --no-animations")
+  eq(rc, 0)
+  eq(file("/tmp/w1"), "one\n"); eq(file("/tmp/w2"), "two\n")
+  has(file("/tmp/clients"), "Window 1"); has(file("/tmp/clients"), "Window 2")
+  has(file("/tmp/active"), "Window 1")
+  has(file("/tmp/spaces"), "workspace 1 (active): 1 window"); has(file("/tmp/spaces"), "workspace 2: 1 window")
+  -- the screen while two windows were open: the bar, two framed terminals
+  has(shot, " 1  2  3  4  5"); has(shot, "two")
+  -- the test screen is 80 x 200, tall: dwindle puts the second one below;
+  -- the titles are what the shells say: their directory between commands
+  eq(select(2, shot:gsub("╭─ / ─", "")), 2, "two frames titled /")
+  ok(shot:find("╯\n╭─ / ─", 1, true), "one below the other")
+  for _, p in ipairs(kernel.process.list()) do lacks(p.name, "hyprbyte:", "every window closed") end
+  eq(package.loaded["hyprbyte.state"], nil)
+  has(run("hyprctl"), "not running")
+end)
+
+test("Ctrl+C in a window stops its program, not Hyprbyte", function()
+  local seq = {}
+  typed("sleep 100\n", seq)
+  seq[#seq + 1] = down(0, 29); seq[#seq + 1] = down(99, 46); seq[#seq + 1] = up(99, 46); seq[#seq + 1] = up(0, 29)
+  typed("echo $status > /tmp/hst\n", seq)
+  mod(16, 113, seq)                                -- Alt+Q closes the window
+  mod(18, 69, seq, true)
+  signals(seq)
+  local _, rc = run("hyprbyte --no-animations")
+  eq(rc, 0); eq(file("/tmp/hst"), "130\n")
+end)

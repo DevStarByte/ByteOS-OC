@@ -22,11 +22,33 @@ local theme = setmetatable({ bg = 0, fg = 0xD8DEE9, dim = 0x4A5568, muted = 0x8A
 local NAMES = {}
 for k, v in pairs(theme) do NAMES[v] = NAMES[v] or k end
 
+local bg = 0
 local gpu = {
-  setBackground = function() return 0 end,
+  setBackground = function(c) local o = bg; bg = c; return o end,
   setForeground = function(c) local o = fg; fg = c; return o end,
-  fill = function(x, y, w, h, ch) for yy = y, y + h - 1 do for xx = x, math.min(W, x + w - 1) do grid[yy][xx] = ch; colors[yy][xx] = nil end end end,
-  set = function(x, y, s) put(x, y, s) end,
+  getForeground = function() return fg end, getBackground = function() return bg end,
+  fill = function(x, y, w, h, ch)
+    for yy = math.max(1, y), math.min(H, y + h - 1) do
+      for xx = math.max(1, x), math.min(W, x + w - 1) do grid[yy][xx] = ch; colors[yy][xx] = nil end
+    end
+  end,
+  set = function(x, y, s) if y >= 1 and y <= H then put(x, y, s) end end,
+  get = function(x, y) return (grid[y] or {})[x] or " ", (colors[y] or {})[x] or fg, bg end,
+  copy = function(x, y, w, h, tx, ty)
+    local rows = {}
+    for yy = y, y + h - 1 do
+      rows[yy] = {}
+      for xx = x, x + w - 1 do rows[yy][xx] = { (grid[yy] or {})[xx], (colors[yy] or {})[xx] } end
+    end
+    for yy = y, y + h - 1 do
+      for xx = x, x + w - 1 do
+        local c, ny, nx = rows[yy][xx], yy + ty, xx + tx
+        if c[1] and grid[ny] and nx >= 1 and nx <= W then grid[ny][nx] = c[1]; colors[ny][nx] = c[2] end
+      end
+    end
+  end,
+  getResolution = function() return W, H end,
+  getDepth = function() return 8 end,
 }
 
 local keys, answers = {}, {}
@@ -57,6 +79,7 @@ function term.write(s)
     else if cx > W then newline() end; put(cx, cy, ch); cx = cx + 1 end
   end
 end
+function term.clearLine() for x = cx, W do grid[cy][x] = " "; colors[cy][x] = nil end end
 function term.cwrite(c, s) local o = fg; fg = c; term.write(s); fg = o end
 
 -- keys: list; a plain string longer than one char is typed letter by letter

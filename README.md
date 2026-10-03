@@ -211,7 +211,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.12.1 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.13.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -243,7 +243,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.12.1
+byteos 1.13.0
 cowsay 0.2.0
 ```
 
@@ -498,8 +498,44 @@ Besides the small tools and games, the repositories have:
 | `timers`   | start services on a schedule, like cron: `.timer` units (`man systemd.timer`) |
 | `rsh`      | remote shell over ByteNet |
 | `netfs`    | shared folders over ByteNet |
+| `hyprbyte` | a tiling window manager, see below |
 
 `pacman -Ss` lists everything.
+
+## Windows: Hyprbyte
+
+`hyprbyte` (in `extra`) is a tiling window manager in the spirit of
+Hyprland: every window is a terminal with its own shell, new windows split
+the space, there are nine workspaces and a bar with the time, memory and
+energy.
+
+```sh
+root@byteos ~# pacman -S hyprbyte
+root@byteos ~# hyprbyte                  # Alt+Enter: a terminal, Alt+Shift+E: back to the shell
+```
+
+| Keys | |
+|------|---|
+| Alt+Enter / Alt+D | a terminal / run a program in a new window |
+| Alt+Q | close the window |
+| Alt+Arrows, Alt+Tab | focus another window (a click works too) |
+| Alt+Shift+Arrows | move the window |
+| Alt+F | full screen |
+| Alt+1…9, Alt+Shift+1…9 | go to a workspace, send the window there |
+| Alt+Shift+E | quit |
+
+`hyprctl` controls it from a window (`hyprctl clients`,
+`hyprctl dispatch exec btop`, ...); settings such as gaps, the mod key
+(`mod = super`) and programs to start are in `~/.config/hyprbyte.conf`.
+See `man hyprbyte`.
+
+**Login sessions:** like a display manager, the login screen offers every
+session a package installs (`/usr/share/sessions/*.session`): press **F2**
+to pick *Hyprbyte* instead of ByteShell. The choice is remembered, and
+quitting the session logs out.
+
+Each window is a shell plus a screen buffer, so Hyprbyte wants memory:
+two or three windows are fine on Tier 2, more with Tier 3 memory.
 
 ## Disks and network
 
@@ -533,10 +569,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.12.1.g90bfdc9  cowsay-0.3.0
+Packages (2) byteos-1.13.0.gdc69aa7  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.12.1.g90bfdc9 from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.13.0.gdc69aa7 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...

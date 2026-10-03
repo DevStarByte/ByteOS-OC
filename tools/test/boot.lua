@@ -19,7 +19,8 @@
     users()                      root, alice (wheel), bob; passwords
                                  rootpw / alicepw / bobpw
     answers{...}  keys{...}      queue input for term.read / readKey
-    signals{...}                 queue signals for computer.pullSignal
+    signals{...}                 queue signals for computer.pullSignal (a
+                                 function among them is called instead)
     deliver{...}                 the same, and have the kernel handle them now
     disk(dir, addr, label)       a filesystem component on a host dir
     network(peers [, address])   a network card and other computers on it;
@@ -119,7 +120,12 @@ _G.component = {
 }
 _G.computer = {
   uptime = os.clock,
-  pullSignal = function() return table.unpack(table.remove(SIGNALS, 1) or {}) end,
+  -- a function in the queue is called (a test looking in mid-run)
+  pullSignal = function()
+    local s = table.remove(SIGNALS, 1)
+    if type(s) == "function" then s(); return end
+    return table.unpack(s or {})
+  end,
   totalMemory = function() return 196608 end, freeMemory = function() return 120000 end,
   tmpAddress = function() return "tmpfs000" end, address = function() return "computer" end,
   shutdown = function() error("shutdown requested", 0) end,
@@ -142,8 +148,11 @@ end
 
 assert(loadfile(ROOT .. "/boot/kernel.lua", "t", _G))()
 local term = dofile(REPO .. "/tools/test/fterm.lua")
-_G.term = term
-package.loaded.term = term
+-- the screen is the fake terminal; windows (lib/tty.lua) work as in ByteOS
+local hostPrint, hostRead = print, _G.read
+package.loaded.term = require("tty").term(term)
+_G.term = package.loaded.term
+_G.print, _G.read = hostPrint, hostRead
 _G.PATH, _G.HOSTNAME, _G.USER, _G.HOME, _G.PWD = "/bin:/usr/bin:/sbin", "byteos", "root", "/home/root", "/"
 local shell = require("shell")
 _G.shell = shell
@@ -276,7 +285,7 @@ function incoming(from, distance, ...)
   deliver({ { "modem_message", "modem000-test", from, 4400, distance, "bytenet", ... } })
 end
 
-_G.ROOT, _G.REPO, _G.shell, _G.term = ROOT, REPO, shell, term
+_G.ROOT, _G.REPO, _G.shell, _G.term = ROOT, REPO, shell, package.loaded.term
 
 local fn, err = loadfile(CASE, "t", _G)
 if not fn then print("FAIL loading " .. CASE .. ": " .. err); os.exit(1) end

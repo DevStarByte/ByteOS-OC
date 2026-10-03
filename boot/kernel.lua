@@ -19,18 +19,36 @@ _G.kernel = kernel
 -- ============================================================
 local listeners = {}
 local ctrlHeld = false
-kernel.event = { interruptible = 0 }
-
-function kernel.event.listen(name, fn)
-  listeners[name] = listeners[name] or {}
-  table.insert(listeners[name], fn)
-end
 
 -- The background processes (see "Processes" below); declared here
 -- because waiting for signals is what lets them run.
 local procs = {}        -- pid -> process
 local currentProc       -- the process being resumed right now, if any
 local runProcesses      -- function(sig): give the processes their turn
+local INTERRUPT = {}    -- resumes a process to stop it with "interrupted"
+
+-- kernel.event.interruptible > 0 lets Ctrl+C stop what runs (the shell
+-- counts it up around a program). Each terminal has its own count: the
+-- screen's, and one per window of a window manager (see kernel.tty).
+local fgInterruptible = 0
+kernel.event = setmetatable({}, {
+  __index = function(_, key)
+    if key ~= "interruptible" then return nil end
+    local t = currentProc and currentProc.tty
+    if t then return t.interruptible or 0 end
+    return fgInterruptible
+  end,
+  __newindex = function(ev, key, v)
+    if key ~= "interruptible" then return rawset(ev, key, v) end
+    local t = currentProc and currentProc.tty
+    if t then t.interruptible = v else fgInterruptible = v end
+  end,
+})
+
+function kernel.event.listen(name, fn)
+  listeners[name] = listeners[name] or {}
+  table.insert(listeners[name], fn)
+end
 
 -- Wait for a signal (or `timeout` seconds) and return it. In the
 -- foreground this is where background processes run; inside a background
@@ -38,7 +56,9 @@ local runProcesses      -- function(sig): give the processes their turn
 function kernel.event.pull(timeout, filter)
   local deadline = computer.uptime() + (timeout or math.huge)
   if currentProc and coroutine.running() == currentProc.co then
-    return coroutine.yield(deadline, filter)
+    local sig = table.pack(coroutine.yield(deadline, filter))
+    if sig[1] == INTERRUPT then error("interrupted", 0) end
+    return table.unpack(sig, 1, sig.n)
   end
   while true do
     local now = computer.uptime()
@@ -61,7 +81,7 @@ function kernel.event.pull(timeout, filter)
         if sig[4] == 29 or sig[4] == 157 then
           ctrlHeld = sig[1] == "key_down"
         elseif sig[1] == "key_down" and sig[4] == 46 and ctrlHeld
-            and (kernel.event.interruptible or 0) > 0 then
+            and fgInterruptible > 0 then
           error("interrupted", 0)
         end
       end
@@ -472,6 +492,7 @@ end
 -- Each process has its own user, $HOME and working directory: a `cd` in
 -- the background does not move the shell in the foreground.
 local function resume(p, ...)
+  p.fresh = nil
   local prevUser, prevEnv, prevHome, prevPwd = currentUser, _G.USER, _G.HOME, _G.PWD
   currentUser, _G.USER, _G.HOME, _G.PWD = p.user, p.user, p.home, p.pwd
   currentProc = p
@@ -515,10 +536,14 @@ function kernel.process.spawn(fn, opts, ...)
     if not u then return nil, "no such user: " .. tostring(opts.user) end
     user, home, pwd = opts.user, u.home, u.home
   end
+  -- a process stays on its parent's terminal, in the background there;
+  -- opts.tty puts it in the foreground of a terminal (a window)
+  local tty, fg = currentProc and currentProc.tty, false
+  if opts.tty then tty, fg = opts.tty, opts.foreground ~= false end
   local args = table.pack(...)
   local p = {
     pid = nextPid, name = opts.name or "?", user = user, home = home, pwd = pwd or "/", started = computer.uptime(),
-    wake = 0, onexit = opts.onexit,
+    wake = 0, onexit = opts.onexit, tty = tty, fg = fg, fresh = true,
     co = coroutine.create(function() return fn(table.unpack(args, 1, args.n)) end),
   }
   nextPid = nextPid + 1
@@ -528,6 +553,56 @@ end
 
 -- The pid of the process that is running, nil in the foreground.
 function kernel.process.current() return currentProc and currentProc.pid end
+
+-- The terminal of the running process (nil: the screen itself), and
+-- whether it is in the foreground there (gets the keys and Ctrl+C).
+function kernel.process.tty() return currentProc and currentProc.tty end
+function kernel.process.isForeground() return currentProc == nil or currentProc.fg == true end
+
+-- ---- Terminals ----------------------------------------------------------------
+-- A window manager gives each window a terminal (any table) and starts its
+-- shell with spawn(fn, { tty = t }). Keys only reach the foreground of the
+-- screen, the window manager, which hands them on to the window in focus.
+kernel.tty = {}
+
+local function onTty(t, fgOnly)
+  local list = {}
+  for _, p in pairs(procs) do
+    if p.tty == t and (p.fg or not fgOnly) then list[#list + 1] = p end
+  end
+  table.sort(list, function(a, b) return a.pid < b.pid end)
+  return list
+end
+
+-- Give a signal (key_down, key_up, clipboard, ...) to the foreground of
+-- terminal t. Ctrl+C stops the program running there, as on the screen.
+function kernel.tty.input(t, ...)
+  local sig = table.pack(...)
+  local name, code = sig[1], sig[4]
+  local list = onTty(t, true)
+  for _, p in ipairs(list) do
+    if currentUser ~= "root" and p.user ~= currentUser then return nil, DENIED end
+  end
+  if name == "key_down" or name == "key_up" then
+    if code == 29 or code == 157 then
+      t.ctrlHeld = name == "key_down"
+    elseif name == "key_down" and code == 46 and t.ctrlHeld and (t.interruptible or 0) > 0 then
+      for _, p in ipairs(list) do if procs[p.pid] then resume(p, INTERRUPT) end end
+      return true
+    end
+  end
+  for _, p in ipairs(list) do
+    if procs[p.pid] and p.fresh then resume(p) end -- not started yet: up to its first wait
+    if procs[p.pid] and (not p.filter or p.filter == name) then resume(p, ...) end
+  end
+  return true
+end
+
+-- Stop every process on terminal t (its window was closed).
+function kernel.tty.hangup(t)
+  for _, p in ipairs(onTty(t)) do kernel.process.kill(p.pid) end
+  return true
+end
 
 local function describe(p, state)
   return { pid = p.pid, name = p.name, user = p.user, started = p.started, ended = p.ended,
