@@ -18,7 +18,8 @@ _G.kernel = kernel
 -- Event/Signal subsystem
 -- ============================================================
 local listeners = {}
-kernel.event = {}
+local ctrlHeld = false
+kernel.event = { interruptible = 0 }
 
 function kernel.event.listen(name, fn)
   listeners[name] = listeners[name] or {}
@@ -35,6 +36,16 @@ function kernel.event.pull(timeout, filter)
       if listeners[sig[1]] then
         for _, fn in ipairs(listeners[sig[1]]) do
           pcall(fn, table.unpack(sig))
+        end
+      end
+      -- Ctrl+C stops the running program while one is (the shell sets
+      -- interruptible), not the line being typed at the prompt
+      if sig[1] == "key_down" or sig[1] == "key_up" then
+        if sig[4] == 29 or sig[4] == 157 then
+          ctrlHeld = sig[1] == "key_down"
+        elseif sig[1] == "key_down" and sig[4] == 46 and ctrlHeld
+            and (kernel.event.interruptible or 0) > 0 then
+          error("interrupted", 0)
         end
       end
       if not filter or sig[1] == filter then

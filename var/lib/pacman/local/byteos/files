@@ -3,7 +3,9 @@
 /bin/cp.lua
 /bin/echo.lua
 /bin/edit.lua
+/bin/grep.lua
 /bin/groups.lua
+/bin/head.lua
 /bin/help.lua
 /bin/id.lua
 /bin/ls.lua
@@ -16,14 +18,17 @@
 /bin/pwd.lua
 /bin/reboot.lua
 /bin/rm.lua
+/bin/sh.lua
 /bin/shutdown.lua
 /bin/starshell.lua
 /bin/sudo.lua
 /bin/su.lua
+/bin/tail.lua
 /bin/uname.lua
 /bin/useradd.lua
 /bin/userdel.lua
 /bin/usermod.lua
+/bin/wc.lua
 /bin/whoami.lua
 /boot/eeprom.lua
 /boot/kernel.lua

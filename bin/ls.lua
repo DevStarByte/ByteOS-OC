@@ -61,7 +61,9 @@ local function grid(entries)
   local maxlen = 0
   for _, e in ipairs(entries) do maxlen = math.max(maxlen, term.ulen(e.name)) end
   local colw = maxlen + 2
-  local cols = opts["1"] and 1 or math.max(1, math.floor((W + 1) / colw))
+  -- one name per line into a pipe or file, as GNU ls does
+  local piped = stdio and stdio.output ~= nil
+  local cols = (opts["1"] or piped) and 1 or math.max(1, math.floor((W + 1) / colw))
   local rows = math.ceil(#entries / cols)
   cols = math.ceil(#entries / rows)
   for r = 1, rows do

@@ -62,7 +62,7 @@ local function listCandidates(list)
   if #list > shown then term.cwrite(T.muted, ("…and %d more\n"):format(#list - shown)) end
 end
 
-function lineedit.read(opts)
+local function readLine(opts)
   local W = term.size()
   local history = opts.history or {}
   local buf, pos, off = "", 0, 0
@@ -226,6 +226,18 @@ function lineedit.read(opts)
       insert(key)
     end
   end
+end
+
+-- While the line is being typed, Ctrl+C cancels the line instead of
+-- stopping the program the editor runs in (e.g. a nested shell).
+function lineedit.read(opts)
+  local ev = _G.kernel.event
+  local saved = ev.interruptible
+  ev.interruptible = 0
+  local res = table.pack(pcall(readLine, opts))
+  ev.interruptible = saved
+  if not res[1] then error(res[2], 0) end
+  return res[2]
 end
 
 return lineedit

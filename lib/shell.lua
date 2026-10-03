@@ -7,9 +7,14 @@ local fs   = k.fs
 local term = require("term")
 local T    = term.theme
 
+-- Where built-ins print. Normally the terminal; while a built-in's output
+-- goes to a pipe or a file (alias > aliases.txt) it is a capturing stand-in.
+local out = term
+
 local shell = {}
 shell.history = {}   -- this user's command history, oldest first
 shell.status  = 0    -- exit status of the last command ($status, $?)
+shell.params  = { [0] = "byteshell" } -- $0 $1 ... of the running script
 
 -- Print an error message: "<prog>: " in red, the message in the default colour.
 function shell.err(prog, msg)
@@ -55,23 +60,31 @@ function shell.getVar(name)
 end
 
 -- ---- Tokeniser -----------------------------------------------------------
--- Splits a line into words like a POSIX shell (without globbing):
+-- Splits a line into words like a POSIX shell:
 --   'single quotes'  everything inside is literal
 --   "double quotes"  keep spaces, still expand $VAR
 --   \c               the next character literally (outside single quotes)
 --   $NAME ${NAME}    the variable's value
+--   $1..$9 $0 $# $@  script arguments ($@ unquoted gives one word each)
 --   ~ ~/...          $HOME at the start of a word
 -- Quotes may appear mid-word: ll='ls -l' is one word, "ll=ls -l".
+-- Returns the words and, for each, whether it holds an unquoted wildcard
+-- (* ? [) to be expanded against the filesystem.
 function shell.tokenize(line)
-  local args, word, inWord = {}, {}, false
+  local args, globs, word, inWord, glob = {}, {}, {}, false, false
   local i, n = 1, #line
+  local params = shell.params
   local function push(s) word[#word + 1] = s; inWord = true end
   local function finish()
-    if inWord then args[#args + 1] = table.concat(word) end
-    word, inWord = {}, false
+    if inWord then args[#args + 1] = table.concat(word); globs[#args] = glob end
+    word, inWord, glob = {}, false, false
   end
   local function variable(j)
-    if line:sub(j, j) == "?" then return tostring(shell.status), j + 1 end
+    local c = line:sub(j, j)
+    if c == "?" then return tostring(shell.status), j + 1 end
+    if c == "#" then return tostring(#params), j + 1 end
+    if c == "@" or c == "*" then return table.concat(params, " "), j + 1 end
+    if c:match("%d") then return params[tonumber(c)] or "", j + 1 end
     local name, nxt = line:match("^{([%w_]+)}()", j)
     if not name then name, nxt = line:match("^([%w_]+)()", j) end
     if not name then return "$", j end
@@ -101,6 +114,12 @@ function shell.tokenize(line)
       i = i + 1
     elseif c == "\\" then
       push(line:sub(i + 1, i + 1)); i = i + 2
+    elseif c == "$" and (line:sub(i + 1, i + 1) == "@" or line:sub(i + 1, i + 1) == "*") then
+      for idx, a in ipairs(params) do
+        if idx > 1 then finish() end
+        push(a)
+      end
+      i = i + 2
     elseif c == "$" then
       -- an empty unquoted expansion adds no word, as in sh ("$X" would)
       local v; v, i = variable(i + 1)
@@ -108,11 +127,12 @@ function shell.tokenize(line)
     elseif c == "~" and not inWord and (i == n or line:sub(i + 1, i + 1):match("[/%s]")) then
       push(_G.HOME or "/"); i = i + 1
     else
+      if c == "*" or c == "?" or c == "[" then glob = true end
       push(c); i = i + 1
     end
   end
   finish()
-  return args
+  return args, globs
 end
 local tokenize = shell.tokenize
 
@@ -142,7 +162,7 @@ function shell.builtins.cd(args)
   if target == "-" then
     target = _G.OLDPWD
     if not target then shell.err("cd", "no previous directory"); return 1 end
-    term.write(target .. "\n")
+    out.write(target .. "\n")
   end
   local p = shell.normalize(target)
   if not fs.isDirectory(p) then
@@ -153,7 +173,11 @@ function shell.builtins.cd(args)
   return 0
 end
 
-function shell.builtins.exit() error("__exit__", 0) end
+-- exit [n]: leave the shell, or end a script with status n
+function shell.builtins.exit(args)
+  shell.exitCode = tonumber(args and args[1]) or shell.status
+  error("__exit__", 0)
+end
 
 -- Back to the login prompt, even from a nested shell such as StarShell.
 function shell.builtins.logout() error("__logout__", 0) end
@@ -195,7 +219,7 @@ function shell.builtins.alias(args)
     local names = {}
     for n in pairs(shell.aliases) do names[#names + 1] = n end
     table.sort(names)
-    for _, n in ipairs(names) do term.write("alias " .. n .. "=" .. quote(shell.aliases[n]) .. "\n") end
+    for _, n in ipairs(names) do out.write("alias " .. n .. "=" .. quote(shell.aliases[n]) .. "\n") end
     return 0
   end
   local rc = 0
@@ -208,7 +232,7 @@ function shell.builtins.alias(args)
         shell.aliases[name] = value
       end
     elseif shell.aliases[a] then
-      term.write("alias " .. a .. "=" .. quote(shell.aliases[a]) .. "\n")
+      out.write("alias " .. a .. "=" .. quote(shell.aliases[a]) .. "\n")
     else
       shell.err("alias", a .. ": not found"); rc = 1
     end
@@ -279,8 +303,8 @@ function shell.builtins.set(args)
   end
   table.sort(names)
   for _, name in ipairs(names) do
-    term.cwrite(T.blue, name); term.cwrite(T.muted, "=")
-    term.cwrite(T.fg, tostring(_G[name]) .. "\n")
+    out.cwrite(T.blue, name); out.cwrite(T.muted, "=")
+    out.cwrite(T.fg, tostring(_G[name]) .. "\n")
   end
   return 0
 end
@@ -341,7 +365,7 @@ function shell.builtins.history(args)
   local text = sub == "search" and table.concat(args, " ", 2) or nil
   for i = #shell.history, 1, -1 do
     local h = shell.history[i]
-    if not text or h:find(text, 1, true) then term.write(h .. "\n") end
+    if not text or h:find(text, 1, true) then out.write(h .. "\n") end
   end
   return 0
 end
@@ -393,27 +417,242 @@ function shell.commandExists(name)
       or shell.resolveBin(name) ~= nil or autocdTarget(name) ~= nil
 end
 
--- Run one simple command (no ; && ||). Returns its exit status.
-function shell.run(line)
+-- ---- Wildcards -----------------------------------------------------------
+local function globPattern(seg)
+  local p = seg:gsub("[%^%$%(%)%%%.%+%-]", "%%%0"):gsub("%[!", "[^")
+  return "^" .. p:gsub("%*", ".*"):gsub("%?", ".") .. "$"
+end
+
+-- The paths matching a word with * ? [...] in it, sorted, or nil if none
+-- match (the word is then passed on as it is, like sh does). Names that
+-- start with a dot only match a pattern that starts with one.
+function shell.glob(word)
+  local absolute = word:sub(1, 1) == "/"
+  local found = { { show = absolute and "" or nil, real = absolute and "/" or (_G.PWD or "/") } }
+  local segs = {}
+  for seg in word:gmatch("[^/]+") do segs[#segs + 1] = seg end
+  local function join(show, name)
+    if show == nil then return name end
+    return (show == "" and "" or show) .. "/" .. name
+  end
+  for _, seg in ipairs(segs) do
+    local nextList = {}
+    for _, f in ipairs(found) do
+      if seg:find("[*?%[]") then
+        local pat = globPattern(seg)
+        for _, e in ipairs(fs.list(f.real) or {}) do
+          local name = e:gsub("/$", "")
+          if (seg:sub(1, 1) == "." or name:sub(1, 1) ~= ".") and name:match(pat) then
+            nextList[#nextList + 1] = { show = join(f.show, name), real = shell.normalize(f.real .. "/" .. name) }
+          end
+        end
+      else
+        nextList[#nextList + 1] = { show = join(f.show, seg), real = shell.normalize(f.real .. "/" .. seg) }
+      end
+    end
+    found = nextList
+  end
+  local out = {}
+  for _, f in ipairs(found) do
+    if fs.exists(f.real) then out[#out + 1] = f.show end
+  end
+  table.sort(out)
+  return #out > 0 and out or nil
+end
+
+-- ---- Pipes and redirection -------------------------------------------------
+-- Input and output of the script or `sh -c` that is running: its commands
+-- read from / write to these unless they redirect themselves.
+local ambient = {}
+
+-- Splits a command at | and takes out < > >> with their file names, all
+-- outside quotes. Returns stages { cmd, inp, out, append } or nil, error.
+function shell.parsePipeline(line)
+  local stages, stage, cur = {}, {}, {}
+  local i, n, q = 1, #line, nil
+  local function target()
+    while line:sub(i, i):match("%s") do i = i + 1 end
+    local j, wq = i, nil
+    while j <= n do
+      local d = line:sub(j, j)
+      if wq then
+        if d == wq then wq = nil elseif d == "\\" and wq == '"' then j = j + 1 end
+      elseif d == "'" or d == '"' then wq = d
+      elseif d == "\\" then j = j + 1
+      elseif d:match("%s") or d == "|" or d == ">" or d == "<" then break end
+      j = j + 1
+    end
+    local word = tokenize(line:sub(i, j - 1))[1]
+    i = j
+    return word and shell.normalize(word)
+  end
+  while i <= n do
+    local c = line:sub(i, i)
+    if q then
+      if c == q then q = nil
+      elseif c == "\\" and q == '"' then cur[#cur + 1] = c; i = i + 1; c = line:sub(i, i) end
+      cur[#cur + 1] = c; i = i + 1
+    elseif c == "'" or c == '"' then
+      q = c; cur[#cur + 1] = c; i = i + 1
+    elseif c == "\\" then
+      cur[#cur + 1] = line:sub(i, i + 1); i = i + 2
+    elseif c == "|" then
+      stage.cmd = table.concat(cur); stages[#stages + 1] = stage
+      stage, cur = {}, {}; i = i + 1
+    elseif c == ">" or c == "<" then
+      local op = line:sub(i, i + 1) == ">>" and ">>" or c
+      i = i + #op
+      local t = target()
+      if not t then return nil, "missing file name after " .. op end
+      if op == "<" then stage.inp = t else stage.out, stage.append = t, op == ">>" end
+    else
+      cur[#cur + 1] = c; i = i + 1
+    end
+  end
+  stage.cmd = table.concat(cur); stages[#stages + 1] = stage
+  if #stages > 1 then
+    for _, st in ipairs(stages) do
+      if not st.cmd:match("%S") then return nil, "empty command in a pipe" end
+    end
+  end
+  return stages
+end
+
+-- What a program reads: the previous stage's output or a < file as text,
+-- or the keyboard when there is neither.
+local function makeStdin(text)
+  local s, pos = { isTerminal = text == nil }, 1
+  function s.read(fmt)
+    local all = fmt == "a" or fmt == "*a"
+    if not text then
+      if not all then return term.read() end
+      local lines = {}
+      while true do
+        local l = term.read()
+        if l == nil then break end
+        lines[#lines + 1] = l .. "\n"
+      end
+      return table.concat(lines)
+    end
+    if pos > #text then return nil end
+    if all then local r = text:sub(pos); pos = #text + 1; return r end
+    local e = text:find("\n", pos, true) or #text + 1
+    local l = text:sub(pos, e - 1)
+    pos = e + 1
+    return l
+  end
+  function s.lines() return function() return s.read("l") end end
+  return s
+end
+
+-- A stand-in for term while output goes to a pipe or a file: text is
+-- collected in `buf` (colours dropped); size, keys and the rest still go to
+-- the real terminal. term.read() reads from stdin.
+local function makeTerm(buf, stdin)
+  local t = setmetatable({}, { __index = term })
+  if buf then
+    local col = 1
+    function t.write(s)
+      s = tostring(s)
+      buf[#buf + 1] = s
+      local tail = s:match("[^\n]*$")
+      col = (s:find("\n", 1, true) and 1 or col) + term.ulen(tail)
+    end
+    function t.cwrite(_, s) t.write(s) end
+    function t.print(...)
+      local p = table.pack(...)
+      for i = 1, p.n do
+        if i > 1 then t.write("\t") end
+        t.write(tostring(p[i]))
+      end
+      t.write("\n")
+    end
+    function t.getCursor() return col, select(2, term.getCursor()) end
+    function t.setCursor() end
+    function t.clear() end
+  end
+  if not stdin.isTerminal then
+    function t.read() return stdin.read("l") end
+  end
+  return t
+end
+
+-- Run fn with `io` ({ input = text, output = list }) as the default input and
+-- output of the commands it executes.
+function shell.withIO(io, fn, ...)
+  local saved = ambient
+  ambient = io or {}
+  local res = table.pack(pcall(fn, ...))
+  ambient = saved
+  if not res[1] then error(res[2], 0) end
+  return table.unpack(res, 2, res.n)
+end
+
+-- ---- Scripts ---------------------------------------------------------------
+-- Run a script: every line as if typed, with $0 = the script and $1... its
+-- arguments. `exit n` ends it with status n; Ctrl+C stops it.
+function shell.runScript(path, args, io)
+  local src, e = fs.readAll(path)
+  if not src then shell.err("byteshell", path .. ": " .. tostring(e)); return 1 end
+  local saved = shell.params
+  shell.params = { [0] = path }
+  for i, a in ipairs(args or {}) do shell.params[i] = a end
+  local rc = 0
+  local ok, err = pcall(shell.withIO, io, function()
+    for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+      rc = shell.execute((line:gsub("\r$", "")))
+      if shell.interrupted then break end
+    end
+  end)
+  shell.params = saved
+  if not ok then
+    if err == "__exit__" then return shell.exitCode or rc end
+    error(err, 0)
+  end
+  return rc
+end
+
+-- ---- Running commands ------------------------------------------------------
+-- Run one simple command (no ; && || |). io.input is text for its stdin,
+-- io.output a list collecting what it prints. Returns its exit status.
+function shell.run(line, io)
+  io = io or {}
   line = line:gsub("^%s+", ""):gsub("%s+$", "")
   if line == "" then return 0 end
 
   -- fish's `not cmd` inverts the status
   local rest = line:match("^not%s+(.+)$")
-  if rest then return shell.run(rest) == 0 and 1 or 0 end
+  if rest then return shell.run(rest, io) == 0 and 1 or 0 end
 
   line = shell.expandAliases(line)
-  local args = tokenize(line)
-  if #args == 0 then return 0 end
+  local words, globs = tokenize(line)
+  if #words == 0 then return 0 end
   -- NAME=value on its own sets a variable (as in /etc/profile)
-  if #args == 1 and line:match("^[%w_]+=") then
-    local name, value = args[1]:match("^([%w_]+)=(.*)$")
+  if #words == 1 and line:match("^[%w_]+=") then
+    local name, value = words[1]:match("^([%w_]+)=(.*)$")
     return assign("byteshell", name, value)
+  end
+  local args = {}
+  for i, w in ipairs(words) do
+    local matches = globs[i] and shell.glob(w)
+    if matches then
+      for _, m in ipairs(matches) do args[#args + 1] = m end
+    else
+      args[#args + 1] = w
+    end
   end
   local cmd = table.remove(args, 1)
 
+  local stdin = makeStdin(io.input)
+  local t = (io.output or io.input) and makeTerm(io.output, stdin) or term
+
   if shell.builtins[cmd] then
-    return shell.builtins[cmd](args)
+    local prev = out
+    out = t
+    local ok, rc = pcall(shell.builtins[cmd], args)
+    out = prev
+    if not ok then error(rc, 0) end
+    return rc
   end
 
   local path = shell.resolveBin(cmd)
@@ -426,30 +665,81 @@ function shell.run(line)
 
   local src, err = fs.readAll(path)
   if not src then shell.err("byteshell", "cannot read " .. path .. ": " .. tostring(err)); return 1 end
+  if src:sub(1, 2) == "#!" and not src:match("^#![^\n]*lua") then
+    return shell.runScript(path, args, io)
+  end
 
-  local env = setmetatable({ arg = args, shell = shell, term = term, fs = fs, k = k }, { __index = _G })
+  local env = setmetatable({
+    arg = args, shell = shell, term = t, print = t.print, fs = fs, k = k,
+    stdin = stdin, stdio = io,
+  }, { __index = _G })
   local fn, perr = load(src, "=" .. path, "t", env)
   if not fn then shell.err("byteshell", "parse error: " .. perr); return 1 end
 
+  -- Ctrl+C while the program waits for a key or an event stops it
+  local ev = k.event
+  ev.interruptible = (ev.interruptible or 0) + 1
   local ok, rc = pcall(fn, table.unpack(args))
+  ev.interruptible = ev.interruptible - 1
   -- programs may leave colours behind; reset to the defaults
   term.setForeground(T.fg); term.setBackground(T.bg)
   if not ok then
     if rc == "__logout__" then error(rc, 0) end -- from a nested shell
+    if rc == "interrupted" then
+      term.cwrite(T.muted, "^C\n")
+      shell.interrupted = true
+      return 130
+    end
     shell.err(cmd, tostring(rc))
     return 1
   end
   return tonumber(rc) or 0
 end
 
--- Run a command line: a; b && c || d. Sets and returns $status.
+-- a | b < in > out: the stages run one after another, each one's output
+-- becoming the next one's input. Returns the last stage's status.
+function shell.pipeline(line)
+  local stages, perr = shell.parsePipeline(line)
+  if not stages then shell.err("byteshell", perr); return 2 end
+  local input, rc = ambient.input, 0
+  for i, st in ipairs(stages) do
+    if st.inp then
+      local data, e = fs.readAll(st.inp)
+      if not data then shell.err("byteshell", st.inp .. ": " .. tostring(e)); return 1 end
+      input = data
+    end
+    local last = i == #stages
+    local buf = (st.out or not last) and {} or ambient.output
+    rc = shell.run(st.cmd, { input = input, output = buf })
+    if shell.interrupted then return rc end
+    if st.out then
+      local text, ok, e = table.concat(buf), nil, nil
+      if st.append then
+        local f
+        f, e = fs.open(st.out, "a")
+        if f then f:write(text); f:close(); ok = true end
+      else
+        ok, e = fs.writeAll(st.out, text)
+      end
+      if not ok then shell.err("byteshell", st.out .. ": " .. tostring(e)); return 1 end
+      input = ""
+    elseif not last then
+      input = table.concat(buf)
+    end
+  end
+  return rc
+end
+
+-- Run a command line: a; b && c || d, each a pipeline. Sets and returns
+-- $status.
 function shell.execute(line)
   local parts, ops = shell.split(line or "")
   local go, rc = true, shell.status
   for i, part in ipairs(parts) do
     if go and part:match("%S") then
-      rc = shell.run(part)
+      rc = shell.pipeline(part)
       shell.status = rc
+      if shell.interrupted then break end
     end
     local op = ops[i]
     if op == "&&" then go = rc == 0
@@ -491,8 +781,11 @@ function shell.highlight(buf)
       add(buf:sub(i, j - 1), T.fg); i = j
     elseif two == "&&" or two == "||" then
       add(two, T.accent); i = i + 2; wantCmd = true
-    elseif c == ";" then
+    elseif c == ";" or c == "|" then
       add(c, T.accent); i = i + 1; wantCmd = true
+    elseif c == ">" or c == "<" then
+      local op = two == ">>" and two or c
+      add(op, T.accent); i = i + #op
     elseif c == "#" and (i == 1 or buf:sub(i - 1, i - 1):match("%s")) then
       add(buf:sub(i), T.muted); break
     else
@@ -503,7 +796,7 @@ function shell.highlight(buf)
           if d == q then q = nil elseif d == "\\" and q == '"' then j = j + 1 end
         elseif d == "'" or d == '"' then q = d
         elseif d == "\\" then j = j + 1
-        elseif d:match("%s") or d == ";" or buf:sub(j, j + 1) == "&&" or buf:sub(j, j + 1) == "||" then
+        elseif d:match("%s") or d == ";" or d == "|" or d == ">" or d == "<" or buf:sub(j, j + 1) == "&&" then
           break
         end
         j = j + 1
@@ -668,6 +961,7 @@ function shell.loop(prompt, nested)
     term.setForeground(T.fg)
     if line == nil then return end
     shell.addHistory(line)
+    shell.interrupted = false
     local ok, err = pcall(shell.execute, line)
     if not ok then
       if err == "__logout__" and nested then error(err, 0) end

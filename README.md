@@ -25,7 +25,8 @@ in the classic `[user@host pwd]$` style, an Arch-style **`pacman`** package mana
   a login prompt seeded from `/etc/passwd`.
 - **ByteShell** — an interactive shell modelled on fish: syntax highlighting
   while you type, grey autosuggestions, history search with ↑, Tab completion,
-  a persistent `~/.byteshell_history`, aliases, `;`/`&&`/`||` and auto-cd.
+  a persistent `~/.byteshell_history`, aliases, `;`/`&&`/`||` and auto-cd,
+  plus pipes, redirection, wildcards and shell scripts.
 - **Coreutils** — `ls cat echo pwd mkdir rm cp mv clear uname whoami edit help neofetch reboot shutdown`.
 - **pacman** — `-S / -R / -Q / -Qi / -Sy / -Syu / -Ss` with a tiny on-disk repo format.
 - **edit** — full-screen editor with line numbers and Lua syntax highlighting
@@ -159,7 +160,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.4.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.5.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -191,7 +192,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.4.0
+byteos 1.5.0
 cowsay 0.2.0
 ```
 
@@ -276,6 +277,43 @@ magenta.
 - The greeting can be changed with `GREETING=...` in `~/.shrc`, or turned
   off with `GREETING=`.
 
+### Pipes, redirection, wildcards and scripts
+
+```sh
+root@byteos ~# ls /bin | grep pac            # | feeds one command into the next
+root@byteos ~# cat /etc/os-release | head -n 2
+root@byteos ~# pacman -Q > installed.txt     # > write a file, >> append to it
+root@byteos ~# grep -c Iron < /etc/os-release
+root@byteos ~# ls /bin/s*.lua                # * ? [abc] match file names
+root@byteos ~# echo '*'                      # quoted: no matching
+```
+
+`grep`, `head`, `tail` and `wc` work on files or on their input; `cat`
+without files copies its input. Commands in a pipe run one after another,
+each one's output becoming the next one's input. Error messages still go to
+the screen.
+
+A shell script is a text file of commands. Start it with `#!/bin/sh` to run
+it by name, or run any script with `sh`:
+
+```sh
+#!/bin/sh
+# greet.sh
+echo "$0 got $# arguments: $@"
+echo "hello, $1"
+exit 0
+```
+
+```sh
+root@byteos ~# ./greet.sh world        # $1=world
+root@byteos ~# sh greet.sh world
+root@byteos ~# sh -c 'echo one; echo two'
+```
+
+`Ctrl+C` stops a program that is waiting for a key or an event, and skips the
+rest of the command line (status 130). OpenComputers ends a program that
+runs for seconds without waiting at all by itself.
+
 `starshell` starts the same shell with a Starship-style two-line prompt;
 `exit` goes back.
 
@@ -311,10 +349,10 @@ root@byteos ~# pacman -Syu
 :: Synchronizing package databases...
 :: Starting full system upgrade...
 
-Packages (2) byteos-1.4.0.gf4d0e4f  cowsay-0.3.0
+Packages (2) byteos-1.5.0.gf49ede5  cowsay-0.3.0
 
 :: Proceed with installation? [Y/n]
-:: Retrieving byteos 1.4.0.gf4d0e4f from DevStarByte/ByteOS-OC...
+:: Retrieving byteos 1.5.0.gf49ede5 from DevStarByte/ByteOS-OC...
 :: Upgrading byteos...
 warning: /etc/motd installed as /etc/motd.new
 :: Processing package changes...
