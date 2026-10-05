@@ -1,0 +1,81 @@
+# Build every package and the signed repo databases whenever a package's
+# source changes: push to pkgs/<repo>/<name>/ and pacman sees the new
+# version a minute later. Does what you would do by hand:
+#   lua tools/mkrepo.lua --key <private.pem> <packages-checkout>
+# and commits core/ and extra/ back to this branch.
+#
+# Needs the repo's private key (the one tools/repokey.sh made) as the
+# secret REPO_KEY: Settings -> Secrets and variables -> Actions.
+name: Build packages
+
+on:
+  push:
+    branches: [packages]
+    paths:
+      - "pkgs/**"
+      - ".github/workflows/build-packages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# one build at a time, in order: each one starts from the newest branch
+concurrency:
+  group: build-packages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the packages
+        uses: actions/checkout@v4
+        with:
+          ref: packages
+
+      - name: Check out mkrepo and its libraries from master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          path: .byteos
+          sparse-checkout: |
+            tools
+            lib
+            etc/pacman.d
+
+      - name: Install Lua
+        run: sudo apt-get update -q && sudo apt-get install -y -q lua5.4
+
+      - name: Build and sign
+        env:
+          REPO_KEY: ${{ secrets.REPO_KEY }}
+        run: |
+          if [ -z "$REPO_KEY" ]; then
+            echo "::error::The secret REPO_KEY is missing (Settings -> Secrets and variables -> Actions)"
+            exit 1
+          fi
+          key="$RUNNER_TEMP/repo-key.pem"
+          (umask 077; printf '%s\n' "$REPO_KEY" > "$key")
+          lua5.4 .byteos/tools/mkrepo.lua --key "$key" .
+          rm -f "$key"
+
+      # a wrong key would make pacman refuse every database: stop here instead
+      - name: Check the signatures against the key ByteOS ships
+        run: |
+          base64 -d .byteos/etc/pacman.d/byteos.pub \
+            | openssl ec -pubin -inform DER -outform PEM -out "$RUNNER_TEMP/byteos.pem"
+          for db in */*.db; do
+            openssl dgst -sha256 -verify "$RUNNER_TEMP/byteos.pem" -signature "$db.sig" "$db"
+          done
+
+      - name: Commit the built packages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A core extra
+          if git diff --cached --quiet; then
+            echo "Nothing changed"
+            exit 0
+          fi
+          git commit -m "Build packages for ${GITHUB_SHA::7}"
+          git push origin HEAD:packages
