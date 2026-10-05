@@ -8,6 +8,9 @@
 # Commits that only touch files the tests do not cover (README, docs) are
 # let through without running them. The tests run on the working tree, so
 # changes you have not staged are tested too.
+#
+# Lua 5.3+ is looked up as lua, lua5.4 or lua5.3; on Windows (Git Bash)
+# without one, the tests run in WSL. No Lua at all stops the commit.
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
@@ -15,19 +18,28 @@ if git diff --cached --quiet -- init.lua install.lua boot sbin lib bin etc home 
   exit 0
 fi
 
-if ! command -v lua >/dev/null 2>&1; then
-  echo "pre-commit: 'lua' not found, the tests were skipped" >&2
-  exit 0
+run=
+for l in lua lua5.4 lua5.3; do
+  if command -v "$l" >/dev/null 2>&1; then run=$l; break; fi
+done
+if [ -z "$run" ] && command -v wsl >/dev/null 2>&1; then
+  for l in lua lua5.4 lua5.3; do
+    if wsl -e which "$l" >/dev/null 2>&1; then run="wsl -e $l"; break; fi
+  done
+fi
+if [ -z "$run" ]; then
+  echo "pre-commit: no Lua 5.3+ found (also not in WSL), the commit was stopped" >&2
+  exit 1
 fi
 
 echo "pre-commit: running the test suite (git commit --no-verify skips it)..."
 log=$(mktemp)
-if lua tools/test/run.lua >"$log" 2>&1; then
+if $run tools/test/run.lua >"$log" 2>&1; then
   tail -n 1 "$log"
   rm -f "$log"
   exit 0
 fi
-grep -v "^[a-z]* *[0-9]* passed$" "$log"
+grep -v "^[a-z]* *[0-9]* passed$" "$log" | grep -v "^wsl: "
 rm -f "$log"
 echo "pre-commit: tests failed, the commit was stopped" >&2
 exit 1
