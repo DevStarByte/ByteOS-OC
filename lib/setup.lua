@@ -558,9 +558,11 @@ function setup.run()
           table.insert(shadow, ("%s:%s:::::::"):format(cfg.user, hash(cfg.userpw)))
           local home = "/home/" .. cfg.user
           if not fs.exists(home) then fs.makeDirectory(home) end
-          -- like /etc/skel on Linux: the new user starts with the default .shrc
-          if fs.exists("/etc/skel/.shrc") and not fs.exists(home .. "/.shrc") then
-            fs.writeAll(home .. "/.shrc", fs.readAll("/etc/skel/.shrc"))
+          -- like /etc/skel on Linux: the new user starts with the default dotfiles
+          for _, f in ipairs({ ".shrc", ".profile" }) do
+            if fs.exists("/etc/skel/" .. f) and not fs.exists(home .. "/" .. f) then
+              fs.writeAll(home .. "/" .. f, fs.readAll("/etc/skel/" .. f))
+            end
           end
         end
         fs.writeAll("/etc/passwd", table.concat(passwd, "\n") .. "\n")

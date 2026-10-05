@@ -63,3 +63,14 @@ test("aliases from ~/.shrc, gone for the next user", function()
   as("bob", shell.repl)
   has(screen(), "Unknown command: hi")
 end)
+
+test("~/.profile runs once at login, not on su", function()
+  put("/home/alice/.profile", "echo profile ran\n")
+  has(session({ "<ctrl+d>" }), "profile ran")
+  term.clear()
+  as("alice", function() shell.startup() end) -- what su does
+  lacks(screen(), "profile ran", "su (not a login) skips ~/.profile")
+  term.clear()
+  as("alice", function() shell.startup(true) end) -- su -
+  has(screen(), "profile ran")
+end)

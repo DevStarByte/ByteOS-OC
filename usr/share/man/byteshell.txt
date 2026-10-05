@@ -36,6 +36,8 @@ FILES
   /etc/profile     run at every login (for everyone)
   ~/.shrc          run at every login, after /etc/profile; set aliases
                    and variables here (GREETING= turns the greeting off)
+  ~/.profile       run once per login, after ~/.shrc (su skips it,
+                   su - runs it)
   ~/.byteshell_history   your history (500 lines; a command that starts
                    with a space is not saved)
 

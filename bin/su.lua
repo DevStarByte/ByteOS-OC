@@ -1,12 +1,14 @@
 --[[
-  su [user] - start a shell as another user (default: root)
+  su [-] [user] - start a shell as another user (default: root)
 
   Asks for that user's password (root needs none). The shell loads the
-  user's history and ~/.shrc; `exit` returns to where you were.
+  user's history and ~/.shrc; `su -` is a login and also runs
+  ~/.profile. `exit` returns to where you were.
 ]]--
 local args = arg or {}
 local T = term.theme
-if args[1] == "-" then table.remove(args, 1) end -- `su -` is accepted
+local login = args[1] == "-"
+if login then table.remove(args, 1) end
 local target = args[1] or "root"
 
 local password
@@ -22,7 +24,7 @@ local saved = { aliases = shell.aliases, history = shell.history, status = shell
 local from = k.user()
 local ok, why = k.su(target, password, function()
   k.log("(to " .. target .. ") " .. from .. " on tty1", "su")
-  local okStart, e = pcall(shell.startup)
+  local okStart, e = pcall(shell.startup, login)
   if not okStart and e ~= "__exit__" then error(e, 0) end
   if okStart then shell.loop(nil, true) end
 end)

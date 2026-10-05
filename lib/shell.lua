@@ -1079,14 +1079,18 @@ function shell.prompt()
 end
 
 -- Login: load this user's history, then run /etc/profile and ~/.shrc.
+-- A real login (not su) also runs ~/.profile, once, after them.
 -- Aliases and the greeting start fresh so nothing carries over from the
 -- previous user.
-function shell.startup()
+function shell.startup(login)
   shell.aliases = {}
   shell.status = 0
   _G.GREETING = nil
   shell.loadHistory()
-  for _, f in ipairs({ "/etc/profile", (_G.HOME or "/") .. "/.shrc" }) do
+  local home = _G.HOME or "/"
+  local files = { "/etc/profile", home .. "/.shrc" }
+  if login then files[#files + 1] = home .. "/.profile" end
+  for _, f in ipairs(files) do
     if fs.exists(f) then
       local ok, e = pcall(shell.source, f)
       if not ok then
@@ -1146,7 +1150,7 @@ function shell.loop(prompt, nested)
 end
 
 function shell.repl()
-  if not pcall(shell.startup) then return end -- exit/logout in a startup file
+  if not pcall(shell.startup, true) then return end -- exit/logout in a startup file
   shell.greeting()
   shell.loop(shell.prompt)
 end

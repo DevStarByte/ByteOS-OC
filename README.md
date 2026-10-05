@@ -211,7 +211,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.14.2 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.15.0 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -243,7 +243,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.14.2
+byteos 1.15.0
 cowsay 0.2.0
 ```
 
@@ -383,6 +383,10 @@ alias up='sudo pacman -Syu'
 root@byteos ~# unalias up
 root@byteos ~# source ~/.shrc        # or: . ~/.shrc
 ```
+
+`~/.profile` runs once per login, after `~/.shrc`; `su` skips it (only
+`su -` runs it). Use it for things that should happen once when you log in
+rather than for aliases. New users get a commented `/etc/skel/.profile`.
 
 The shell understands `'single'` and `"double"` quotes (also mid-word, as in
 `ll='ls -l'`), `\` escapes, `$VAR`/`${VAR}` and `~`. `NAME=value` sets a

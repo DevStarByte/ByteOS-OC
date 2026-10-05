@@ -1,4 +1,4 @@
 name=byteos
-version=1.14.2
+version=1.15.0
 desc=ByteOS base system (kernel, init, shell and core tools)
 format=git
