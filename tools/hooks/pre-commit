@@ -11,6 +11,10 @@
 #
 # Lua 5.3+ is looked up as lua, lua5.4 or lua5.3; on Windows (Git Bash)
 # without one, the tests run in WSL. No Lua at all stops the commit.
+#
+# Every test is shown as it finishes (✓ / ✗), and the failed ones are
+# listed again at the end. Lines end in \r\n: after WSL the terminal does
+# not go back to the start of the line on \n by itself.
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
@@ -28,18 +32,64 @@ if [ -z "$run" ] && command -v wsl >/dev/null 2>&1; then
   done
 fi
 if [ -z "$run" ]; then
-  echo "pre-commit: no Lua 5.3+ found (also not in WSL), the commit was stopped" >&2
+  printf '\033[31mpre-commit: no Lua 5.3+ found (also not in WSL), the commit was stopped\033[0m\r\n' >&2
   exit 1
 fi
+# Lua buffers its output into a pipe; stdbuf makes it come line by line
+case $run in
+  wsl*) wsl -e which stdbuf >/dev/null 2>&1 && run="wsl -e stdbuf -oL ${run#wsl -e }" ;;
+  *) command -v stdbuf >/dev/null 2>&1 && run="stdbuf -oL $run" ;;
+esac
 
-echo "pre-commit: running the test suite (git commit --no-verify skips it)..."
-log=$(mktemp)
-if $run tools/test/run.lua >"$log" 2>&1; then
-  tail -n 1 "$log"
-  rm -f "$log"
+printf '\033[1mpre-commit: running the test suite\033[0m\033[2m (git commit --no-verify skips it)\033[0m\r\n\r\n'
+
+# run.lua -v prints:   "  ok    case: test"   "  FAIL  case: test: why"
+#                      "     detail"          "case   N passed[, M FAILED]"
+#                      "N passed, M failed (cases)" at the end
+status=$(mktemp)
+{ $run tools/test/run.lua -v 2>&1; echo $? >"$status"; } | awk '
+  BEGIN { G = "\033[32m"; R = "\033[31m"; D = "\033[2m"; B = "\033[1m"; N = "\033[0m"; nf = 0; ORS = "\r\n" }
+  function header(c) { if (c != cur) { cur = c; printf "%s▸ %s%s\r\n", B, c, N } }
+  { sub(/\r$/, "") }
+  /^wsl: / { next }
+  /^  ok    / {
+    s = substr($0, 9); i = index(s, ": ")
+    header(substr(s, 1, i - 1)); printf "  %s✓%s %s\r\n", G, N, substr(s, i + 2); fflush(); next
+  }
+  /^  FAIL  / {
+    s = substr($0, 9); i = index(s, ": ")
+    c = substr(s, 1, i - 1); t = substr(s, i + 2); header(c)
+    printf "  %s✗ %s%s\r\n", R, t, N
+    fail[++nf] = B c N D " › " N t; fflush(); next
+  }
+  /^     / {
+    sub(/^ +/, ""); printf "      %s%s%s\r\n", D, $0, N
+    fail[nf] = fail[nf] "\r\n      " D $0 N; fflush(); next
+  }
+  /^[a-z][a-z0-9_-]* +[0-9]+ passed/ {
+    header($1)
+    printf "  %s%s passed%s", D, $2, N
+    if (match($0, /[0-9]+ FAILED/)) printf "%s, %s%s failed%s", D, R, substr($0, RSTART, RLENGTH - 7), N
+    printf "\r\n\r\n"; fflush(); next
+  }
+  /^[0-9]+ passed, [0-9]+ failed/ {
+    printf "%s────────────────────────────────────────────────────────────%s\r\n", D, N
+    printf "%s%s passed%s, %s%s failed%s\r\n", G, $1, N, ($3 > 0 ? R : ""), $3, N
+    if (nf > 0) {
+      printf "\r\n%s%sFailed tests:%s\r\n", R, B, N
+      for (k = 1; k <= nf; k++) printf "  %s✗%s %s\r\n", R, N, fail[k]
+    }
+    fflush(); next
+  }
+  /^$/ { next }
+  { print; fflush() }
+'
+rc=$(cat "$status")
+rm -f "$status"
+printf '\r\n'
+if [ "$rc" = 0 ]; then
+  printf '\033[32mpre-commit: all tests passed\033[0m\r\n'
   exit 0
 fi
-grep -v "^[a-z]* *[0-9]* passed$" "$log" | grep -v "^wsl: "
-rm -f "$log"
-echo "pre-commit: tests failed, the commit was stopped" >&2
+printf '\033[31mpre-commit: tests failed, the commit was stopped\033[0m\r\n' >&2
 exit 1
