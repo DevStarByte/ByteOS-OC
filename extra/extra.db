@@ -48,15 +48,15 @@ crc32 = 6edfaa47
 sha256 = 72d447d776829ef786f549fac6c66f136991d6b2930939a1efcdf85d3477ca7d
 
 name = hyprbyte
-version = 1.3.1-1
+version = 1.4.0-1
 desc = tiling window manager in the spirit of Hyprland: windows, workspaces, a bar
 depend = byteos>=1.13.0
 backup = /etc/hyprbyte.conf
-isize = 37997
-filename = hyprbyte-1.3.1-1.bpk
-csize = 28253
-crc32 = f91701b2
-sha256 = 542d7a381db58b32a469da85f1fae821da769546faa528a063d8db860e5bd656
+isize = 42604
+filename = hyprbyte-1.4.0-1.bpk
+csize = 30706
+crc32 = 5dfd6e87
+sha256 = b7d9fc69c5581ab1f9dd06c51fc922b59fa163c798ada9cac9100f0330261818
 
 name = hypridle
 version = 1.0.0-1
