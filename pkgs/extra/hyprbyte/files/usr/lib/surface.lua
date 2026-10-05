@@ -11,6 +11,9 @@
     s.place(x, y, w, h [, drop])             move or resize; drop rows from the
                                              top (to keep the cursor's line)
     s.redraw()                               draw everything again
+    s.cover(rects)                           screen rects {x, y, w, h} above the
+                                             window (overlay layers): it never
+                                             draws there, only into its buffer
     s.touched                                true once it drew on the screen
 
   The buffer is a string per row for the characters and one byte per cell
@@ -22,6 +25,35 @@ local ulen, usub = term.ulen, term.usub
 
 local surface = {}
 
+-- the parts of columns sx..sx+n-1 of screen row sy that no rect covers:
+-- out(from, to) for each, in screen columns
+function surface.spans(rects, sx, sy, n, out)
+  local a, b = sx, sx + n - 1
+  local cuts
+  for _, r in ipairs(rects) do
+    if sy >= r[2] and sy < r[2] + r[4] and r[1] <= b and r[1] + r[3] - 1 >= a then
+      cuts = cuts or {}
+      cuts[#cuts + 1] = { math.max(a, r[1]), math.min(b, r[1] + r[3] - 1) }
+    end
+  end
+  if not cuts then return out(a, b) end
+  table.sort(cuts, function(p, q) return p[1] < q[1] end)
+  local col = a
+  for _, c in ipairs(cuts) do
+    if c[1] > col then out(col, c[1] - 1) end
+    col = math.max(col, c[2] + 1)
+  end
+  if col <= b then out(col, b) end
+end
+
+-- does a rect cover any cell of the block x1..x2, y1..y2 (screen)?
+function surface.covered(rects, x1, y1, x2, y2)
+  for _, r in ipairs(rects) do
+    if r[1] <= x2 and r[1] + r[3] - 1 >= x1 and r[2] <= y2 and r[2] + r[4] - 1 >= y1 then return true end
+  end
+  return false
+end
+
 function surface.new(real, x, y, w, h)
   local s = {}
   local ox, oy, W, H = x, y, w, h
@@ -29,6 +61,7 @@ function surface.new(real, x, y, w, h)
   local fg, bg = 0xFFFFFF, 0x000000
   local colors, index = {}, {}         -- index byte -> colour, colour -> byte
   local text, fgs, bgs = {}, {}, {}    -- per row
+  local covers = {}                    -- screen rects of the layers above
 
   local function idx(c)
     local i = index[c]
@@ -56,17 +89,25 @@ function surface.new(real, x, y, w, h)
     bgs[y0] = bgs[y0]:sub(1, x0 - 1) .. b .. bgs[y0]:sub(x0 + n)
   end
 
-  local function paintRow(row)
-    local t, f, b = text[row], fgs[row], bgs[row]
-    local start = 1
-    for i = 2, W + 1 do
-      if i > W or f:byte(i) ~= f:byte(start) or b:byte(i) ~= b:byte(start) then
-        real.setForeground(colors[f:byte(start)] or 0xFFFFFF)
-        real.setBackground(colors[b:byte(start)] or 0)
-        real.set(ox + start - 1, oy + row - 1, usub(t, start, i - 1))
-        start = i
+  -- columns a..b of a row onto the screen, in runs of one colour, around the covers
+  local function paintRow(row, a, b)
+    local t, f, bb = text[row], fgs[row], bgs[row]
+    surface.spans(covers, ox + (a or 1) - 1, oy + row - 1, (b or W) - (a or 1) + 1, function(s1, s2)
+      local c1, c2 = s1 - ox + 1, s2 - ox + 1
+      local start = c1
+      for i = c1 + 1, c2 + 1 do
+        if i > c2 or f:byte(i) ~= f:byte(start) or bb:byte(i) ~= bb:byte(start) then
+          real.setForeground(colors[f:byte(start)] or 0xFFFFFF)
+          real.setBackground(colors[bb:byte(start)] or 0)
+          real.set(ox + start - 1, oy + row - 1, usub(t, start, i - 1))
+          start = i
+        end
       end
-    end
+    end)
+  end
+  -- is any cell of the block x1..x2, y1..y2 (surface) under a cover?
+  local function hidden(x1, y1, x2, y2)
+    return #covers > 0 and surface.covered(covers, ox + x1 - 1, oy + y1 - 1, ox + x2 - 1, oy + y2 - 1)
   end
 
   function s.redraw()
@@ -82,6 +123,7 @@ function surface.new(real, x, y, w, h)
     if shown then s.redraw() end
   end
   function s.isShown() return shown end
+  function s.cover(rects) covers = rects or {} end
 
   function s.place(nx, ny, nw, nh, drop)
     drop = math.max(0, math.min(drop or 0, H))
@@ -138,7 +180,12 @@ function surface.new(real, x, y, w, h)
     store(x0, y0, str, n, idx(fg):rep(n), idx(bg):rep(n))
     if shown then
       real.setForeground(fg); real.setBackground(bg)
-      real.set(ox + x0 - 1, oy + y0 - 1, str)
+      if not hidden(x0, y0, x0 + n - 1, y0) then real.set(ox + x0 - 1, oy + y0 - 1, str)
+      else
+        surface.spans(covers, ox + x0 - 1, oy + y0 - 1, n, function(s1, s2)
+          real.set(s1, oy + y0 - 1, usub(str, s1 - ox - x0 + 2, s2 - ox - x0 + 2))
+        end)
+      end
       s.touched = true
     end
     return true
@@ -154,7 +201,14 @@ function surface.new(real, x, y, w, h)
     for yy = y1, y2 do store(x1, yy, row, n, f, b) end
     if shown then
       real.setForeground(fg); real.setBackground(bg)
-      real.fill(ox + x1 - 1, oy + y1 - 1, n, y2 - y1 + 1, ch)
+      if not hidden(x1, y1, x2, y2) then real.fill(ox + x1 - 1, oy + y1 - 1, n, y2 - y1 + 1, ch)
+      else
+        for yy = y1, y2 do
+          surface.spans(covers, ox + x1 - 1, oy + yy - 1, n, function(s1, s2)
+            real.fill(s1, oy + yy - 1, s2 - s1 + 1, 1, ch)
+          end)
+        end
+      end
       s.touched = true
     end
     return true
@@ -185,8 +239,18 @@ function surface.new(real, x, y, w, h)
     end
     if shown then
       s.touched = true
-      if inside then real.copy(ox + x1 - 1, oy + y1 - 1, n, y2 - y1 + 1, tx, ty)
-      else s.redraw() end
+      -- the screen's copy would move a layer's cells into the window (or the
+      -- window's onto a layer): then paint the copied cells from the buffer
+      if inside and not hidden(x1, y1, x2, y2) and not hidden(x1 + tx, y1 + ty, x2 + tx, y2 + ty) then
+        real.copy(ox + x1 - 1, oy + y1 - 1, n, y2 - y1 + 1, tx, ty)
+      else
+        local of, ob = real.getForeground and real.getForeground(), real.getBackground and real.getBackground()
+        for yy = math.max(1, y1 + ty), math.min(H, y2 + ty) do
+          paintRow(yy, math.max(1, x1 + tx), math.min(W, x2 + tx))
+        end
+        if of then real.setForeground(of) end
+        if ob then real.setBackground(ob) end
+      end
     end
     return true
   end

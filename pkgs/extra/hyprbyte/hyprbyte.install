@@ -7,5 +7,6 @@ end
 function post_install() hint() end
 function post_upgrade(new, old)
   if tostring(old):match("^1%.[012]%.") then print("Hyprbyte 1.3: the built-in bar is gone; quickshell draws one now") end
+  if tostring(old):match("^1%.[0-3]%.") then print("Hyprbyte 1.4: no login session any more (F2); log in, then type start-hyprbyte") end
   hint()
 end

@@ -4,7 +4,7 @@
   Every window is a terminal with its own shell. New windows split the
   space (dwindle: halves of halves) and there are nine workspaces. Like
   Hyprland it has no bar of its own: quickshell (a package) draws one.
-  Start it from the shell, or pick the Hyprbyte session at the login (F2).
+  Start it from the shell with start-hyprbyte; it is not a login session.
 
   Keys (Mod is Alt; mod = super in the config makes it the Windows key):
     Mod+Enter         a new terminal
@@ -72,7 +72,7 @@ local MODNAME = MODS[tostring(conf.mod):lower()] and tostring(conf.mod):lower() 
 local MOD = MODS[MODNAME]
 
 -- ---- state (hyprctl and the other programs see it) ---------------------------------------
-local state = { workspaces = {}, active = 1, queue = {}, history = {}, version = "1.2.0",
+local state = { workspaces = {}, active = 1, queue = {}, history = {}, version = "1.4.0",
                 conf = conf, layers = {}, grabs = {}, lastInput = computer.uptime() }
 for i = 1, 9 do state.workspaces[i] = { list = {}, focus = 1, fullscreen = false } end
 package.loaded["hyprbyte.state"] = state
@@ -145,9 +145,14 @@ local function topGrab()
 end
 
 -- ---- drawing ------------------------------------------------------------------------
+-- where the overlays are; windows and frames are not drawn there
+local covers = {}
 local function paint(x, y, text, fg, bg)
   screen.setForeground(fg); screen.setBackground(bg or T.bg)
-  screen.set(x, y, text)
+  if not surface.covered(covers, x, y, x + term.ulen(text) - 1, y) then return screen.set(x, y, text) end
+  surface.spans(covers, x, y, term.ulen(text), function(a, b)
+    screen.set(a, y, term.usub(text, a - x + 1, b - x + 1))
+  end)
 end
 
 local CORNERS = conf.rounding and { "╭", "╮", "╰", "╯" } or { "┌", "┐", "└", "┘" }
@@ -168,10 +173,14 @@ end
 local function drawLayer(l, x, y, w, h)
   l.rect = { x, y, w, h }
   local ok, err = pcall(l.draw, screen, x, y, w, h)
-  if not ok then paint(x, y, term.pad((l.namespace or "layer") .. ": " .. tostring(err), w), T.bright, T.red) end
+  if not ok then
+    screen.setForeground(T.bright); screen.setBackground(T.red)
+    screen.set(x, y, term.pad((l.namespace or "layer") .. ": " .. tostring(err), w))
+  end
 end
 
 local function drawEdges()
+  if exclusive() then return end -- nothing shows next to a lock screen
   local top, bottom = 0, 0
   for _, l in ipairs(state.layers) do
     if edge(l) then
@@ -185,14 +194,46 @@ local function drawEdges()
   screen.setBackground(T.bg)
 end
 
-local function drawOverlays()
+-- the overlays to draw and where: only the lock screen while there is one
+-- (a notification or a launcher above it would show what it hides)
+local function overlays()
+  local out, only = {}, exclusive()
   for _, l in ipairs(state.layers) do
-    if l.anchor == "overlay" then
+    if l.anchor == "overlay" and (l.exclusive or not only) then
       local x, y, w, h = 1, 1, SW, SH
-      if l.place then x, y, w, h = l.place(SW, SH) end
-      if w and w > 0 and h > 0 then drawLayer(l, x, y, w, h) end
+      if l.place then
+        local ok, px, py, pw, ph = pcall(l.place, SW, SH)
+        if ok then x, y, w, h = px, py, pw, ph else w = nil end
+      end
+      if w and h and w > 0 and h > 0 then out[#out + 1] = { l = l, rect = { x, y, w, h } } end
     end
   end
+  return out
+end
+
+-- tell every window where the overlays are, so that what runs in it never
+-- draws over one (typing under a pop-up, a launcher, ...)
+local function cover(list)
+  covers = {}
+  for _, o in ipairs(list) do covers[#covers + 1] = o.rect end
+  for _, space in ipairs(state.workspaces) do
+    for _, win in ipairs(space.list) do win.surface.cover(covers) end
+  end
+end
+
+local function drawOverlays()
+  local list = overlays()
+  -- an overlay got smaller or went away: what was under it comes back
+  for _, old in ipairs(covers) do
+    local kept = false
+    for _, o in ipairs(list) do
+      local r = o.rect
+      if r[1] <= old[1] and r[2] <= old[2] and r[1] + r[3] >= old[1] + old[3] and r[2] + r[4] >= old[2] + old[4] then kept = true end
+    end
+    if not kept then state.relayout = true end
+  end
+  cover(list)
+  for _, o in ipairs(list) do drawLayer(o.l, table.unpack(o.rect)) end
   screen.setBackground(T.bg)
 end
 
@@ -228,6 +269,7 @@ local function layout()
   local rects = {}
   local cur = ws()
   local hidden = exclusive()
+  cover(overlays())
   if hidden then -- a lock screen: no window shows
   elseif cur.fullscreen and focused() then rects[focused()] = { x0, y0, w0, h0 }
   else tile(cur.list, 1, ax, ay, aw, ah, rects) end
@@ -294,6 +336,7 @@ local function open(cmd)
   tile(cur.list, 1, x0 + g, y0 + g, w0 - 2 * g, h0 - 2 * g, rects)
   local r = rects[win] or { x0, y0, w0, h0 }
   win.surface = surface.new(screen, r[1] + 1, r[2] + 1, math.max(1, r[3] - 2), math.max(1, r[4] - 2))
+  win.surface.cover(covers)
   win.term = tty.new(win.surface)
   if not exclusive() then popin(rects[win]) end
   layout()
@@ -346,7 +389,7 @@ local function focus(delta)
   if #cur.list < 2 and delta ~= 0 then return end
   cur.focus = (cur.focus - 1 + delta) % math.max(1, #cur.list) + 1
   if cur.fullscreen then layout()
-  else
+  elseif not exclusive() then
     for _, win in ipairs(cur.list) do border(win, win == focused()) end
     bar()
   end
@@ -515,9 +558,10 @@ local function handle(sig)
   elseif ev == "touch" then
     local x, y = sig[3], sig[4]
     local function inside(r) return r and x >= r[1] and x < r[1] + r[3] and y >= r[2] and y < r[2] + r[4] end
+    local only = exclusive()
     for i = #state.layers, 1, -1 do -- the top one first
       local l = state.layers[i]
-      if l.anchor ~= "background" and l.click and inside(l.rect) then
+      if l.anchor ~= "background" and l.click and inside(l.rect) and (l.exclusive or not only) then
         local ok, e = pcall(l.click, x - l.rect[1] + 1, y - l.rect[2] + 1, sig[5])
         if not ok then k.log("layer " .. tostring(l.namespace) .. ": " .. tostring(e), "hyprbyte") end
         state.dirty = true
@@ -564,15 +608,6 @@ local okRun, err = pcall(function()
       bar()
     elseif computer.uptime() >= nextBar then
       bar(); nextBar = computer.uptime() + 1
-    else
-      -- a window drew over an overlay: put the overlays back on top
-      local over = false
-      for _, win in ipairs(ws().list) do
-        if win.surface.touched then win.surface.touched = false; over = true end
-      end
-      if over then
-        for _, l in ipairs(state.layers) do if l.anchor == "overlay" then drawOverlays(); break end end
-      end
     end
   end
 end)

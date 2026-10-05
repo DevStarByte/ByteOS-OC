@@ -6,9 +6,9 @@ runs its own ByteShell (or one program); new windows split the space
 itself: install quickshell and add  exec-once = quickshell  for one.
 
 START
-  hyprbyte                      from the shell; Mod+Shift+E returns to it
-  At the login screen, F2 picks the session "Hyprbyte"; quitting it logs
-  out. The login remembers the choice.
+  start-hyprbyte                from the shell; Mod+Shift+E returns to it
+  Hyprbyte is not a login session: log in to ByteShell, then start it.
+  start-hyprbyte --no-animations  passes options on (hyprbyte works too)
 
 KEYS (Mod = Alt unless the config says otherwise)
   Mod+Enter          a new terminal
@@ -54,8 +54,9 @@ LAYERS
 
   anchor   "top" / "bottom": a panel (a bar); its rows stay free of windows
            "overlay": above the windows, where place(SW, SH) returns
-           x, y, w, h (default: everything); exclusive = true hides the
-           windows meanwhile (a lock screen)
+           x, y, w, h (default: everything); windows never draw over
+           it. exclusive = true hides the windows, panels and the other
+           overlays meanwhile (a lock screen)
            "background": below the windows (a wallpaper)
   hypr.grab(layer) sends every key to layer.key(event, card, char, code)
   until hypr.ungrab(layer) or removeLayer; hypr.refresh() draws again.

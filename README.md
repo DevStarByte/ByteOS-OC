@@ -42,7 +42,7 @@ Bigger or more demo-y packages. Enabled by default in `/etc/pacman.conf`.
 | [power](pkgs/extra/power)     | 1.0.0 | Energy stored, use per second, time left. `power -w` keeps watching. |
 | [rsh](pkgs/extra/rsh)         | 1.0.0 | Remote shell over ByteNet: `rsh alice@box2 uptime`, or a prompt there. |
 | [netfs](pkgs/extra/netfs)     | 1.0.0 | Shared folders over ByteNet: share in `/etc/netfs.conf`, `netfs mount box2:pub /mnt/pub`. |
-| [hyprbyte](pkgs/extra/hyprbyte) | 1.3.1 | Tiling window manager like Hyprland: terminals side by side, 9 workspaces, `hyprctl`; no bar of its own (quickshell draws one). Alt+Enter opens a terminal; also a login session (F2). Layers, key grabs and `bind =` for the ecosystem below (1.2). |
+| [hyprbyte](pkgs/extra/hyprbyte) | 1.4.0 | Tiling window manager like Hyprland: terminals side by side, 9 workspaces, `hyprctl`; no bar of its own (quickshell draws one). Start it with `start-hyprbyte`; Alt+Enter opens a terminal. Layers, key grabs and `bind =` for the ecosystem below (1.2). |
 | [quickshell](pkgs/extra/quickshell) | 1.0.1 | Your own bars and widgets for Hyprbyte, from `~/.config/quickshell/shell.lua` (reloads on save). `exec-once = quickshell` |
 | [libnotify](pkgs/extra/libnotify) | 1.0.0 | `notify-send` and the notification library. |
 | [dunst](pkgs/extra/dunst)     | 1.0.0 | Notification pop-ups for Hyprbyte; `dunstctl` history and do-not-disturb. `exec-once = dunst` |
