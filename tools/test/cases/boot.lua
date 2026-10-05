@@ -64,17 +64,3 @@ test("a later boot goes straight to the login; wrong passwords are refused", fun
   has(file("/var/log/messages"), "FAILED LOGIN for 'root'")
   has(file("/var/log/messages"), "session opened for user root")
 end)
-
-test("a package's session is offered at the login and started", function()
-  term.clear()
-  transcript = {}
-  put("/usr/share/sessions/test.session", "[Session]\nName=Testland\nExec=echo $USER in the session > /tmp/sess\n")
-  put("/var/lib/sessions/last", "Testland\n")
-  answers({ "root", "rootpw" })
-  local done, err = boot()
-  ok(done, "init ran: " .. tostring(err))
-  has(said(), "Session: Testland")
-  eq(file("/tmp/sess"), "root in the session\n")
-  has(file("/var/log/messages"), "session closed for user root")
-  os.remove(ROOT .. "/usr/share/sessions/test.session")
-end)

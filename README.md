@@ -211,7 +211,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.14.1 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.14.2 (Iron) lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -243,7 +243,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.14.1
+byteos 1.14.2
 cowsay 0.2.0
 ```
 
@@ -514,7 +514,7 @@ own: that is what Quickshell (below) is for.
 ```sh
 root@byteos ~# pacman -S hyprbyte quickshell
 root@byteos ~# echo "exec-once = quickshell" >> ~/.config/hyprbyte.conf
-root@byteos ~# hyprbyte                  # Alt+Enter: a terminal, Alt+Shift+E: back to the shell
+root@byteos ~# start-hyprbyte            # Alt+Enter: a terminal, Alt+Shift+E: back to the shell
 ```
 
 | Keys | |
@@ -574,11 +574,6 @@ exec-once = hyprpaper
 exec-once = hypridle
 bind = MOD, B, exec, btop
 ```
-
-**Login sessions:** like a display manager, the login screen offers every
-session a package installs (`/usr/share/sessions/*.session`): press **F2**
-to pick *Hyprbyte* instead of ByteShell. The choice is remembered, and
-quitting the session logs out.
 
 Each window is a shell plus a screen buffer, so Hyprbyte wants memory:
 two or three windows are fine on Tier 2, more with Tier 3 memory.

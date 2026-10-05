@@ -205,7 +205,8 @@ end
 
 test("hyprbyte tiles terminals and hands the keys to the one in focus", function()
   lacks(run(P .. "-S hyprbyte"), "error")
-  ok(file("/usr/share/sessions/hyprbyte.session"), "it offers a login session")
+  ok(file("/usr/bin/start-hyprbyte.lua"), "start-hyprbyte starts it")
+  eq(file("/usr/share/sessions/hyprbyte.session"), nil, "not a login session")
   local seq, shot = {}, nil
   typed("echo one > /tmp/w1\n", seq)              -- the first terminal
   mod(28, 13, seq)                                 -- Alt+Enter: a second one
@@ -217,7 +218,7 @@ test("hyprbyte tiles terminals and hands the keys to the one in focus", function
   typed("hyprctl workspaces > /tmp/spaces\n", seq)
   mod(18, 69, seq, true)                           -- Alt+Shift+E: quit
   signals(seq)
-  local _, rc = run("hyprbyte --no-animations")
+  local _, rc = run("start-hyprbyte --no-animations")
   eq(rc, 0)
   eq(file("/tmp/w1"), "one\n"); eq(file("/tmp/w2"), "two\n")
   has(file("/tmp/clients"), "Window 1"); has(file("/tmp/clients"), "Window 2")

@@ -172,55 +172,19 @@ local function lastLogin(name)
   return prev
 end
 
--- ===== Sessions (a display manager's choice) ================================
--- Besides ByteShell, packages may offer sessions such as a window manager:
--- /usr/share/sessions/<name>.session with Name=, Exec= (a command line)
--- and Comment=. F2 at the login screen picks one; the choice is kept.
-local SESSIONS, LAST_SESSION = "/usr/share/sessions", "/var/lib/sessions/last"
-local function loadSessions()
-  local list = { { name = "ByteShell" } }
-  for _, f in ipairs(fs.list(SESSIONS) or {}) do
-    if f:match("%.session$") then
-      local sess = {}
-      for line in (fs.readAll(SESSIONS .. "/" .. f) or ""):gmatch("[^\r\n]+") do
-        local key, value = line:match("^%s*(%w+)%s*=%s*(.-)%s*$")
-        if key then sess[key:lower()] = value end
-      end
-      if sess.name and sess.exec then list[#list + 1] = sess end
-    end
-  end
-  return list
-end
-
--- Login with password verification (Arch/agetty-ish). Returns the account
--- and the session to start.
+-- Login with password verification (Arch/agetty-ish). Returns the account.
 local function login()
   local function trim(s) return (s or ""):gsub("^%s+", ""):gsub("%s+$", "") end
   local errorMsg
-  local sessions, chosen = loadSessions(), 1
-  local last = trim(fs.readAll(LAST_SESSION))
-  for i, sess in ipairs(sessions) do if sess.name == last then chosen = i end end
   while true do
     local indent = loginScreen(errorMsg)
     local pad = string.rep(" ", indent)
-    local _, row = term.getCursor()
-    local function drawSession()
-      if #sessions < 2 then return end
-      local x, y = term.getCursor()
-      term.setCursor(1, row + 3); term.clearLine()
-      term.write(pad); term.cwrite(T.muted, "Session: ")
-      term.cwrite(T.accent, sessions[chosen].name)
-      term.cwrite(T.muted, "   F2 changes")
-      term.setCursor(x, y)
-    end
-    local keys = { f2 = function() chosen = chosen % #sessions + 1; drawSession() end }
-    drawSession()
     term.write(pad); term.cwrite(T.fg, hostname .. " login: ")
     term.setForeground(T.bright)
-    local user = trim(term.read({ keys = keys }))
+    local user = trim(term.read())
     if user == "" then user = "root" end
     term.write(pad); term.cwrite(T.fg, "Password: ")
-    local pw = term.read({ mask = "•", keys = keys }) or ""
+    local pw = term.read({ mask = "•" }) or ""
 
     local entry = lookupUser(user, pw)
     if not entry then k.log("FAILED LOGIN for '" .. user .. "'", "login") end
@@ -238,11 +202,7 @@ local function login()
         term.write("\n")
       end
       term.setForeground(T.fg)
-      if #sessions > 1 then
-        if not fs.isDirectory("/var/lib/sessions") then fs.makeDirectory("/var/lib/sessions") end
-        fs.writeAll(LAST_SESSION, sessions[chosen].name .. "\n")
-      end
-      return entry, sessions[chosen]
+      return entry
     end
     errorMsg = "Login incorrect"
   end
@@ -250,15 +210,9 @@ end
 
 -- Log in, run the shell until the user exits, then return to the login screen.
 while true do
-  local _, session = login()
-  -- the kernel runs the session as that user (file permissions, sudo)
-  local run = shell.repl
-  if session.exec then
-    run = function()
-      if pcall(shell.startup) then shell.execute(session.exec) end
-    end
-  end
-  local ok, err = pcall(k.runAs, _G.USER, run)
+  login()
+  -- the kernel runs the shell as that user (file permissions, sudo)
+  local ok, err = pcall(k.runAs, _G.USER, shell.repl)
   if not ok then
     term.cwrite(T.err, "shell crashed: " .. tostring(err) .. "\n")
     k.event.pull(2)
