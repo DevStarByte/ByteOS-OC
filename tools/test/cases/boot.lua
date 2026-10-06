@@ -64,3 +64,33 @@ test("a later boot goes straight to the login; wrong passwords are refused", fun
   has(file("/var/log/messages"), "FAILED LOGIN for 'root'")
   has(file("/var/log/messages"), "session opened for user root")
 end)
+
+test("first boot: the wizard can add several users", function()
+  os.remove(ROOT .. "/etc/.installed")
+  term.clear()
+  transcript = {}
+  keys({
+    "<enter>",                                   -- welcome
+    "4",                                         -- User accounts
+    "1", "<backspace>", "<backspace>", "<backspace>", "<backspace>",
+    "alice", "<enter>", "pw1", "<enter>", "pw1", "<enter>", "y", -- Add a user: alice, with sudo
+    "3", "bob", "<enter>", "pw2", "<enter>", "pw2", "<enter>", "n", -- Add a user: bob, no sudo
+    "2", "1", "rm", "<enter>", "rm", "<enter>", "2", "5", -- bob: new password, sudo on, Back
+    "1", "3", "y",                               -- alice: remove (bob is left)
+    "3", "carol", "<enter>", "pw3", "<enter>", "pw3", "<enter>", "n", "5", -- add carol, Done
+    "3", "rootpw", "<enter>", "rootpw", "<enter>", -- root password
+    "6", "<enter>",                              -- install, confirm
+    "<enter>",                                   -- "installation complete"
+    "<ctrl+d>",
+  })
+  answers({ "bob", "rm" })
+  local done, err = boot()
+  ok(done, "init ran: " .. tostring(err))
+  local passwd = file("/etc/passwd")
+  has(passwd, "bob:x:1000:100:bob:/home/bob:/bin/sh")
+  has(passwd, "carol:x:1001:100:carol:/home/carol:/bin/sh")
+  lacks(passwd, "alice")
+  has(file("/etc/group"), "wheel:x:10:bob\n")
+  ok(file("/home/carol/.shrc"), "carol's home has the skeleton files")
+  has(said(), "bob@")
+end)

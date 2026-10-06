@@ -18,10 +18,17 @@ PKGBUILD.lua returns a table:
     desc      = "my cool tool",
     url       = "https://...",
     depends   = { "lolcat", "figlet>=1.0" },  -- >= <= = < > allowed
+    optdepends = { "cowsay: talking output" }, -- suggested, not installed
     conflicts = { "oldtool<2" },
     backup    = { "/etc/mytool.conf" },       -- your edits survive updates
+    groups    = { "fun" },                    -- pacman -S fun gets them all
     install   = "mytool.install",
   }
+
+optdepends are listed after the package is installed and by pacman -Qi /
+-Si, marked [installed] where they are there. A package with depends and
+no files/ directory is a meta package: installing it installs what it
+depends on (pacman -Rs removes them again).
 
 The install file may define any of:
 

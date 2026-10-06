@@ -44,10 +44,26 @@ local function listing(path)
   return entries
 end
 
+-- 493 -> "rwxr-xr-x"
+local function modeString(mode)
+  local s = {}
+  for shift = 6, 0, -3 do
+    local b = (mode >> shift) & 7
+    s[#s + 1] = (b & 4 ~= 0 and "r" or "-") .. (b & 2 ~= 0 and "w" or "-") .. (b & 1 ~= 0 and "x" or "-")
+  end
+  return table.concat(s)
+end
+
 local function long(entries)
+  local ow, gw = 0, 0
+  for _, e in ipairs(entries) do
+    e.stat = k.fs.stat(e.full)
+    ow, gw = math.max(ow, #e.stat.owner), math.max(gw, #e.stat.group)
+  end
   for _, e in ipairs(entries) do
     local size = e.dir and "-" or human(k.fs.size(e.full) or 0)
-    term.cwrite(T.muted, (e.dir and "d" or "-") .. (e.name:match("%.lua$") and "rwxr-xr-x" or "rw-r--r--") .. "  ")
+    term.cwrite(T.muted, (e.dir and "d" or "-") .. modeString(e.stat.mode) .. "  ")
+    term.cwrite(T.fg, term.pad(e.stat.owner, ow + 1) .. term.pad(e.stat.group, gw + 1))
     term.cwrite(T.fg, ("%6s  "):format(size))
     term.cwrite(colorFor(e.name, e.dir), e.name .. (e.dir and "/" or ""))
     term.write("\n")

@@ -16,6 +16,10 @@
     pacman -Qi <pkg>         show information about an installed package
     pacman -D --asdeps|--asexplicit <pkg>...  change why a package is installed
     pacman -Ss [pattern]     search the repositories
+    pacman -Si <pkg>...      show information about repository packages
+    pacman -Sg [group]       list package groups and their members
+    pacman -Qg [group]       the same for the installed packages
+    pacman -S <group>        install every package of a group
     pacman -Sy               synchronize the package databases (-Syy: the same)
     pacman -Syu              upgrade packages and the byteos base system
     pacman --rollback        undo the last byteos upgrade
@@ -693,7 +697,7 @@ local function extract(it, idx, total)
   fs.writeAll(dir .. "/desc", bpk.formatInfo({
     name = name, version = pi.version, desc = pi.desc, url = pi.url,
     depend = pi.depend, conflict = pi.conflict, backup = newBackup, isize = pi.isize,
-    reason = reason,
+    group = pi.group, optdepend = pi.optdepend, reason = reason,
   }))
   fs.writeAll(dir .. "/files", table.concat(it.pkg.order, "\n") .. "\n")
   if it.pkg.install then
@@ -788,8 +792,55 @@ local function sizes(list)
 end
 
 -- ---- Operations ------------------------------------------------------------
+-- name -> sorted member names, for the groups of the repo packages
+local function syncGroups()
+  local groups = {}
+  for name, p in pairs(syncdb()) do
+    for _, g in ipairs(p.group or {}) do
+      groups[g] = groups[g] or {}
+      table.insert(groups[g], name)
+    end
+  end
+  for _, list in pairs(groups) do table.sort(list) end
+  return groups
+end
+
+-- Targets with every group name (that is not also a package) replaced by
+-- the group's members.
+local function expandGroups(targets)
+  if not synced() then sync() end
+  local db, groups, out = syncdb(), nil, {}
+  for _, t in ipairs(targets) do
+    local members
+    if not db[depName(t)] then
+      groups = groups or syncGroups()
+      members = groups[t]
+    end
+    if members then
+      header(("There are %d members in group %s:"):format(#members, t))
+      term.cwrite(T.fg, "   " .. table.concat(members, "  ") .. "\n")
+      for _, m in ipairs(members) do out[#out + 1] = m end
+    else
+      out[#out + 1] = t
+    end
+  end
+  return out
+end
+
+-- "Optional dependencies for X" with the ones already there marked.
+local function showOptional(p)
+  if not p.optdepend or #p.optdepend == 0 then return end
+  term.cwrite(T.accent, "Optional dependencies for " .. p.name .. "\n")
+  for _, o in ipairs(p.optdepend) do
+    term.cwrite(T.fg, "    " .. o)
+    if isInstalled(depName(o)) then term.cwrite(T.cyan, " [installed]") end
+    term.write("\n")
+  end
+end
+
 local function install(targets)
   if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
+  targets = expandGroups(targets)
   local wantBios, rest = false, {}
   for _, t in ipairs(targets) do
     if t == "bytebios" then wantBios = true else rest[#rest + 1] = t end
@@ -835,6 +886,7 @@ local function install(targets)
       items[#items + 1] = { db = p, reason = reason }
     end
     ok = commit(items) and ok
+    if ok then for _, p in ipairs(list) do showOptional(p) end end
   end
   return ok and 0 or 1
 end
@@ -1170,6 +1222,90 @@ local function setReason(targets)
   return 0
 end
 
+-- "Optional Deps" rows: one per suggestion, [installed] where it is
+local function optionalRows(i)
+  if #i.optdepend == 0 then return row("Optional Deps", nil) end
+  for n, o in ipairs(i.optdepend) do
+    term.cwrite(T.bright, term.pad(n == 1 and "Optional Deps" or "", 16))
+    term.cwrite(T.muted, n == 1 and ": " or "  ")
+    term.cwrite(T.fg, o)
+    if isInstalled(depName(o)) then term.cwrite(T.cyan, " [installed]") end
+    term.write("\n")
+  end
+end
+
+-- Queries anyone may run sync first only as root.
+local function ensureSynced()
+  if synced() then return end
+  if k.user() == "root" then
+    sync()
+  else
+    warn("the package databases are not synchronized; run sudo pacman -Sy")
+  end
+end
+
+-- -Si <pkg>...: what the repositories say about packages
+local function syncInfo(targets)
+  if #targets == 0 then err("no targets specified"); return 1 end
+  ensureSynced()
+  local rc = 0
+  for n, name in ipairs(targets) do
+    local p = syncdb()[name]
+    if not p then
+      notFound(name); rc = 1
+    else
+      if n > 1 then term.write("\n") end
+      row("Repository", p.repo)
+      row("Name", p.name)
+      row("Version", p.version)
+      row("Description", p.desc)
+      row("URL", p.url)
+      row("Groups", table.concat(p.group, "  "))
+      row("Depends On", table.concat(p.depend, "  "))
+      optionalRows(p)
+      row("Conflicts With", table.concat(p.conflict, "  "))
+      row("Download Size", p.csize and kib(p.csize))
+      row("Installed Size", p.isize and kib(p.isize))
+    end
+  end
+  return rc
+end
+
+-- -Sg / -Qg [group...]: "group package" lines, for the repositories or
+-- for what is installed
+local function queryGroups(targets, installedOnly)
+  local groups = {}
+  if installedOnly then
+    for _, n in ipairs(installedNames()) do
+      for _, g in ipairs(localInfo(n).group) do
+        groups[g] = groups[g] or {}
+        table.insert(groups[g], n)
+      end
+    end
+  else
+    ensureSynced()
+    groups = syncGroups()
+  end
+  local list = targets
+  if #list == 0 then
+    list = {}
+    for g in pairs(groups) do list[#list + 1] = g end
+    table.sort(list)
+  end
+  local rc = 0
+  for _, g in ipairs(list) do
+    if not groups[g] then err("group '" .. g .. "' was not found"); rc = 1
+    else
+      table.sort(groups[g])
+      for _, n in ipairs(groups[g]) do
+        term.cwrite(T.bright, g .. " ")
+        term.write(n .. "\n")
+      end
+    end
+  end
+  return rc
+end
+
 local function queryInfo(pkg)
   if not pkg then err("no targets specified"); return 1 end
   if pkg == "bytebios" then return queryBios() end
@@ -1191,7 +1327,9 @@ local function queryInfo(pkg)
   row("URL", i.url)
   row("Install Reason", (i.reason or "explicit") == "explicit" and "Explicitly installed"
     or "Installed as a dependency for another package")
+  row("Groups", table.concat(i.group, "  "))
   row("Depends On", table.concat(i.depend, "  "))
+  optionalRows(i)
   row("Required By", table.concat(requiredBy, "  "))
   row("Conflicts With", table.concat(i.conflict, "  "))
   row("Installed Size", i.isize and kib(i.isize))
@@ -1264,13 +1402,7 @@ local function cleanCache()
 end
 
 local function search(pat)
-  if not synced() then
-    if k.user() == "root" then
-      sync()
-    else
-      warn("the package databases are not synchronized; run sudo pacman -Sy")
-    end
-  end
+  ensureSynced()
   local names_ = repoNames()
   for _, repo in ipairs(names_) do
     for _, p in ipairs(bpk.parseDb(readIf(SYNC_DIR .. "/" .. repo .. ".db"))) do
@@ -1311,6 +1443,8 @@ local function usage()
     { "-Qo <file>",   "which package owns a file" },
     { "-Sc",          "clean the package cache" },
     { "-Ss [pattern]", "search the repositories" },
+    { "-Si <pkg>",    "show a repository package" },
+    { "-Sg [group]",  "list groups and their packages (-Qg: installed)" },
     { "-Sy",          "synchronize package databases" },
     { "-Syu",         "upgrade packages and the byteos base system" },
     { "--rollback",   "undo the last byteos upgrade" },
@@ -1340,7 +1474,7 @@ end
 
 -- Everything that changes the system needs root; queries work for anyone.
 local QUERY = { ["-Q"] = true, ["-Qi"] = true, ["-Ql"] = true, ["-Qo"] = true, ["-Ss"] = true,
-                ["-h"] = true, ["--help"] = true }
+                ["-Qg"] = true, ["-Sg"] = true, ["-Si"] = true, ["-h"] = true, ["--help"] = true }
 local qflags = op and op:match("^%-Q([edtq]+)$")
 local rflags = op and op:match("^%-R([ns]*)$")
 if op and not QUERY[op] and not qflags and k.user() ~= "root" then
@@ -1392,6 +1526,10 @@ elseif op == "-Qi" then
   return queryInfo(targets[1])
 elseif op == "-Ss" then
   return search(targets[1])
+elseif op == "-Si" then
+  return syncInfo(targets)
+elseif op == "-Sg" or op == "-Qg" then
+  return queryGroups(targets, op == "-Qg")
 else
   err("invalid option '" .. op .. "' (use -h for help)"); return 1
 end

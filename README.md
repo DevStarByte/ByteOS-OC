@@ -59,16 +59,19 @@ More details and other ways to install are under
 - **ByteShell** — an interactive shell modelled on fish: syntax highlighting
   while you type, grey autosuggestions, history search with ↑, Tab completion,
   a persistent `~/.byteshell_history`, aliases, `;`/`&&`/`||` and auto-cd,
-  plus pipes, redirection, wildcards and shell scripts.
+  plus pipes, redirection, wildcards, `$(command)`, `if`/`while`/`for`/
+  `function` blocks, `test`, `read`, `math` and shell scripts.
 - **Commands** —
-  files: `ls cat cp mv rm mkdir touch find less edit grep head tail wc`;
+  files: `ls cat cp mv rm mkdir touch find less edit chmod chown mktemp`;
+  text: `grep head tail wc sort uniq cut tr sed diff tee xargs seq basename dirname sha256sum`;
   system: `df du free date timedatectl sleep uname hostname neofetch which env help reboot shutdown`;
   processes, services and logs: `ps kill systemctl journalctl dmesg logger`;
   help: `man` (`man <command>`, `man byteshell`, `man -k <word>`);
   users: `whoami id groups passwd su sudo useradd userdel usermod`;
   disks: `mount umount lsblk`; internet: `wget curl`; between computers:
   `ip netscan ping msg netcp`.
-- **pacman** — `-S / -R / -Q / -Qi / -Sy / -Syu / -Ss` with a tiny on-disk repo format.
+- **pacman** — `-S / -R / -Q / -Qi / -Si / -Sg / -Sy / -Syu / -Ss` with a tiny
+  on-disk repo format, package groups and optional dependencies.
 - **edit** — full-screen editor with line numbers and Lua syntax highlighting
   (`^S` save, `^Q` quit, `^K`/`^U` cut/paste line, `^G` go to line).
 - **One colour theme** ([`lib/theme.lua`](lib/theme.lua)) — 16 colours, loaded
@@ -150,7 +153,7 @@ the full-screen setup wizard:
            │ ✓ Hostname                    byteos │
            │ ✓ Timezone                       UTC │
            │ • Root password             required │
-           │ ✓ User account             root only │
+           │ ✓ User accounts            root only │
            │ ──────────────────────────────────── │
            │   Install ByteOS                     │
            │   Abort and reboot                   │
@@ -158,7 +161,10 @@ the full-screen setup wizard:
  ↑↓ move  Enter change  Shift+Q abort
 ```
 Pick each entry with the arrow keys (or `1`-`9`) and Enter, set a root
-password, then choose *Install ByteOS*. Your answers are written to
+password, then choose *Install ByteOS*. *User accounts* opens a list where
+you add as many users as you like, each with a password and the choice of
+`sudo`; pick one again to change its password, its `sudo` or remove it.
+Your answers are written to
 `/etc/hostname`, `/etc/timezone`, `/etc/passwd`, `/etc/shadow` and friends, and a
 `/etc/.installed` marker is created so the wizard never runs again.
 (Escape closes the Minecraft screen, so *back* is `Shift+Q` or Backspace.)
@@ -279,6 +285,22 @@ alice@byteos ~> su bob                     # a shell as bob; exit comes back
 alice@byteos ~> id                         # uid=1000(alice) gid=100(users) groups=...
 ```
 
+Every file has an owner, a group and a mode, shown by `ls -l`. Files in
+`/home/<user>` belong to that user, `/tmp` and `/mnt` are open to everyone,
+everything else belongs to root. `chmod` and `chown` change that for single
+files and directories (a directory also needs `x` for what is inside):
+
+```sh
+alice@byteos ~> chmod 600 notes.txt          # only alice may read it
+alice@byteos ~> chmod go-rx ~/private        # nobody else gets inside
+root@byteos ~# mkdir /srv/team; chown alice:wheel /srv/team; chmod 775 /srv/team
+alice@byteos ~> ls -l /srv
+drwxrwxr-x  alice wheel       -  team/
+```
+
+The disks cannot store owners, so the changes are kept in `/var/lib/perms`
+and follow the files through `mv` and `rm`.
+
 Passwords are stored as salted SHA-256 hashes (`$sha256$512$salt$hash`). A
 plain-text password from an older ByteOS is converted the next time that user
 logs in.
@@ -360,6 +382,38 @@ root@byteos ~# ./greet.sh world        # $1=world
 root@byteos ~# sh greet.sh world
 root@byteos ~# sh -c 'echo one; echo two'
 ```
+
+Scripts (and the prompt) have fish's blocks, `$(command)` and the tools
+that go with them:
+
+```sh
+#!/bin/sh
+# backup.sh: copy every .txt file, numbered
+set N 0
+for F in *.txt
+  if test -s $F                         # -s: exists and is not empty
+    set N $(math $N + 1)
+    cp $F /mnt/backup/$N-$(basename $F)
+  else
+    echo "skipping empty $F"
+  end
+end
+echo "$N files copied"
+
+function count_users
+  cut -d : -f 1 /etc/passwd | wc -l
+end
+while read LINE                         # one line at a time from the file
+  echo "> $LINE"
+end < /etc/motd
+```
+
+`if`/`else if`/`else`, `while`, `for NAME in ...`, `function`, `break`,
+`continue`, `return`, `and`/`or` and `test`/`[ ]`, `read`, `math`, `true`,
+`false` are described in `man byteshell`. Typing an unfinished block at the
+prompt asks for its next lines. Text tools for scripts: `sort uniq cut tr
+sed diff tee xargs seq basename dirname sha256sum mktemp`; `sed` uses Lua
+patterns, like `grep`.
 
 `Ctrl+C` stops a program that is waiting for a key or an event, and skips the
 rest of the command line (status 130). OpenComputers ends a program that
@@ -506,7 +560,9 @@ Besides the small tools and games, the repositories have:
 | `quickshell` | build your own bars and widgets for Hyprbyte, see below |
 | `dunst`, `rofi`, `hyprlock`, `hypridle`, `hyprpaper` | the rest of the Hyprbyte desktop, see below |
 
-`pacman -Ss` lists everything.
+`pacman -Ss` lists everything, `pacman -Si <name>` shows one package with
+its optional extras, and `pacman -Sg` lists the groups: `pacman -S <group>`
+installs every package in one.
 
 ## Windows: Hyprbyte
 
@@ -668,11 +724,16 @@ return {
   desc      = "my cool tool",
   depends   = { "lolcat", "figlet>=1.0" }, -- installed automatically; a
                                            -- version may be given: >= <= = < >
+  optdepends = { "cowsay: talking output" }, -- suggested after installing
   conflicts = { },
   backup    = { "/etc/mytool.conf" },  -- user edits survive upgrades (.pacnew)
+  groups    = { "fun" },               -- pacman -S fun installs the whole group
   install   = "mytool.install",
 }
 ```
+
+A package with `depends` but no `files/` directory is a meta package: it
+installs nothing of its own, only what it depends on.
 
 ```lua
 -- mytool.install: every function is optional

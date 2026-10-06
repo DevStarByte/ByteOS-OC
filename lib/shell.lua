@@ -78,15 +78,49 @@ function shell.normalize(path)
   return "/" .. table.concat(parts, "/")
 end
 
+-- Looking a command up costs two disk calls per $PATH directory, and the
+-- highlighting does it at every key press, so the answers (also "not
+-- found") are kept until something on the disks changes.
+local binCache, binGen = {}, nil
+
 function shell.resolveBin(name)
   if name:find("/") then return shell.normalize(name) end
-  for dir in (_G.PATH or "/bin:/usr/bin:/sbin"):gmatch("[^:]+") do
+  local path = _G.PATH or "/bin:/usr/bin:/sbin"
+  local gen = fs.generation()
+  if gen ~= binGen then binCache, binGen = {}, gen end
+  local key = path .. "\0" .. name
+  local hit = binCache[key]
+  if hit ~= nil then return hit or nil end
+  local found = false
+  for dir in path:gmatch("[^:]+") do
     local p = dir .. "/" .. name .. ".lua"
-    if fs.exists(p) and not fs.isDirectory(p) then return p end
+    if fs.exists(p) and not fs.isDirectory(p) then found = p; break end
     p = dir .. "/" .. name
-    if fs.exists(p) and not fs.isDirectory(p) then return p end -- not "/bin/.."
+    if fs.exists(p) and not fs.isDirectory(p) then found = p; break end -- not "/bin/.."
   end
-  return nil
+  binCache[key] = found
+  return found or nil
+end
+
+-- The text of a program to run. Small ones are kept (up to PROGRAM_CACHE
+-- bytes in all, while memory is not short) until something on the disks
+-- changes, so a loop does not read the same file from disk every round.
+-- Kept per user: a file one user may read is not handed to another.
+local PROGRAM_CACHE, PROGRAM_MAX = 16384, 6144
+local progCache, progGen, progBytes = {}, nil, 0
+local function readProgram(path)
+  local gen = fs.generation()
+  if gen ~= progGen then progCache, progGen, progBytes = {}, gen, 0 end
+  local key = k.user() .. ":" .. path
+  local src = progCache[key]
+  if src then return src end
+  local err
+  src, err = fs.readAll(path)
+  if src and #src <= PROGRAM_MAX and computer.freeMemory() > 65536 then
+    if progBytes + #src > PROGRAM_CACHE then progCache, progBytes = {}, 0 end
+    progCache[key], progBytes = src, progBytes + #src
+  end
+  return src, err
 end
 
 -- ---- Variables -----------------------------------------------------------
@@ -105,18 +139,49 @@ function shell.getVar(name)
   return ""
 end
 
+-- The index of the ) that closes the ( at i, skipping quoted text and
+-- nested parentheses; the end of s if it is never closed.
+local function closeParen(s, i)
+  local depth, q, n = 0, nil, #s
+  while i <= n do
+    local c = s:sub(i, i)
+    if q then
+      if c == q then q = nil elseif c == "\\" and q == '"' then i = i + 1 end
+    elseif c == "'" or c == '"' then q = c
+    elseif c == "\\" then i = i + 1
+    elseif c == "(" then depth = depth + 1
+    elseif c == ")" then
+      depth = depth - 1
+      if depth == 0 then return i end
+    end
+    i = i + 1
+  end
+  return n
+end
+
+-- $(cmd): run cmd and return what it printed, without trailing newlines.
+-- `exit` inside only ends the substitution.
+function shell.capture(cmd)
+  local buf = {}
+  local ok, err = pcall(shell.withIO, { output = buf }, shell.execute, cmd)
+  if not ok and err ~= "__exit__" then error(err, 0) end
+  return (table.concat(buf):gsub("\n+$", ""))
+end
+
 -- ---- Tokeniser -----------------------------------------------------------
 -- Splits a line into words like a POSIX shell:
 --   'single quotes'  everything inside is literal
---   "double quotes"  keep spaces, still expand $VAR
+--   "double quotes"  keep spaces, still expand $VAR and $(cmd)
 --   \c               the next character literally (outside single quotes)
 --   $NAME ${NAME}    the variable's value
 --   $1..$9 $0 $# $@  script arguments ($@ unquoted gives one word each)
+--   $(cmd)           what cmd prints; unquoted, one word per line (as fish)
 --   ~ ~/...          $HOME at the start of a word
 -- Quotes may appear mid-word: ll='ls -l' is one word, "ll=ls -l".
 -- Returns the words and, for each, whether it holds an unquoted wildcard
--- (* ? [) to be expanded against the filesystem.
-function shell.tokenize(line)
+-- (* ? [) to be expanded against the filesystem. With noSubst, $(cmd) is
+-- kept as text instead of being run (for highlighting while typing).
+function shell.tokenize(line, noSubst)
   local args, globs, word, inWord, glob = {}, {}, {}, false, false
   local i, n = 1, #line
   local params = ctx().params
@@ -137,6 +202,12 @@ function shell.tokenize(line)
     if name == "status" then return tostring(shell.status), nxt end -- fish's $status
     return shell.getVar(name), nxt
   end
+  -- $( at j: the command's output and the index after the closing )
+  local function subst(j)
+    local e = closeParen(line, j + 1)
+    if noSubst then return line:sub(j, e), e + 1 end
+    return shell.capture(line:sub(j + 2, e - 1)), e + 1
+  end
   while i <= n do
     local c = line:sub(i, i)
     if c == " " or c == "\t" then
@@ -151,6 +222,8 @@ function shell.tokenize(line)
         local d = line:sub(i, i)
         if d == "\\" and line:sub(i + 1, i + 1):match('["\\$]') then
           push(line:sub(i + 1, i + 1)); i = i + 2
+        elseif d == "$" and line:sub(i + 1, i + 1) == "(" then
+          local v; v, i = subst(i); push(v)
         elseif d == "$" then
           local v; v, i = variable(i + 1); push(v)
         else
@@ -166,6 +239,16 @@ function shell.tokenize(line)
         push(a)
       end
       i = i + 2
+    elseif c == "$" and line:sub(i + 1, i + 1) == "(" then
+      local v; v, i = subst(i)
+      if noSubst then push(v)
+      elseif v ~= "" then
+        local first = true
+        for l in (v .. "\n"):gmatch("([^\n]*)\n") do
+          if not first then finish() end
+          push(l); first = false
+        end
+      end
     elseif c == "$" then
       -- an empty unquoted expansion adds no word, as in sh ("$X" would)
       local v; v, i = variable(i + 1)
@@ -302,11 +385,7 @@ end
 function shell.source(path)
   local src = fs.readAll(path)
   if not src then return nil, "cannot read " .. path end
-  local rc = 0
-  for line in (src .. "\n"):gmatch("([^\n]*)\n") do
-    rc = shell.execute((line:gsub("\r$", "")))
-  end
-  return rc
+  return shell.execute(src)
 end
 
 function shell.builtins.source(args)
@@ -435,6 +514,9 @@ function shell.split(line)
       q = c; cur[#cur + 1] = c
     elseif c == "\\" then
       cur[#cur + 1] = line:sub(i, i + 1); i = i + 1
+    elseif c == "$" and line:sub(i + 1, i + 1) == "(" then
+      local e = closeParen(line, i + 1)
+      cur[#cur + 1] = line:sub(i, e); i = e
     elseif c == ";" then
       cut(";")
     elseif line:sub(i, i + 1) == "&&" or line:sub(i, i + 1) == "||" then
@@ -461,13 +543,15 @@ local function autocdTarget(name)
 end
 
 function shell.commandExists(name)
-  return shell.builtins[name] ~= nil or shell.aliases[name] ~= nil or name == "not"
-      or shell.resolveBin(name) ~= nil or autocdTarget(name) ~= nil
+  return shell.builtins[name] ~= nil or shell.aliases[name] ~= nil or shell.keywords[name] ~= nil
+      or shell.functions[name] ~= nil or shell.resolveBin(name) ~= nil or autocdTarget(name) ~= nil
 end
 
 -- ---- Wildcards -----------------------------------------------------------
 local function globPattern(seg)
-  local p = seg:gsub("[%^%$%(%)%%%.%+%-]", "%%%0"):gsub("%[!", "[^")
+  local p = seg:gsub("[%^%$%(%)%%%.%+%-]", "%%%0")
+  if not p:find("%[.*%]") then p = p:gsub("%[", "%%[") end -- a lone [ is just a character
+  p = p:gsub("%[!", "[^")
   return "^" .. p:gsub("%*", ".*"):gsub("%?", ".") .. "$"
 end
 
@@ -508,6 +592,23 @@ function shell.glob(word)
   return #out > 0 and out or nil
 end
 
+-- Words from tokenize with their wildcards replaced by the matching paths.
+local function globWords(words, globs)
+  local args = {}
+  for i, w in ipairs(words) do
+    local matches = globs[i] and shell.glob(w)
+    if matches then
+      for _, m in ipairs(matches) do args[#args + 1] = m end
+    else
+      args[#args + 1] = w
+    end
+  end
+  return args
+end
+
+-- A line's words as a command gets them: variables, $(cmd) and wildcards expanded.
+function shell.expandWords(line) return globWords(tokenize(line)) end
+
 -- ---- Pipes and redirection -------------------------------------------------
 -- Input and output of the script or `sh -c` that is running (ctx().ambient):
 -- its commands read from / write to these unless they redirect themselves.
@@ -526,6 +627,7 @@ function shell.parsePipeline(line)
         if d == wq then wq = nil elseif d == "\\" and wq == '"' then j = j + 1 end
       elseif d == "'" or d == '"' then wq = d
       elseif d == "\\" then j = j + 1
+      elseif d == "$" and line:sub(j + 1, j + 1) == "(" then j = closeParen(line, j + 1)
       elseif d:match("%s") or d == "|" or d == ">" or d == "<" then break end
       j = j + 1
     end
@@ -543,6 +645,9 @@ function shell.parsePipeline(line)
       q = c; cur[#cur + 1] = c; i = i + 1
     elseif c == "\\" then
       cur[#cur + 1] = line:sub(i, i + 1); i = i + 2
+    elseif c == "$" and line:sub(i + 1, i + 1) == "(" then
+      local e = closeParen(line, i + 1)
+      cur[#cur + 1] = line:sub(i, e); i = e + 1
     elseif c == "|" then
       stage.cmd = table.concat(cur); stages[#stages + 1] = stage
       stage, cur = {}, {}; i = i + 1
@@ -715,17 +820,11 @@ function shell.runScript(path, args, io)
   local saved = c.params
   c.params = { [0] = path }
   for i, a in ipairs(args or {}) do c.params[i] = a end
-  local rc = 0
-  local ok, err = pcall(shell.withIO, io, function()
-    for line in (src .. "\n"):gmatch("([^\n]*)\n") do
-      rc = shell.execute((line:gsub("\r$", "")))
-      if shell.interrupted then break end
-    end
-  end)
+  local ok, rc = pcall(shell.withIO, io, shell.execute, src)
   c.params = saved
   if not ok then
-    if err == "__exit__" then return shell.exitCode or rc end
-    error(err, 0)
+    if rc == "__exit__" then return shell.exitCode or shell.status end
+    error(rc, 0)
   end
   return rc
 end
@@ -750,16 +849,10 @@ function shell.run(line, io)
     local name, value = words[1]:match("^([%w_]+)=(.*)$")
     return assign("byteshell", name, value)
   end
-  local args = {}
-  for i, w in ipairs(words) do
-    local matches = globs[i] and shell.glob(w)
-    if matches then
-      for _, m in ipairs(matches) do args[#args + 1] = m end
-    else
-      args[#args + 1] = w
-    end
-  end
+  local args = globWords(words, globs)
   local cmd = table.remove(args, 1)
+
+  if shell.functions[cmd] then return shell.callFunction(cmd, args, io) end
 
   local stdin = makeStdin(io.input)
   local t = (io.output or io.input) and makeTerm(io.output, stdin) or term
@@ -767,7 +860,7 @@ function shell.run(line, io)
   if shell.builtins[cmd] then
     local prev = out
     out = t
-    local ok, rc = pcall(shell.builtins[cmd], args)
+    local ok, rc = pcall(shell.builtins[cmd], args, io)
     out = prev
     if not ok then error(rc, 0) end
     return rc
@@ -781,7 +874,7 @@ function shell.run(line, io)
     return 127
   end
 
-  local src, err = fs.readAll(path)
+  local src, err = readProgram(path)
   if not src then shell.err("byteshell", "cannot read " .. path .. ": " .. tostring(err)); return 1 end
   if src:sub(1, 2) == "#!" and not src:match("^#![^\n]*lua") then
     return shell.runScript(path, args, io)
@@ -815,6 +908,20 @@ function shell.run(line, io)
   return tonumber(rc) or 0
 end
 
+-- Write (or with append, add) text to a > / >> target; false after an error.
+local function writeOut(path, append, text)
+  local ok, e
+  if append then
+    local f
+    f, e = fs.open(path, "a")
+    if f then f:write(text); f:close(); ok = true end
+  else
+    ok, e = fs.writeAll(path, text)
+  end
+  if not ok then shell.err("byteshell", path .. ": " .. tostring(e)); return false end
+  return true
+end
+
 -- a | b < in > out: the stages run one after another, each one's output
 -- becoming the next one's input. Returns the last stage's status.
 function shell.pipeline(line)
@@ -830,18 +937,11 @@ function shell.pipeline(line)
     end
     local last = i == #stages
     local buf = (st.out or not last) and {} or ambient.output
-    rc = shell.run(st.cmd, { input = input, output = buf })
+    -- the first stage reads the script's input: `read` takes lines from it
+    rc = shell.run(st.cmd, { input = input, output = buf, ambient = i == 1 and not st.inp })
     if shell.interrupted then return rc end
     if st.out then
-      local text, ok, e = table.concat(buf), nil, nil
-      if st.append then
-        local f
-        f, e = fs.open(st.out, "a")
-        if f then f:write(text); f:close(); ok = true end
-      else
-        ok, e = fs.writeAll(st.out, text)
-      end
-      if not ok then shell.err("byteshell", st.out .. ": " .. tostring(e)); return 1 end
+      if not writeOut(st.out, st.append, table.concat(buf)) then return 1 end
       input = ""
     elseif not last then
       input = table.concat(buf)
@@ -884,7 +984,7 @@ end
 -- Run a command line: lists separated by ; or &, each list a && b || c
 -- of pipelines. A list ending in & runs in the background as a whole.
 -- Sets (in the foreground) and returns $status.
-function shell.execute(line)
+local function executeList(line)
   local parts, ops = shell.split(line or "")
   local fg = k.process.isForeground()
   local rc = shell.status
@@ -916,6 +1016,59 @@ function shell.execute(line)
   return rc
 end
 
+-- ---- Blocks and scripting built-ins (/lib/shellblocks.lua) --------------
+-- if/while/for/function and test, read, math... live in their own module,
+-- loaded the first time a command line needs them.
+shell.keywords = { ["if"] = true, ["else"] = true, ["end"] = true, ["while"] = true, ["for"] = true,
+  ["in"] = true, ["function"] = true, ["begin"] = true, ["and"] = true, ["or"] = true, ["not"] = true }
+shell.functions = {}   -- name -> parsed body
+
+shell._internal = {
+  executeList = executeList, ctx = ctx, assign = assign, writeOut = writeOut,
+  closeParen = closeParen, READONLY = READONLY,
+  out = function() return out end, -- where built-ins print right now
+}
+
+local function blocks() return require("shellblocks") end
+
+-- Statements that start with these need the block module.
+local BLOCK_WORDS = { ["if"] = true, ["else"] = true, ["end"] = true, ["while"] = true, ["for"] = true,
+  ["function"] = true, ["begin"] = true, ["and"] = true, ["or"] = true, ["break"] = true,
+  ["continue"] = true, ["return"] = true }
+local function usesBlocks(src)
+  if src:find("\\\r?\n") then return true end -- a continued line
+  for seg in (src .. "\n"):gmatch("([^;\n]*)[;\n]") do
+    if BLOCK_WORDS[seg:match("^%s*([%w_%-]+)") or ""] then return true end
+  end
+  return false
+end
+
+function shell.statements(src) return blocks().statements(src) end
+function shell.parse(src) return blocks().parse(src) end
+function shell.incomplete(src) return usesBlocks(src) and blocks().incomplete(src) or nil end
+function shell.callFunction(...) return blocks().callFunction(...) end
+
+-- Run shell source: one line typed at the prompt, `sh -c`, a script or a
+-- file read with source. Returns (and in the foreground sets) $status.
+-- Lines without blocks run directly, without loading the block module.
+function shell.execute(src)
+  src = src or ""
+  if usesBlocks(src) then return blocks().execute(src) end
+  if not src:find("\n", 1, true) then return executeList(src) end
+  local rc = shell.status
+  for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+    rc = executeList((line:gsub("\r$", "")))
+    if shell.interrupted then break end
+  end
+  return rc
+end
+
+shell.builtins["true"] = function() return 0 end
+shell.builtins["false"] = function() return 1 end
+for _, name in ipairs({ "functions", "break", "continue", "return", "test", "[", "read", "math" }) do
+  shell.builtins[name] = function(...) return blocks().builtins[name](...) end
+end
+
 -- ---- Interactive editing (see /lib/lineedit.lua) -------------------------
 -- Colours as in fish: command blue (red if unknown), options cyan,
 -- strings yellow, variables magenta, operators and comments muted.
@@ -928,7 +1081,8 @@ local function colorWord(word, add)
       local e = word:find(c, i + 1, true) or n
       add(word:sub(i, e), T.yellow); i = e + 1
     elseif c == "$" then
-      local e = (word:find("[^%w_{}?]", i + 1) or n + 1) - 1
+      local e = word:sub(i + 1, i + 1) == "(" and closeParen(word, i + 1)
+        or (word:find("[^%w_{}?]", i + 1) or n + 1) - 1
       add(word:sub(i, e), T.magenta); i = e + 1
     else
       local e = (word:find("['\"$]", i) or n + 1) - 1
@@ -941,6 +1095,7 @@ function shell.highlight(buf)
   local out = {}
   local function add(text, color) if text ~= "" then out[#out + 1] = { text, color } end end
   local i, n, wantCmd = 1, #buf, true
+  local forIn -- after `for`: which word comes next (the name is 1, `in` is 2)
   while i <= n do
     local c, two = buf:sub(i, i), buf:sub(i, i + 1)
     if c:match("%s") then
@@ -963,19 +1118,27 @@ function shell.highlight(buf)
           if d == q then q = nil elseif d == "\\" and q == '"' then j = j + 1 end
         elseif d == "'" or d == '"' then q = d
         elseif d == "\\" then j = j + 1
+        elseif d == "$" and buf:sub(j + 1, j + 1) == "(" then j = closeParen(buf, j + 1)
         elseif d:match("%s") or d == ";" or d == "|" or d == ">" or d == "<" or buf:sub(j, j + 1) == "&&" then
           break
         end
         j = j + 1
       end
       local word = buf:sub(i, math.min(j - 1, n))
-      if wantCmd and word == "not" then
+      if wantCmd and shell.keywords[word] then
+        -- a command follows these; for, function, end... take plain words
         add(word, T.accent)
+        wantCmd = word == "if" or word == "while" or word == "else" or word == "and"
+          or word == "or" or word == "not" or word == "begin"
+        forIn = word == "for" and 1 or nil
+      elseif forIn and word == "in" and forIn == 2 then
+        add(word, T.accent); forIn = nil
       elseif wantCmd then
-        local name = shell.tokenize(word)[1] or word
+        local name = shell.tokenize(word, true)[1] or word
         add(word, shell.commandExists(name) and T.blue or T.red)
         wantCmd = false
       else
+        if forIn then forIn = forIn + 1 end
         colorWord(word, add)
       end
       i = j
@@ -1022,6 +1185,7 @@ function shell.complete(before)
   elseif cmdPos and not word:find("/") then
     for b in pairs(shell.builtins) do offer(b, word) end
     for a in pairs(shell.aliases) do offer(a, word) end
+    for f in pairs(shell.functions) do offer(f, word) end
     for dir in (_G.PATH or "/bin"):gmatch("[^:]+") do
       for _, e in ipairs(fs.list(dir) or {}) do
         if not e:match("/$") then offer((e:gsub("%.lua$", "")), word) end
@@ -1080,10 +1244,11 @@ end
 
 -- Login: load this user's history, then run /etc/profile and ~/.shrc.
 -- A real login (not su) also runs ~/.profile, once, after them.
--- Aliases and the greeting start fresh so nothing carries over from the
--- previous user.
+-- Aliases, functions and the greeting start fresh so nothing carries over
+-- from the previous user.
 function shell.startup(login)
   shell.aliases = {}
+  shell.functions = {}
   shell.status = 0
   _G.GREETING = nil
   shell.loadHistory()
@@ -1133,6 +1298,19 @@ function shell.loop(prompt, nested)
     })
     term.setForeground(T.fg)
     if line == nil then return end
+    -- an open block (if, for, ...) asks for more lines, indented by depth
+    local open = shell.incomplete(line)
+    while open do
+      local function more() term.cwrite(T.muted, string.rep("  ", open)) end
+      more()
+      local nextLine = lineedit.read({ highlight = shell.highlight, complete = shell.complete, prompt = more })
+      term.setForeground(T.fg)
+      if nextLine == nil then line = ""; break end -- Ctrl+D drops the block
+      line = line .. "\n" .. nextLine
+      open = shell.incomplete(line)
+    end
+    -- history keeps one line per entry: the block's statements joined by ;
+    if line:find("\n", 1, true) then line = table.concat(shell.statements(line), "; ") end
     shell.addHistory(line)
     shell.interrupted = false
     -- in a window, its title says what runs (a window manager shows it)

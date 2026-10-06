@@ -22,6 +22,8 @@ COMMAND LINES
   a &              run in the background (the whole a && b || c list)
   * ? [abc]        match file names; 'quoted' or \* stays literal
   'single'         everything literal          "double"  $VARS expanded
+  $(cmd)           what cmd prints: unquoted one word per line, in
+                   "double quotes" all of it as one word
   ~                your home directory         # rest    a comment
   dir/  ..         typing a directory changes into it (auto-cd)
 
@@ -41,10 +43,38 @@ FILES
   ~/.byteshell_history   your history (500 lines; a command that starts
                    with a space is not saved)
 
+BLOCKS (as in fish; statements end at ; or a new line)
+  if CMD; ...; else if CMD; ...; else; ...; end
+                   runs the part whose CMD succeeds (status 0)
+  while CMD; ...; end
+                   repeats while CMD succeeds
+  for NAME in WORDS; ...; end
+                   once per word: for F in *.txt; echo $F; end
+  function NAME; ...; end
+                   a new command; $1.. $# $@ are its arguments
+  begin; ...; end  a group of commands
+  break  continue  leave a loop / go on with the next round
+  return [n]       leave a function (or a script) with status n
+  and CMD  or CMD  run CMD only if the last status was 0 / was not 0
+  end > file       after end: < > >> apply to the whole block, e.g.
+                   while read LINE; echo $LINE; end < notes.txt
+  At the prompt an unfinished block asks for more lines; ^D drops it.
+  Ctrl+C stops a loop. Loop variables are UPPERCASE like all variables.
+
 SCRIPTS
-  A text file of command lines. With #!/bin/sh as its first line it runs
-  by name (./script); otherwise use sh script. Inside: $0 the script,
-  $1..$9 its arguments, $# how many, $@ all of them; exit n ends it.
+  A text file of command lines and blocks. With #!/bin/sh as its first
+  line it runs by name (./script); otherwise use sh script. Inside: $0
+  the script, $1..$9 its arguments, $# how many, $@ all of them; exit n
+  or return n ends it. A line ending in \ continues on the next one.
+
+    #!/bin/sh
+    for F in $@
+      if test -f $F
+        echo "$F: $(wc -l < $F) lines"
+      else
+        echo "$F: not a file"
+      end
+    end
 
 BUILT-IN COMMANDS
   cd [dir|-]               change directory; - goes back
@@ -60,6 +90,22 @@ BUILT-IN COMMANDS
   exit [n]                 leave the shell (or a script, with status n)
   logout                   back to the login prompt
   not cmd                  run cmd and invert its status
+  true  false              succeed / fail, nothing else
+  test EXPR  [ EXPR ]      check something; status 0 if true:
+                             -e -f -d -s FILE  exists / file / directory /
+                                               not empty
+                             -z -n STR         empty / not empty
+                             A = B  A != B     strings
+                             A -eq -ne -lt -le -gt -ge B   numbers
+                             ! ( ) -a -o       not, grouping, and, or
+  read [-p P] [-s] NAME... one line into NAME (more names: one word each,
+                           the rest into the last); from a pipe, a file
+                           (end < file) or the keyboard with prompt P;
+                           -s hides the typing; status 1 at the end
+  math EXPR                calculate: + - x / // % ^ ( ), floor ceil abs
+                           sqrt min max; math $I + 1  (x multiplies: an
+                           unquoted * would be a wildcard)
+  functions [-e NAME]      list the functions, or erase one
 
 SEE ALSO
   sh, starshell, ps, kill, man byteos

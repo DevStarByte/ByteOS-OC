@@ -113,17 +113,114 @@ local function clean(path)
   return "/" .. table.concat(parts, "/")
 end
 
--- Root may do anything. Other users may write only below their home, /tmp
--- and /mnt (removable disks), and may not read /etc/shadow. This guards
--- against mistakes and other users; it is no sandbox: a program can still
--- reach the disk through `component` directly.
+-- Every file has an owner, a group and a mode (rwx for owner, group and
+-- others, as on Linux). The disks cannot store them, so only the files
+-- chmod or chown were used on are listed in PERMS ("755 owner group
+-- path" lines); all others get theirs from where they are:
+--   /home/<user>/...   owned by <user>, rw-r--r--
+--   /tmp, /mnt         anyone may read and write
+--   /etc/shadow        root only
+--   everything else    owned by root, rw-r--r--
+-- Root may do anything. A directory listed in PERMS also needs x for
+-- the files inside it. Read (r) and write (w) are checked; x on a file
+-- is shown but not enforced. This guards against mistakes and other
+-- users; it is no sandbox: a program can still reach the disk through
+-- `component` directly.
+local PERMS = "/var/lib/perms"
+local perms                  -- path -> { mode, owner, group }; loaded when first needed
+local groupsOf = {}          -- user -> { group = true }, from /etc/group and /etc/passwd
+
+local function readPrivileged(path)
+  privileged = privileged + 1
+  local ok, data = pcall(function() return kernel.fs.exists(path) and kernel.fs.readAll(path) end)
+  privileged = privileged - 1
+  return ok and data or nil
+end
+
+local function loadPerms()
+  if perms then return perms end
+  perms = {}
+  for line in (readPrivileged(PERMS) or ""):gmatch("[^\r\n]+") do
+    local mode, owner, group, path = line:match("^(%d+) (%S+) (%S+) (.+)$")
+    if mode then perms[path] = { mode = tonumber(mode, 8), owner = owner, group = group } end
+  end
+  return perms
+end
+
+local function savePerms()
+  local paths, lines = {}, {}
+  for p in pairs(perms) do paths[#paths + 1] = p end
+  table.sort(paths)
+  for _, p in ipairs(paths) do
+    local m = perms[p]
+    lines[#lines + 1] = ("%o %s %s %s"):format(m.mode, m.owner, m.group, p)
+  end
+  privileged = privileged + 1
+  local ok, err = pcall(kernel.fs.writeAll, PERMS, #lines > 0 and table.concat(lines, "\n") .. "\n" or "")
+  privileged = privileged - 1
+  if not ok then error(err, 0) end
+end
+
+local function under(p, dir) return p == dir or p:sub(1, #dir + 1) == dir .. "/" end
+
+-- The owner, group and mode of a path that is not listed in PERMS.
+local function defaultMeta(p, isDir)
+  local user = p:match("^/home/([^/]+)")
+  if user then return { owner = user, group = "users", mode = isDir and 493 or 420 } end      -- 755 / 644
+  if under(p, "/tmp") or under(p, "/mnt") then
+    return { owner = "root", group = "root", mode = isDir and 511 or 438 }                   -- 777 / 666
+  end
+  if p == "/etc/shadow" then return { owner = "root", group = "root", mode = 384 } end      -- 600
+  return { owner = "root", group = "root", mode = isDir and 493 or 420 }
+end
+
+local function metaOf(p, isDir) return loadPerms()[p] or defaultMeta(p, isDir) end
+
+-- The groups a user is in: listed as a member in /etc/group, or the
+-- primary group from /etc/passwd. Forgotten whenever either file changes.
+local function inGroup(user, group)
+  local set = groupsOf[user]
+  if not set then
+    set = {}
+    local byGid = {}
+    for line in (readPrivileged("/etc/group") or ""):gmatch("[^\r\n]+") do
+      local name, gid, members = line:match("^([^:]*):[^:]*:([^:]*):(.*)$")
+      if name then
+        byGid[gid] = name
+        for m in members:gmatch("[^,%s]+") do if m == user then set[name] = true end end
+      end
+    end
+    for line in (readPrivileged("/etc/passwd") or ""):gmatch("[^\r\n]+") do
+      local name, gid = line:match("^([^:]*):[^:]*:[^:]*:([^:]*):")
+      if name == user and byGid[gid] then set[byGid[gid]] = true end
+    end
+    groupsOf[user] = set
+  end
+  return set[group] == true
+end
+
+-- May the current user do `bit` (4 read, 2 write, 1 execute) to m?
+local function permits(m, bit)
+  local shift = 0
+  if m.owner == currentUser then shift = 6 elseif inGroup(currentUser, m.group) then shift = 3 end
+  return (m.mode >> shift) & bit ~= 0
+end
+
 local function allowed(path, write)
   if currentUser == "root" or privileged > 0 then return true end
   local p = clean(path)
-  if p == "/etc/shadow" then return false end
-  if not write then return true end
-  local function under(dir) return p == dir or p:sub(1, #dir + 1) == dir .. "/" end
-  return under("/home/" .. currentUser) or under("/tmp") or under("/mnt")
+  -- directories listed in PERMS on the way must let us through (x)
+  local list = loadPerms()
+  local dir = p:match("^(.*)/[^/]*$")
+  while dir and dir ~= "" do
+    if list[dir] and not permits(list[dir], 1) then return false end
+    dir = dir:match("^(.*)/[^/]*$")
+  end
+  if not write then return permits(metaOf(p), 4) end
+  -- an existing file needs w itself, a new one w on its directory
+  if not list[p] and not kernel.fs.exists(p) then p = p:match("^(.*)/[^/]*$") or "/" end
+  if p == "" then p = "/" end
+  return permits(metaOf(p), 2)
 end
 
 -- ============================================================
@@ -132,15 +229,24 @@ end
 local mounts = {}      -- path -> proxy
 kernel.fs = {}
 
+-- Counts every change that can add, remove or replace a file (writing,
+-- removing, renaming, mounting). What the shell remembers about files
+-- (where a command is, a small program's text) is good while it stays.
+local generation = 0
+local function bump() generation = generation + 1 end
+function kernel.fs.generation() return generation end
+
 function kernel.fs.mount(path, proxy)
   if currentUser ~= "root" then return nil, DENIED end
   mounts[path] = proxy
+  bump()
   return true
 end
 
 function kernel.fs.umount(path)
   if currentUser ~= "root" then return nil, DENIED end
   mounts[path] = nil
+  bump()
   return true
 end
 
@@ -155,17 +261,19 @@ local function resolve(path)
   -- Normalize path
   path = path:gsub("\\", "/"):gsub("/+", "/")
   if path:sub(1,1) ~= "/" then path = "/" .. path end
+  -- the longest mount point the path lies under (this runs for every file
+  -- access, so no list is built or sorted)
   local best
-  for _, m in ipairs(kernel.fs.mounts()) do
-    if path == m.path or path:sub(1, #m.path + 1) == m.path .. "/" or m.path == "/" then
-      if not best or #m.path > #best.path then best = m end
+  for mp in pairs(mounts) do
+    if (mp == "/" or path == mp or path:sub(1, #mp + 1) == mp .. "/") and (not best or #mp > #best) then
+      best = mp
     end
   end
   if not best then return nil, "no mount for " .. path end
-  local sub = path:sub(#best.path + 1)
+  local sub = path:sub(#best + 1)
   if sub == "" then sub = "/" end
   if sub:sub(1,1) ~= "/" then sub = "/" .. sub end
-  return best.proxy, sub
+  return mounts[best], sub
 end
 kernel.fs.resolve = resolve
 
@@ -216,13 +324,31 @@ end
 function kernel.fs.makeDirectory(path)
   if not allowed(path, true) then return false, DENIED end
   local p, sub = resolve(path); if not p then return false end
+  bump()
   return p.makeDirectory(sub)
+end
+
+-- Entries in PERMS for path and everything below it move to `to` (or go
+-- away with to = nil) when the files themselves do.
+local function movePerms(path, to)
+  local list, changed = loadPerms(), false
+  for p, m in pairs(list) do
+    if under(p, path) then
+      list[p] = nil
+      if to then list[to .. p:sub(#path + 1)] = m end
+      changed = true
+    end
+  end
+  if changed then savePerms() end
 end
 
 function kernel.fs.remove(path)
   if not allowed(path, true) then return false, DENIED end
   local p, sub = resolve(path); if not p then return false end
-  return p.remove(sub)
+  bump()
+  local ok, err = p.remove(sub)
+  if ok then movePerms(clean(path), nil) end
+  return ok, err
 end
 
 function kernel.fs.rename(from, to)
@@ -230,11 +356,51 @@ function kernel.fs.rename(from, to)
   local pa, sa = resolve(from)
   local pb, sb = resolve(to)
   if not pa or not pb or pa.address ~= pb.address then return false, "cross-device" end
-  return pa.rename(sa, sb)
+  bump()
+  local ok, err = pa.rename(sa, sb)
+  if ok then movePerms(clean(from), clean(to)) end
+  return ok, err
+end
+
+-- { owner, group, mode, listed }: listed when chmod/chown set them.
+function kernel.fs.stat(path)
+  local p = clean(path)
+  local m = metaOf(p, kernel.fs.isDirectory(p))
+  return { owner = m.owner, group = m.group, mode = m.mode, listed = loadPerms()[p] ~= nil }
+end
+
+-- chmod: root or the owner may change a file's mode (a number, 0-4095).
+function kernel.fs.chmod(path, mode)
+  local p = clean(path)
+  if not kernel.fs.exists(p) then return nil, "no such file" end
+  local m = metaOf(p, kernel.fs.isDirectory(p))
+  if currentUser ~= "root" and m.owner ~= currentUser then return nil, DENIED end
+  loadPerms()[p] = { owner = m.owner, group = m.group, mode = mode & 4095 }
+  savePerms()
+  return true
+end
+
+-- chown: only root may give a file to another owner and/or group.
+function kernel.fs.chown(path, owner, group)
+  local p = clean(path)
+  if currentUser ~= "root" then return nil, DENIED end
+  if not kernel.fs.exists(p) then return nil, "no such file" end
+  local m = metaOf(p, kernel.fs.isDirectory(p))
+  loadPerms()[p] = { owner = owner or m.owner, group = group or m.group, mode = m.mode }
+  savePerms()
+  return true
 end
 
 function kernel.fs.open(path, mode)
-  if not allowed(path, (mode or "r"):find("[wa]") ~= nil) then return nil, DENIED end
+  local writing = (mode or "r"):find("[wa]") ~= nil
+  if not allowed(path, writing) then return nil, DENIED end
+  if writing then
+    local c = clean(path)
+    -- someone edits the account files or PERMS by hand: read them again
+    if c == "/etc/group" or c == "/etc/passwd" then groupsOf = {} end
+    if c == PERMS and privileged == 0 then perms = nil end
+    bump()
+  end
   local p, sub = resolve(path); if not p then return nil, "not found" end
   local h, err = p.open(sub, mode or "r")
   if not h then return nil, err end
@@ -243,14 +409,26 @@ function kernel.fs.open(path, mode)
   function file:write(d) return p.write(h, d) end
   function file:seek(w, o) return p.seek(h, w or "set", o or 0) end
   function file:close() return p.close(h) end
+  -- one line at a time, read from the disk in large pieces (each read is a
+  -- component call, so never one character at a time)
   function file:lines()
+    local buf, pos, eof = "", 1, false
     return function()
-      local buf = ""
       while true do
-        local c = p.read(h, 1)
-        if not c then if #buf > 0 then return buf end return nil end
-        if c == "\n" then return buf end
-        buf = buf .. c
+        local e = buf:find("\n", pos, true)
+        if e then
+          local line = buf:sub(pos, e - 1)
+          pos = e + 1
+          return line
+        end
+        if eof then
+          if pos > #buf then return nil end
+          local line = buf:sub(pos)
+          pos = #buf + 1
+          return line
+        end
+        local chunk = p.read(h, math.huge)
+        if chunk then buf = buf:sub(pos) .. chunk; pos = 1 else eof = true end
       end
     end
   end
@@ -259,13 +437,13 @@ end
 
 function kernel.fs.readAll(path)
   local f, err = kernel.fs.open(path, "r"); if not f then return nil, err end
-  local data = ""
+  local parts = {}
   while true do
     local c = f:read(math.huge); if not c then break end
-    data = data .. c
+    parts[#parts + 1] = c
   end
   f:close()
-  return data
+  return table.concat(parts)
 end
 
 function kernel.fs.writeAll(path, data)
@@ -278,7 +456,7 @@ kernel.fs.mount("/", _G.bootfs)
 -- Auto-mount additional filesystems at /mnt/<addr8>, also the ones
 -- inserted later (a floppy); a removed disk is unmounted.
 local function automount(addr)
-  if addr ~= _G.bootfs.address then mounts["/mnt/" .. addr:sub(1, 8)] = component.proxy(addr) end
+  if addr ~= _G.bootfs.address then mounts["/mnt/" .. addr:sub(1, 8)] = component.proxy(addr); bump() end
 end
 for addr in component.list("filesystem") do automount(addr) end
 kernel.event.listen("component_added", function(_, addr, kind)
@@ -287,7 +465,7 @@ end)
 kernel.event.listen("component_removed", function(_, addr, kind)
   if kind ~= "filesystem" then return end
   for path, proxy in pairs(mounts) do
-    if proxy.address == addr and path ~= "/" then mounts[path] = nil end
+    if proxy.address == addr and path ~= "/" then mounts[path] = nil; bump() end
   end
 end)
 

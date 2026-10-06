@@ -20,7 +20,9 @@
       name = hello
       version = 1.0.0-1           pkgver-pkgrel, see bpk.vercmp
       desc = a friendly greeter
+      group = fun                 (list) pacman -S fun installs every member
       depend = lolcat             (list)
+      optdepend = cowsay: talks   (list) suggested, shown after installing
       conflict = oldhello         (list)
       backup = /etc/hello.conf    (list) config files: user edits survive
       isize = 196                 installed size in bytes
@@ -38,7 +40,12 @@
 
   ---- Package source (built by makepkg / tools/mkrepo.lua) -------------------
       <dir>/PKGBUILD.lua          return { name, version, rel, desc, url,
-                                           depends, conflicts, backup, install }
+                                           depends, optdepends, conflicts,
+                                           backup, groups, install }
+                                  optdepends: "name: what it adds"; groups:
+                                  pacman -S <group> installs all members.
+                                  Without files/, a package with depends
+                                  is a meta package (nothing of its own).
       <dir>/<install>             optional hooks, e.g. hello.install:
                                     function post_install(version) end
                                     function post_upgrade(new, old) end
@@ -119,12 +126,12 @@ function bpk.vercmp(a, b)
 end
 
 -- ---- Package info ----------------------------------------------------------
-local LISTS  = { depend = true, conflict = true, backup = true }
-local FIELDS = { "name", "version", "desc", "url", "depend", "conflict", "backup",
+local LISTS  = { depend = true, optdepend = true, conflict = true, backup = true, group = true }
+local FIELDS = { "name", "version", "desc", "url", "group", "depend", "optdepend", "conflict", "backup",
                  "isize", "reason", "filename", "csize", "crc32", "sha256" }
 
 function bpk.parseInfo(text)
-  local info = { depend = {}, conflict = {}, backup = {} }
+  local info = { depend = {}, optdepend = {}, conflict = {}, backup = {}, group = {} }
   for line in (text or ""):gmatch("[^\r\n]+") do
     local key, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
     if key and LISTS[key] then
@@ -322,7 +329,18 @@ function bpk.build(dir, fsx)
     name = t.name, version = t.version .. "-" .. math.floor(rel),
     desc = t.desc or "", url = t.url,
     depend = t.depends or {}, conflict = t.conflicts or {}, backup = t.backup or {},
+    optdepend = t.optdepends or {}, group = t.groups or {},
   }
+  for _, g in ipairs(info.group) do
+    if type(g) ~= "string" or not g:match("^[%w][%w%-_.+]*$") then return nil, "PKGBUILD: bad group name" end
+  end
+  for _, o in ipairs(info.optdepend) do
+    if type(o) ~= "string" or not o:match("^[%w][%w%-_.+]*:?") then
+      return nil, "PKGBUILD: optdepends are \"name: what it adds\""
+    end
+  end
+  -- a meta package (only dependencies, e.g. a group of programs) needs no files
+  local meta = #info.depend > 0 and not fsx.isDirectory(dir .. "/files")
 
   -- collect files/ recursively
   local files, paths = {}, {}
@@ -344,10 +362,12 @@ function bpk.build(dir, fsx)
       end
     end
   end
-  if not fsx.isDirectory(dir .. "/files") then return nil, dir .. "/files/ not found" end
-  local okw, werr = pcall(walk, dir .. "/files", "")
-  if not okw then return nil, werr end
-  if #paths == 0 then return nil, "package has no files" end
+  if not meta then
+    if not fsx.isDirectory(dir .. "/files") then return nil, dir .. "/files/ not found" end
+    local okw, werr = pcall(walk, dir .. "/files", "")
+    if not okw then return nil, werr end
+    if #paths == 0 then return nil, "package has no files" end
+  end
   table.sort(paths)
 
   local isize = 0

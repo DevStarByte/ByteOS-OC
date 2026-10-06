@@ -2,7 +2,7 @@
   /lib/setup.lua - the first-boot setup wizard
 
   /sbin/init runs setup.run() when /etc/.installed is missing: a
-  full-screen dialog for hostname, time zone, root password and a user,
+  full-screen dialog for hostname, time zone, root password and users,
   which writes /etc/hostname, /etc/timezone, /etc/passwd, /etc/shadow,
   /etc/group and the /etc/.installed marker. It lives here rather than in
   init so it takes memory only on that first boot.
@@ -400,9 +400,7 @@ function setup.run()
     hostname = "ByteOS",
     timezone = "UTC",
     rootpw   = nil,
-    user     = nil,
-    userpw   = nil,
-    wheel    = true,
+    users    = {},   -- { name, pw, wheel }, in the order they were added
   }
 
   -- Welcome: logo + intro, sized to the screen
@@ -453,29 +451,83 @@ function setup.run()
     if v then cfg.rootpw = v end
   end
 
-  local function setUser()
-    local items = {
-      { label = "Create a regular user account", value = "create" },
-      { label = "Skip (root only)",              value = "skip"   },
-    }
-    local r = menuBox("User account", items, nil, nil, "Settings")
-    if not r then return end
-    if r.value == "skip" then
-      cfg.user, cfg.userpw, cfg.wheel = nil, nil, false
-      return
-    end
+  local function findUser(name)
+    for i, u in ipairs(cfg.users) do if u.name == name then return u, i end end
+  end
+
+  -- Ask for a new user's name, password and sudo; nil if cancelled.
+  local function newUser()
     local name, note
     while true do
-      name = inputBox("User account", "Username:", name or cfg.user or "user", false, note, "Settings")
+      name = inputBox("Add a user", "Username:", name or (#cfg.users == 0 and "user" or ""), false, note, "Settings")
       if not name then return end
-      if name:match("^[%w_][%w_-]*$") and name ~= "root" then break end
-      note = name == "root" and "That name is reserved." or "Use letters, digits, - and _."
+      if name == "root" then note = "That name is reserved."
+      elseif findUser(name) then note = "'" .. name .. "' is already on the list."
+      elseif name:match("^[%w_][%w_-]*$") then break
+      else note = "Use letters, digits, - and _." end
     end
-    local pw = passwordBox("User account", "Password for " .. name .. ":", "Settings")
+    local pw = passwordBox("Add a user", "Password for " .. name .. ":", "Settings")
     if not pw then return end
-    local wheel = confirmBox("User account",
+    local wheel = confirmBox("Add a user",
       "Allow '" .. name .. "' to use sudo?\n(adds the user to the wheel group)", true, "Settings")
-    cfg.user, cfg.userpw, cfg.wheel = name, pw, wheel
+    return { name = name, pw = pw, wheel = wheel }
+  end
+
+  -- One user: new password, sudo on/off, or remove.
+  local function editUser(u)
+    while true do
+      local r = menuBox("User " .. u.name, {
+        { label = "Change password", key = "pw" },
+        { label = "Allowed to use sudo", right = u.wheel and "yes" or "no", key = "sudo" },
+        { label = "Remove this user", key = "rm" },
+        { sep = true },
+        { label = "Back", key = "back" },
+      }, nil, nil, "Settings")
+      if not r or r.key == "back" then return end
+      if r.key == "pw" then
+        u.pw = passwordBox("User " .. u.name, "New password for " .. u.name .. ":", "Settings") or u.pw
+      elseif r.key == "sudo" then
+        u.wheel = not u.wheel
+      elseif r.key == "rm" then
+        if confirmBox("Remove user", "Remove '" .. u.name .. "' from the list?", false, "Settings") then
+          table.remove(cfg.users, select(2, findUser(u.name)))
+          return
+        end
+      end
+    end
+  end
+
+  -- The list of user accounts: pick one to change it, or add another.
+  local function setUsers()
+    local last = 1
+    while true do
+      local items = {}
+      for _, u in ipairs(cfg.users) do
+        items[#items + 1] = { label = u.name, right = u.wheel and "sudo" or "", mark = "ok", user = u }
+      end
+      if #items > 0 then items[#items + 1] = { sep = true } end
+      items[#items + 1] = { label = "Add a user", key = "add" }
+      items[#items + 1] = { label = "Done", key = "done" }
+      local r, idx = menuBox("User accounts", items, nil, last, "Settings")
+      last = idx or last
+      if not r or r.key == "done" then return end
+      if r.key == "add" then
+        local u = newUser()
+        if u then cfg.users[#cfg.users + 1] = u end
+      else
+        editUser(r.user)
+      end
+    end
+  end
+
+  -- "alice (sudo), bob" for the overview, or a count when it gets long
+  local function usersSummary()
+    if #cfg.users == 0 then return "root only" end
+    local names = {}
+    for _, u in ipairs(cfg.users) do names[#names + 1] = u.name .. (u.wheel and " (sudo)" or "") end
+    local s = table.concat(names, ", ")
+    if ulen(s) > 24 then s = #cfg.users .. " users" end
+    return s
   end
 
   -- Main overview menu
@@ -486,8 +538,7 @@ function setup.run()
       { label = "Timezone",        right = cfg.timezone, mark = "ok", key = "tz"   },
       { label = "Root password",   right = cfg.rootpw and "set" or "required",
         mark = cfg.rootpw and "ok" or "todo", key = "root" },
-      { label = "User account",    right = cfg.user and (cfg.user .. (cfg.wheel and " (sudo)" or "")) or "root only",
-        mark = "ok", key = "user" },
+      { label = "User accounts",   right = usersSummary(), mark = "ok", key = "user" },
       { sep = true },
       { label = "Install ByteOS",    key = "go"    },
       { label = "Abort and reboot",  key = "abort" },
@@ -503,7 +554,7 @@ function setup.run()
     elseif pick.key == "host" then setHostname()
     elseif pick.key == "tz"   then pickTimezone()
     elseif pick.key == "root" then setRootPw()
-    elseif pick.key == "user" then setUser()
+    elseif pick.key == "user" then setUsers()
     elseif pick.key == "go" then
       if not cfg.rootpw then
         pressEnter("Missing setting",
@@ -547,16 +598,13 @@ function setup.run()
         local passwd = { "root:x:0:0:root:/home/root:/bin/sh" }
         local hash = require("auth").hash
         local shadow = { "root:" .. hash(cfg.rootpw) .. ":::::::" }
-        local group  = {
-          "root:x:0:root",
-          "wheel:x:10:" .. ((cfg.user and cfg.wheel) and cfg.user or ""),
-          "users:x:100:",
-        }
-        if cfg.user then
+        local wheel = {}
+        for i, u in ipairs(cfg.users) do
+          if u.wheel then wheel[#wheel + 1] = u.name end
           table.insert(passwd,
-            ("%s:x:1000:100:%s:/home/%s:/bin/sh"):format(cfg.user, cfg.user, cfg.user))
-          table.insert(shadow, ("%s:%s:::::::"):format(cfg.user, hash(cfg.userpw)))
-          local home = "/home/" .. cfg.user
+            ("%s:x:%d:100:%s:/home/%s:/bin/sh"):format(u.name, 999 + i, u.name, u.name))
+          table.insert(shadow, ("%s:%s:::::::"):format(u.name, hash(u.pw)))
+          local home = "/home/" .. u.name
           if not fs.exists(home) then fs.makeDirectory(home) end
           -- like /etc/skel on Linux: the new user starts with the default dotfiles
           for _, f in ipairs({ ".shrc", ".profile" }) do
@@ -565,6 +613,7 @@ function setup.run()
             end
           end
         end
+        local group = { "root:x:0:root", "wheel:x:10:" .. table.concat(wheel, ","), "users:x:100:" }
         fs.writeAll("/etc/passwd", table.concat(passwd, "\n") .. "\n")
         fs.writeAll("/etc/shadow", table.concat(shadow, "\n") .. "\n")
         fs.writeAll("/etc/group",  table.concat(group,  "\n") .. "\n")
@@ -579,12 +628,14 @@ function setup.run()
 
   _G.HOSTNAME = hn
 
+  local names = { "root" }
+  for _, u in ipairs(cfg.users) do names[#names + 1] = u.name end
   pressEnter("Installation complete",
     {
       { "✓ ByteOS has been installed.", COL.ok },
       "",
       { "Hostname  " .. hn, COL.fg },
-      { "Users     root" .. (cfg.user and (", " .. cfg.user) or ""), COL.fg },
+      { "Users     " .. table.concat(names, ", "), COL.fg },
       "",
       { "Continue to the login prompt.", COL.dim },
     }, "Done")
