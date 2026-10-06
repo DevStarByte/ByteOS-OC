@@ -334,15 +334,18 @@ end
 -- Entries in PERMS for path and everything below it move to `to` (or go
 -- away with to = nil) when the files themselves do.
 local function movePerms(path, to)
-  local list, changed = loadPerms(), false
-  for p, m in pairs(list) do
-    if under(p, path) then
-      list[p] = nil
-      if to then list[to .. p:sub(#path + 1)] = m end
-      changed = true
-    end
+  local list, moving = loadPerms(), {}
+  -- collect first: adding keys to a table while pairs() walks it is undefined
+  for p in pairs(list) do
+    if under(p, path) then moving[#moving + 1] = p end
   end
-  if changed then savePerms() end
+  if #moving == 0 then return end
+  local entries = {}
+  for i, p in ipairs(moving) do entries[i] = list[p]; list[p] = nil end
+  if to then
+    for i, p in ipairs(moving) do list[to .. p:sub(#path + 1)] = entries[i] end
+  end
+  savePerms()
 end
 
 function kernel.fs.remove(path)

@@ -1,9 +1,8 @@
 NAME="ByteOS"
-PRETTY_NAME="ByteOS 1.16.1 (Iron)"
+PRETTY_NAME="ByteOS 1.16.2"
 ID=byteos
 ID_LIKE=arch
-VERSION_ID=1.16.1
-VERSION_CODENAME=Iron
+VERSION_ID=1.16.2
 BUILD_ID=rolling
 ANSI_COLOR="38;2;85;170;255"
 HOME_URL="https://byteos.local/"

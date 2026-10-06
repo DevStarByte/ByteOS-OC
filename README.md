@@ -217,7 +217,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.15.0 (Iron) lua54 GNU/ByteOS
+ByteOS byteos 1.16.2 lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -356,7 +356,7 @@ magenta.
 root@byteos ~# ls /bin | grep pac            # | feeds one command into the next
 root@byteos ~# cat /etc/os-release | head -n 2
 root@byteos ~# pacman -Q > installed.txt     # > write a file, >> append to it
-root@byteos ~# grep -c Iron < /etc/os-release
+root@byteos ~# grep -c ByteOS < /etc/os-release
 root@byteos ~# ls /bin/s*.lua                # * ? [abc] match file names
 root@byteos ~# echo '*'                      # quoted: no matching
 ```

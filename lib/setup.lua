@@ -92,7 +92,7 @@ end
 local function topBanner(step)
   fill(1, 1, W, 1, " ", COL.title_fg, COL.title_bg)
   text(2, 1, "ByteOS Setup", COL.title_fg, COL.title_bg)
-  local right = step or (_G._OSVERSION .. " (" .. _G._OSCODENAME .. ")")
+  local right = step or _G._OSVERSION
   if ulen(right) + 16 < W then
     text(W - ulen(right), 1, right, COL.title_fg, COL.title_bg)
   end

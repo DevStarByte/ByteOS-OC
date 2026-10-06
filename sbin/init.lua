@@ -96,7 +96,7 @@ end
 local function expandIssue(s)
   local map = {
     s = "ByteOS", r = (_G._OSVERSION or ""):match("[%d%.]+") or "", n = hostname,
-    l = "tty1", m = "lua", o = _G._OSCODENAME or "",
+    l = "tty1", m = "lua",
   }
   return (s:gsub("\\(%a)", function(c) return map[c] or ("\\" .. c) end))
 end

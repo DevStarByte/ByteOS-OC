@@ -7,7 +7,6 @@
 -- The version lives in /etc/os-release only; it is read below once the
 -- boot disk is known.
 _G._OSVERSION   = "ByteOS"
-_G._OSCODENAME  = "Iron"
 _G._BOOTADDRESS = (computer.getBootAddress and computer.getBootAddress()) or nil
 
 local component = component
@@ -40,9 +39,7 @@ do
     local text = boot.read(h, math.huge) or ""
     boot.close(h)
     local ver = text:match("VERSION_ID=\"?([^\"\r\n]+)")
-    local code = text:match("VERSION_CODENAME=\"?([^\"\r\n]+)")
     if ver then _G._OSVERSION = "ByteOS " .. ver end
-    if code then _G._OSCODENAME = code end
   end
 end
 
@@ -98,7 +95,7 @@ function _G.kstatus(parts)
   end
 end
 
-kprint(_G._OSVERSION .. " (" .. _G._OSCODENAME .. ")", 0x1793D1)
+kprint(_G._OSVERSION, 0x1793D1)
 kprint("booting from " .. boot.address:sub(1, 8) .. "...")
 
 -- Read a file from the boot filesystem

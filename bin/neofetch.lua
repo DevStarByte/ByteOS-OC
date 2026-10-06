@@ -73,7 +73,7 @@ local user, host = _G.USER or "root", _G.HOSTNAME or "byteos"
 local info = {
   { nil, user .. "@" .. host },
   { nil, string.rep("-", term.ulen(user .. "@" .. host)) },
-  { "OS",       (_G._OSVERSION or "ByteOS") .. " (" .. (_G._OSCODENAME or "") .. ")" },
+  { "OS",       _G._OSVERSION or "ByteOS" },
   { "Host",     "OpenComputers " .. computer.address():sub(1, 8) },
   { "Kernel",   "bytekernel " .. ((_G._OSVERSION or ""):match("[%d%.]+") or "?") },
   { "Uptime",   uptime() },

@@ -146,7 +146,6 @@ do
   local text = f and f:read("a") or ""
   if f then f:close() end
   _G._OSVERSION = "ByteOS " .. (text:match('VERSION_ID="?([^"\r\n]+)') or "?")
-  _G._OSCODENAME = text:match('VERSION_CODENAME="?([^"\r\n]+)') or "Iron"
 end
 
 assert(loadfile(ROOT .. "/boot/kernel.lua", "t", _G))()
