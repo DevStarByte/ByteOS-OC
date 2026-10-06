@@ -88,6 +88,11 @@
 /lib/internet.lua
 /lib/lineedit.lua
 /lib/net.lua
+/lib/pacman/install.lua
+/lib/pacman/query.lua
+/lib/pacman/remove.lua
+/lib/pacman/sync.lua
+/lib/pacman/upgrade.lua
 /lib/setup.lua
 /lib/sha256.lua
 /lib/shell.lua

@@ -104,6 +104,8 @@ end
 
 local start
 
+local start -- below; a restart calls it before it is defined
+
 local function exited(name, unit, p)
   local st = state[name]
   if not st or st.pid ~= p.pid then return end
@@ -130,7 +132,7 @@ local function exited(name, unit, p)
 end
 
 -- Start a service; returns true or nil, reason.
-function start(name, isRestart)
+start = function(name, isRestart)
   local unit, err = systemd.load(name)
   if not unit then return nil, err end
   local st = state[name] or { restarts = 0 }

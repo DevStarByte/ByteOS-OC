@@ -27,7 +27,7 @@ test("time zones and DST switches match the PC's tz data", function()
     for _, d in ipairs({ -3601, -1, 0, 1, 3599, 86400 }) do probes[#probes + 1] = t + d end
   end
   for _, zone in ipairs(clock.zones()) do
-    put("/etc/timezone", zone .. "\n")
+    put("/etc/timezone", zone .. "\n"); clock.forgetZone()
     for _, t in ipairs(probes) do
       local mine = clock.date("%Y-%m-%d %H:%M:%S %z", t)
       eq(mine, hostDate(zone, t, "%Y-%m-%d %H:%M:%S %z"), zone .. " at " .. t)
@@ -36,7 +36,7 @@ test("time zones and DST switches match the PC's tz data", function()
 end)
 
 test("formats like os.date", function()
-  put("/etc/timezone", "Europe/Berlin\n")
+  put("/etc/timezone", "Europe/Berlin\n"); clock.forgetZone()
   local t = 1791030896 -- Sat Oct 3 2026, 14:34:56 CEST
   eq(clock.date("%a %A %b %B %d %e %j %y %I %p %Z %F %T %%", t),
      hostDate("Europe/Berlin", t, "%a %A %b %B %d %e %j %y %I %p %Z %F %T %%"))
@@ -44,7 +44,7 @@ test("formats like os.date", function()
 end)
 
 test("unknown zone falls back to UTC; no sync means world time", function()
-  put("/etc/timezone", "Mars/Olympus\n")
+  put("/etc/timezone", "Mars/Olympus\n"); clock.forgetZone()
   eq(clock.zone(0), "UTC")
   local _, real = clock.now()
   eq(real, false)
@@ -53,7 +53,7 @@ end)
 
 test("date, timedatectl and timesyncd", function()
   users()
-  put("/etc/timezone", "UTC\n")
+  put("/etc/timezone", "UTC\n"); clock.forgetZone()
   has(run("date"), "world", "no sync yet: world time")
   has(run("timedatectl"), "System clock synchronized: no")
   has(run("timedatectl set-timezone Mars/Olympus"), "unknown time zone")
@@ -64,4 +64,13 @@ test("date, timedatectl and timesyncd", function()
   has(run("timedatectl sync"), "no internet card")
   ok(file("/etc/systemd/system/timesyncd.service"), "unit shipped")
   has(file("/etc/systemd/enabled"), "timesyncd\n", "enabled by default")
+end)
+
+test("the time zone is read once a minute, timedatectl applies it at once", function()
+  put("/etc/timezone", "UTC\n"); clock.forgetZone()
+  eq(clock.zone(0), "UTC")
+  put("/etc/timezone", "Asia/Tokyo\n")
+  eq(clock.zone(0), "UTC", "a hand edit waits for the next minute")
+  run("timedatectl set-timezone Europe/Berlin")
+  eq(clock.zone(0), "Europe/Berlin", "timedatectl takes effect right away")
 end)

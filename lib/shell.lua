@@ -687,7 +687,12 @@ local function makeStdin(text)
       return table.concat(lines)
     end
     if pos > #text then return nil end
-    if all then local r = text:sub(pos); pos = #text + 1; return r end
+    if all then
+      -- the whole input as it is: no copy (it can be large)
+      local r = pos == 1 and text or text:sub(pos)
+      pos = #text + 1
+      return r
+    end
     local e = text:find("\n", pos, true) or #text + 1
     local l = text:sub(pos, e - 1)
     pos = e + 1
@@ -944,7 +949,7 @@ function shell.pipeline(line)
       if not writeOut(st.out, st.append, table.concat(buf)) then return 1 end
       input = ""
     elseif not last then
-      input = table.concat(buf)
+      input = #buf == 1 and buf[1] or table.concat(buf) -- one piece: no copy
     end
   end
   return rc

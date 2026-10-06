@@ -104,12 +104,20 @@ function clock.zones()
   return out
 end
 
+-- /etc/timezone is read at most once a minute: every log line asks for
+-- the time, and each read is a disk access. timedatectl calls
+-- clock.forgetZone() after changing it.
+local zoneCache, zoneRead
 local function zoneName()
+  local now = computer.uptime()
+  if zoneCache and now - zoneRead < 60 then return zoneCache end
   local fs = rawget(_G, "kernel") and kernel.fs
   local text = fs and fs.readAll("/etc/timezone") or ""
   local name = text:match("^%s*(%S+)")
-  return ZONES[name] and name or "UTC"
+  zoneCache, zoneRead = ZONES[name] and name or "UTC", now
+  return zoneCache
 end
+function clock.forgetZone() zoneCache = nil end
 
 -- name, offset (seconds) and abbreviation at UTC time t
 function clock.zone(t)

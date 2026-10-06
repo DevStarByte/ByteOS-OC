@@ -147,7 +147,10 @@ local function loadPerms()
   return perms
 end
 
+local batching, unsaved = 0, false   -- see kernel.fs.permsBatch
+
 local function savePerms()
+  if batching > 0 then unsaved = true; return end
   local paths, lines = {}, {}
   for p in pairs(perms) do paths[#paths + 1] = p end
   table.sort(paths)
@@ -380,6 +383,17 @@ function kernel.fs.chmod(path, mode)
   return true
 end
 
+-- Run fn (chmod -R over many files) writing PERMS once at the end instead
+-- of after every file.
+function kernel.fs.permsBatch(fn, ...)
+  batching = batching + 1
+  local res = table.pack(pcall(fn, ...))
+  batching = batching - 1
+  if batching == 0 and unsaved then unsaved = false; savePerms() end
+  if not res[1] then error(res[2], 0) end
+  return table.unpack(res, 2, res.n)
+end
+
 -- chown: only root may give a file to another owner and/or group.
 function kernel.fs.chown(path, owner, group)
   local p = clean(path)
@@ -443,6 +457,7 @@ function kernel.fs.readAll(path)
     parts[#parts + 1] = c
   end
   f:close()
+  if #parts == 1 then return parts[1] end -- no copy of a file read in one piece
   return table.concat(parts)
 end
 

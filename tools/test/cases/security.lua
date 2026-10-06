@@ -132,3 +132,17 @@ test("chown: shared directories for a group; entries follow mv and rm", function
   run("chown -R bob /home/alice/private")
   eq(kernel.fs.stat("/home/alice/private/s").owner, "bob")
 end)
+
+test("chmod -R writes /var/lib/perms once, not once per file", function()
+  run("mkdir /srv; mkdir /srv/many; for I in $(seq 8); echo x > /srv/many/f$I; end")
+  local writes = 0
+  local open = kernel.fs.open
+  kernel.fs.open = function(p, m)
+    if p == "/var/lib/perms" and m == "w" then writes = writes + 1 end
+    return open(p, m)
+  end
+  run("chmod -R 700 /srv/many")
+  kernel.fs.open = open
+  eq(writes, 1)
+  eq(kernel.fs.stat("/srv/many/f8").mode, tonumber("700", 8))
+end)

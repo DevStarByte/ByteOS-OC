@@ -40,5 +40,8 @@ local function change(path, shown)
     end
   end
 end
-for _, f in ipairs(files) do change(shell.normalize(f), f) end
+-- PERMS is written once, after all the files
+fs.permsBatch(function()
+  for _, f in ipairs(files) do change(shell.normalize(f), f) end
+end)
 return rc

@@ -22,8 +22,10 @@ for _, f in ipairs(files) do
   if f == "-" then text = stdin.read("a") or ""
   else text, err = k.fs.readAll(shell.normalize(f)) end
   if not text then term.write("wc: " .. f .. ": " .. tostring(err or "no such file") .. "\n"); return 1 end
-  local l = select(2, text:gsub("\n", ""))
-  local w = select(2, text:gsub("%S+", ""))
+  -- counted without gsub, which would build a copy of the text
+  local l, w = 0, 0
+  for _ in text:gmatch("\n") do l = l + 1 end
+  for _ in text:gmatch("%S+") do w = w + 1 end
   show(l, w, #text, not useStdin and f or nil)
   total[1], total[2], total[3] = total[1] + l, total[2] + w, total[3] + #text
 end

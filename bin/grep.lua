@@ -35,7 +35,12 @@ for _, f in ipairs(files) do
     if not text then term.write("grep: " .. f .. ": " .. tostring(err or "no such file") .. "\n"); return 2 end
   end
   local count, n = 0, 0
-  for line in (text:gsub("\n$", "") .. "\n"):gmatch("([^\n]*)\n") do
+  -- line by line through the text itself (no copy of it: it can be large)
+  local pos, len = 1, #text
+  while pos <= len do
+    local e = text:find("\n", pos, true) or len + 1
+    local line = text:sub(pos, e - 1)
+    pos = e + 1
     n = n + 1
     local hay = opt.i and line:lower() or line
     local hit = hay:find(pattern, 1, opt.F) ~= nil

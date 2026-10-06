@@ -40,6 +40,7 @@ elseif cmd == "set-timezone" then
   if not known then term.write("timedatectl: unknown time zone '" .. tostring(zone) .. "' (see list-timezones)\n"); return 1 end
   local ok, err = fs.writeAll("/etc/timezone", zone .. "\n")
   if not ok then term.write("timedatectl: " .. tostring(err) .. "\n"); return 1 end
+  clock.forgetZone()
   return 0
 elseif cmd == "sync" then
   if k.user() ~= "root" then term.write("timedatectl: you need to be root (try sudo)\n"); return 1 end

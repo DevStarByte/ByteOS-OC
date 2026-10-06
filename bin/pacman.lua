@@ -37,10 +37,44 @@
     /var/lib/pacman/local/<name>/install  the package's hooks, if any
 ]]--
 
+-- Libraries pacman loads only for itself are let go when it ends, so they
+-- do not stay in memory for the rest of the session.
+local TRANSIENT = { "bpk", "sha256", "bytebios", "compress", "internet", "sysupgrade" }
+local hadLib = {}
+for _, n in ipairs(TRANSIENT) do hadLib[n] = package.loaded[n] ~= nil end
+
 local fs   = k.fs
 local args = arg or {}
 local bpk  = require("bpk")
-local sha256 = require("sha256")
+
+-- Most of pacman lives in /lib/pacman/<part>.lua: a query never compiles
+-- the code for installing, and the other way round. A part is loaded into
+-- this run (with this program's term, stdin, ...) the first time one of
+-- its functions is used, and goes away with the run. P holds what the
+-- parts share: the functions below, and each part's own.
+local P = {}
+local PARTS = {
+  sync = { "download", "b64decode", "verifySignature", "pinServer", "checkSignature", "syncRepo", "sync" },
+  install = { "resolve", "noBreaks", "confirmPackages", "pkgConflicts", "noConflicts", "findConflicts", "extract",
+              "commit", "names", "sizes", "expandGroups", "showOptional", "install", "installFiles" },
+  upgrade = { "baseRepo", "checkBase", "upgradeBase", "upgrade", "rollback" },
+  remove = { "held", "removePackage", "requiredBy", "remove" },
+  query = { "queryAll", "row", "queryFiltered", "setReason", "optionalRows", "syncInfo", "queryGroups",
+            "queryInfo", "queryFiles", "queryOwner", "cleanCache", "search" },
+}
+local partOf = {}
+for part, list in pairs(PARTS) do for _, name in ipairs(list) do partOf[name] = part end end
+local partEnv = setmetatable({ P = P }, { __index = _ENV })
+setmetatable(P, { __index = function(_, name)
+  local part = partOf[name]
+  if not part then return nil end
+  for _, n in ipairs(PARTS[part]) do partOf[n] = nil end -- each part loads once
+  local path = "/lib/pacman/" .. part .. ".lua"
+  local src, e = fs.readAll(path)
+  if not src then error("pacman: cannot read " .. path .. ": " .. tostring(e), 0) end
+  assert(load(src, "=" .. path, "t", partEnv))()
+  return rawget(P, name)
+end })
 
 local CONF_PATH = "/etc/pacman.conf"
 local LOCAL_DIR = "/var/lib/pacman/local"
@@ -134,41 +168,6 @@ local function repoNames()
   return names, repos
 end
 
--- Copy <server>/<name> into the file `dest`. A server is a URL (through the
--- internet card) or a directory. Returns size, crc32 or nil, reason.
-local function download(server, name, dest, onBytes)
-  local src = server .. "/" .. name
-  local out = fs.open(dest, "w")
-  if not out then return nil, "cannot write " .. dest end
-  local size, crc = 0, 0
-  local function sink(c)
-    out:write(c)
-    size = size + #c
-    crc = bpk.crc32(c, crc)
-    if onBytes then onBytes(size) end
-  end
-  local ok, e
-  if src:match("^https?://") then
-    local internet = require("internet")
-    if internet.available() then ok, e = internet.get(src, sink)
-    else ok, e = nil, "no internet card" end
-  elseif fs.exists(src) then
-    local h = fs.open(src, "r")
-    while true do
-      local c = h:read(4096)
-      if not c then break end
-      sink(c)
-    end
-    h:close()
-    ok = true
-  else
-    ok, e = nil, "not found"
-  end
-  out:close()
-  if not ok then fs.remove(dest); return nil, tostring(e) .. " (" .. src .. ")" end
-  return size, crc
-end
-
 -- ---- Signatures ------------------------------------------------------------
 -- A repo's database may be signed (<repo>.db.sig, ECDSA P-256 + SHA-256 by
 -- tools/mkrepo.lua). Checking needs a tier 3 data card; SigLevel in
@@ -176,118 +175,7 @@ end
 --   Never     signatures are not looked at
 --   Optional  checked when a data card is there; unsigned databases pass
 --   Required  only correctly signed databases are used
-local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-local function b64decode(s)
-  local map = {}
-  for i = 1, 64 do map[B64:sub(i, i)] = i - 1 end
-  local out, bits, n = {}, 0, 0
-  for c in s:gsub("[^%w%+/]", ""):gmatch(".") do
-    bits, n = (bits << 6) | map[c], n + 6
-    if n >= 8 then
-      n = n - 8
-      out[#out + 1] = string.char((bits >> n) & 0xFF)
-      bits = bits & ((1 << n) - 1)
-    end
-  end
-  return table.concat(out)
-end
-
--- true, or nil and "nocard" or a reason the signature does not hold
-local function verifySignature(data, sig, keyPath)
-  local addr = component.list("data")()
-  local dc = addr and component.proxy(addr)
-  if not (dc and dc.ecdsa and dc.deserializeKey) then return nil, "nocard" end
-  local pub = readIf(keyPath)
-  if not pub then return nil, "no trusted key at " .. keyPath end
-  local okKey, key = pcall(dc.deserializeKey, b64decode(pub), "ec-public")
-  if not okKey or not key then return nil, "cannot read the trusted key " .. keyPath end
-  local okV, valid = pcall(dc.ecdsa, data, key, sig)
-  if okV and valid == true then return true end
-  return nil, "the signature is invalid; the database may have been tampered with"
-end
-
--- ---- GitHub servers ------------------------------------------------------------
--- raw.githubusercontent.com keeps a branch's files cached for minutes, so
--- right after a push a database could come from before it and point to
--- packages that are gone. A branch URL is therefore pinned to the
--- branch's newest commit (asked from the GitHub API); the database, its
--- signature and later the packages all come from that one commit. Without
--- an answer from the API the branch URL is used as it is.
-local pins = {}
-local function pinServer(server)
-  local owner, repo, branch, rest = server:match("^https://raw%.githubusercontent%.com/([^/]+)/([^/]+)/([^/]+)(.*)$")
-  if not owner or (#branch == 40 and branch:match("^%x+$")) then return server end
-  local key = owner .. "/" .. repo .. "/" .. branch
-  if pins[key] == nil then
-    pins[key] = false
-    local okI, internet = pcall(require, "internet")
-    if okI and internet.available() then
-      local body = internet.fetch(("https://api.github.com/repos/%s/%s/commits/%s"):format(owner, repo, branch),
-        { Accept = "application/vnd.github.sha" })
-      local sha = body and body:match("^%s*(%x+)%s*$")
-      if sha and #sha == 40 then pins[key] = sha end
-    end
-  end
-  if not pins[key] then return server end
-  return ("https://raw.githubusercontent.com/%s/%s/%s%s"):format(owner, repo, pins[key], rest)
-end
-
-local warnedNoCard = false
-local function checkSignature(name, conf, dbPath, server)
-  local opts = readRepos().options or {}
-  local level = ((conf.SigLevel or opts.SigLevel or "Optional"):match("%a+")) or "Optional"
-  if level == "Never" then return true end
-  local sigPath = dbPath .. ".sig"
-  if not download(server or conf.Server, name .. ".db.sig", sigPath) then
-    if level == "Required" then return nil, "the database is not signed (SigLevel = Required)" end
-    return true
-  end
-  local ok, why = verifySignature(readIf(dbPath) or "", readIf(sigPath) or "",
-    opts.TrustedKey or "/etc/pacman.d/byteos.pub")
-  fs.remove(sigPath)
-  if ok then return true end
-  if why == "nocard" then
-    if level == "Required" then
-      return nil, "signatures need a tier 3 data card to be checked (SigLevel = Required)"
-    end
-    if not warnedNoCard then
-      warn("package signatures are not checked: no tier 3 data card")
-      warnedNoCard = true
-    end
-    return true
-  end
-  return nil, why
-end
-
-local function syncRepo(name, conf)
-  local dest = SYNC_DIR .. "/" .. name .. ".db"
-  -- databases from before .bpk lived in <sync>/<repo>/repo.db
-  if fs.isDirectory(SYNC_DIR .. "/" .. name) then fs.remove(SYNC_DIR .. "/" .. name) end
-  local server = pinServer(conf.Server)
-  local size, e = download(server, name .. ".db", dest .. ".part")
-  if not size then
-    err("failed to synchronize " .. name .. ": " .. e)
-    return false
-  end
-  local signed, why = checkSignature(name, conf, dest .. ".part", server)
-  if not signed then
-    fs.remove(dest .. ".part")
-    err(name .. ": " .. why)
-    return false, "signature"
-  end
-  if readIf(dest) == readIf(dest .. ".part") then
-    fs.remove(dest .. ".part")
-    term.cwrite(T.fg, " " .. name)
-    term.cwrite(T.muted, " is up to date\n")
-  else
-    if fs.exists(dest) then fs.remove(dest) end
-    fs.rename(dest .. ".part", dest)
-    progress(name, 1); term.write("\n")
-  end
-  -- where this database came from: its packages are fetched from there
-  fs.writeAll(dest .. ".server", conf.Server .. "\n" .. server .. "\n")
-  return true
-end
+-- (checked in /lib/pacman/sync.lua)
 
 -- The server to fetch repo's packages from: the one its database came
 -- from, as long as pacman.conf still names the same Server.
@@ -298,27 +186,6 @@ local function packageServer(repo, conf)
 end
 
 local dbs -- name -> repo package info, loaded on first use
-
-local function sync()
-  header("Synchronizing package databases...")
-  local names, repos = repoNames()
-  local ok, onlySignatures = #names > 0, true
-  for _, name in ipairs(names) do
-    local done, why = syncRepo(name, repos[name])
-    if not done then ok = false; onlySignatures = onlySignatures and why == "signature" end
-  end
-  dbs = nil
-  if not ok and not onlySignatures then
-    -- the usual cause: an old pacman.conf that -Syu kept next to a new one
-    if fs.exists(CONF_PATH .. ".new") then
-      warn("a newer config was saved as " .. CONF_PATH .. ".new; to use it run")
-      term.cwrite(T.blue, "    mv " .. CONF_PATH .. ".new " .. CONF_PATH .. "\n")
-    else
-      warn("check the Server lines in " .. CONF_PATH)
-    end
-  end
-  return ok
-end
 
 -- True once every configured repo has a synced database.
 local function synced()
@@ -457,11 +324,11 @@ local function queryBios()
     term.cwrite(T.muted, ": ")
     term.cwrite(T.fg, (value or "None") .. "\n")
   end
-  row("Name", "bytebios")
-  row("Version", i.installed)
-  row("Description", "ByteBIOS bootloader on the EEPROM")
-  row("Source", "/boot/eeprom.lua" .. (st == "outdated" and " (newer, run pacman -S bytebios)" or ""))
-  row("Can restore", bios().canRestore() and "yes, pacman -R bytebios" or "no")
+  P.row("Name", "bytebios")
+  P.row("Version", i.installed)
+  P.row("Description", "ByteBIOS bootloader on the EEPROM")
+  P.row("Source", "/boot/eeprom.lua" .. (st == "outdated" and " (newer, run pacman -S bytebios)" or ""))
+  P.row("Can restore", bios().canRestore() and "yes, pacman -R bytebios" or "no")
 end
 
 -- ---- Resolving -------------------------------------------------------------
@@ -478,319 +345,6 @@ local function notFound(name, by)
   end
 end
 
--- Repo packages for `targets` plus every dependency that is not installed
--- yet, dependencies first. `provided` names count as installed. Returns
--- the list, or nil after printing why.
-local function resolve(targets, provided)
-  if not synced() then sync() end
-  local db = syncdb()
-  local order, seen = {}, {}
-  local function visit(name, by, op, want)
-    local p = db[name]
-    if not p then notFound(name, by); return false end
-    if not satisfies(p.version, op, want) then
-      err(("unresolvable dependency '%s%s%s'%s: the repositories have %s-%s"):format(
-        name, op, want, by and (" (required by " .. by .. ")") or "", name, p.version))
-      return false
-    end
-    if seen[name] then return true end
-    seen[name] = true
-    for _, d in ipairs(p.depend) do
-      local dn, dop, dwant = parseDep(d)
-      local have = provided and provided[dn]
-      if not have then
-        local i = localInfo(dn)
-        have = i and i.version
-      end
-      if not satisfies(have, dop, dwant) then
-        if not visit(dn, name, dop, dwant) then return false end
-      end
-    end
-    order[#order + 1] = p
-    return true
-  end
-  for _, t in ipairs(targets) do
-    local name, op, want = parseDep(t)
-    if not visit(name, nil, op, want) then return nil end
-  end
-  return order
-end
-
--- Would installing these versions break what installed packages need
--- (bar: depend = foo<2 while foo-2.0 comes in)? Prints each case.
-local function noBreaks(infos)
-  local incoming = {}
-  for _, p in ipairs(infos) do incoming[p.name] = p.version end
-  local ok = true
-  for _, n in ipairs(installedNames()) do
-    if not incoming[n] then
-      for _, d in ipairs((localInfo(n) or {}).depend or {}) do
-        local dn, op, want = parseDep(d)
-        if incoming[dn] and not satisfies(incoming[dn], op, want) then
-          err(("installing %s (%s) breaks dependency '%s' required by %s"):format(dn, incoming[dn], d, n))
-          ok = false
-        end
-      end
-    end
-  end
-  return ok
-end
-
--- "Packages (2) foo-1.0  bar-2.0", sizes, then the confirmation prompt.
-local function confirmPackages(names, question, dlSize, inSize)
-  term.write("\n")
-  term.cwrite(T.bright, ("Packages (%d) "):format(#names))
-  term.cwrite(T.fg, table.concat(names, "  ") .. "\n\n")
-  if dlSize and dlSize > 0 then
-    term.cwrite(T.bright, "Total Download Size:   ")
-    term.cwrite(T.fg, kib(dlSize) .. "\n")
-  end
-  if inSize then
-    term.cwrite(T.bright, "Total Installed Size:  ")
-    term.cwrite(T.fg, kib(inSize) .. "\n")
-  end
-  if dlSize or inSize then term.write("\n") end
-  return confirm(question)
-end
-
--- ---- Transactions ----------------------------------------------------------
--- Conflicts between the packages `infos` (about to be installed) and the
--- installed packages or each other. The repo database has everything this
--- needs, so it runs before the confirmation prompt.
-local function pkgConflicts(infos)
-  local problems, names = {}, {}
-  for _, p in ipairs(infos) do names[p.name] = p.version end
-  for _, p in ipairs(infos) do
-    for _, c in ipairs(p.conflict or {}) do
-      local cn, op, want = parseDep(c)
-      local other = names[cn] or (localInfo(cn) or {}).version
-      if cn ~= p.name and other and satisfies(other, op, want) then
-        problems[#problems + 1] = ("%s and %s are in conflict"):format(p.name, cn)
-      end
-    end
-    for _, n in ipairs(installedNames()) do
-      if n ~= p.name and not names[n] then
-        for _, c in ipairs((localInfo(n) or {}).conflict or {}) do
-          local cn, op, want = parseDep(c)
-          if cn == p.name and satisfies(p.version, op, want) then
-            problems[#problems + 1] = ("%s and %s are in conflict"):format(p.name, n)
-          end
-        end
-      end
-    end
-  end
-  return problems
-end
-
--- Prints the conflicts among `infos`; true if there are none.
-local function noConflicts(infos)
-  local problems = pkgConflicts(infos)
-  for _, p in ipairs(problems) do err(p) end
-  if #problems > 0 then err("unresolvable package conflicts detected") end
-  return #problems == 0 and noBreaks(infos)
-end
-
--- Every problem that stops the transaction, checked before anything is
--- written: package conflicts and files another package (or the base
--- system) owns or that already exist on disk.
-local function findConflicts(items)
-  local infos = {}
-  for _, it in ipairs(items) do infos[#infos + 1] = it.pkg.info end
-  local problems = pkgConflicts(infos)
-  local owner = {}
-  for _, n in ipairs(installedNames()) do
-    for _, f in ipairs(localFiles(n)) do owner[f] = n end
-  end
-  local incoming = {}
-  for _, it in ipairs(items) do
-    local name = it.pkg.info.name
-    for _, p in ipairs(it.pkg.order) do
-      local o = owner[p]
-      if incoming[p] and incoming[p] ~= name then
-        problems[#problems + 1] = ("%s exists in both '%s' and '%s'"):format(p, name, incoming[p])
-      elseif o and o ~= name then
-        problems[#problems + 1] = ("%s exists in both '%s' and '%s'"):format(p, name, o)
-      elseif not o and fs.exists(p) then
-        problems[#problems + 1] = ("%s: %s exists in filesystem"):format(name, p)
-      end
-      incoming[p] = name
-    end
-  end
-  return problems
-end
-
--- Install one inspected package archive (it.path, it.pkg).
-local function extract(it, idx, total)
-  local pi, name = it.pkg.info, it.pkg.info.name
-  local old = localInfo(name)
-  local label = ("(%d/%d) %s %s"):format(idx, total, old and "upgrading" or "installing", name)
-  progress(label, 0)
-  local oldCrc = backupCrcs(old)
-  local isBackup = {}
-  for _, b in ipairs(pi.backup) do isBackup[b] = true end
-  local newBackup, notes = {}, {}
-
-  local h = fs.open(it.path, "r")
-  local r, e = bpk.open(h)
-  if not r then h:close(); return nil, e end
-  local done, count = 0, #it.pkg.order
-  while true do
-    local n, flag, size = r.next()
-    if not n then
-      if flag then h:close(); return nil, flag end
-      break
-    end
-    if n == ".PKGINFO" or n == ".INSTALL" then
-      r.stream(size)
-    else
-      mkdirp(parent(n))
-      if isBackup[n] then
-        local data; data, e = r.read(flag, size)
-        if not data then h:close(); return nil, n .. ": " .. e end
-        newBackup[#newBackup + 1] = n .. " " .. crcOf(data)
-        local cur = readIf(n)
-        if cur == data then
-          -- unchanged
-        elseif cur == nil or (oldCrc[n] and crcOf(cur) == oldCrc[n]) then
-          fs.writeAll(n, data)
-        else
-          fs.writeAll(n .. ".pacnew", data)
-          notes[#notes + 1] = n .. " installed as " .. n .. ".pacnew"
-        end
-      elseif flag == "z" then
-        local data; data, e = r.read(flag, size)
-        if not data then h:close(); return nil, n .. ": " .. e end
-        fs.writeAll(n, data)
-      else
-        local out = fs.open(n, "w")
-        if not out then h:close(); return nil, "cannot write " .. n end
-        local ok; ok, e = r.stream(size, function(c) out:write(c) end)
-        out:close()
-        if not ok then h:close(); return nil, n .. ": " .. e end
-      end
-      done = done + 1
-      progress(label, 0.9 * done / count)
-    end
-  end
-  h:close()
-
-  -- files the old version had and the new one does not
-  if old then
-    for _, p in ipairs(localFiles(name)) do
-      if not it.pkg.files[p] and fs.exists(p) and not fs.isDirectory(p) then
-        if oldCrc[p] and crcOf(readIf(p)) ~= oldCrc[p] then
-          if fs.exists(p .. ".pacsave") then fs.remove(p .. ".pacsave") end
-          fs.rename(p, p .. ".pacsave")
-          notes[#notes + 1] = p .. " saved as " .. p .. ".pacsave"
-        else
-          fs.remove(p)
-        end
-      end
-    end
-  end
-
-  local dir = LOCAL_DIR .. "/" .. name
-  mkdirp(dir)
-  -- why it is here: named on the command line, or pulled in by another
-  -- package; an upgrade keeps what it was (older entries count as explicit)
-  local reason = it.reason or (old and old.reason) or "explicit"
-  fs.writeAll(dir .. "/desc", bpk.formatInfo({
-    name = name, version = pi.version, desc = pi.desc, url = pi.url,
-    depend = pi.depend, conflict = pi.conflict, backup = newBackup, isize = pi.isize,
-    group = pi.group, optdepend = pi.optdepend, reason = reason,
-  }))
-  fs.writeAll(dir .. "/files", table.concat(it.pkg.order, "\n") .. "\n")
-  if it.pkg.install then
-    fs.writeAll(dir .. "/install", it.pkg.install)
-  elseif fs.exists(dir .. "/install") then
-    fs.remove(dir .. "/install")
-  end
-  progress(label, 1); term.write("\n")
-  k.log(old and ("upgraded %s (%s -> %s)"):format(name, tostring(old.version), pi.version)
-    or ("installed %s (%s)"):format(name, pi.version), "pacman")
-
-  if old then runHook(it.pkg.install, "post_upgrade", pi.version, old.version)
-  else runHook(it.pkg.install, "post_install", pi.version) end
-  for _, note in ipairs(notes) do warn(note) end
-  return true
-end
-
--- Run a transaction. items: { db = repo package } to download, or
--- { path = local .bpk }. Nothing is written until every package is
--- downloaded, verified and checked for conflicts.
-local function commit(items)
-  local fetch = {}
-  for _, it in ipairs(items) do if it.db then fetch[#fetch + 1] = it end end
-  if #fetch > 0 then
-    header("Retrieving packages...")
-    for _, it in ipairs(fetch) do
-      local p = it.db
-      local label = p.name .. "-" .. p.version
-      local csize = tonumber(p.csize) or 0
-      local dest = CACHE_DIR .. "/" .. p.filename
-      progress(label, 0)
-      local size, crc = download(p.server, p.filename, dest, function(n)
-        progress(label, csize > 0 and n / csize or 1)
-      end)
-      if not size then term.write("\n"); err("failed retrieving " .. p.filename .. ": " .. crc); return false end
-      progress(label, 1); term.write("\n")
-      if size ~= csize or bpk.hex(crc) ~= p.crc32
-          or (p.sha256 and sha256.hex(readIf(dest) or "") ~= p.sha256) then
-        fs.remove(dest)
-        err(p.filename .. " is corrupted (size or checksum mismatch); try pacman -Sy")
-        return false
-      end
-      it.path, it.cached = dest, true
-    end
-  end
-
-  info("loading package files...")
-  for _, it in ipairs(items) do
-    local h = fs.open(it.path, "r")
-    if not h then err("cannot read " .. it.path); return false end
-    local pkg, e = bpk.inspect(h)
-    h:close()
-    if not pkg then err(it.path .. ": " .. e); return false end
-    if it.db and (pkg.info.name ~= it.db.name or pkg.info.version ~= it.db.version) then
-      err(it.path .. " does not match the database entry")
-      return false
-    end
-    it.pkg = pkg
-  end
-
-  info("checking for file conflicts...")
-  local problems = findConflicts(items)
-  if #problems > 0 then
-    for _, p in ipairs(problems) do err(p) end
-    err("errors occurred, no packages were upgraded.")
-    return false
-  end
-
-  header("Processing package changes...")
-  local ok = true
-  for i, it in ipairs(items) do
-    local done, e = extract(it, i, #items)
-    if not done then term.write("\n"); err(it.pkg.info.name .. ": " .. tostring(e)); ok = false end
-    if it.cached then fs.remove(it.path) end
-  end
-  return ok
-end
-
-local function names(list)
-  local out = {}
-  for _, p in ipairs(list) do out[#out + 1] = p.name .. "-" .. p.version end
-  return out
-end
-
-local function sizes(list)
-  local dl, ins = 0, 0
-  for _, p in ipairs(list) do
-    dl = dl + (tonumber(p.csize) or 0)
-    ins = ins + (tonumber(p.isize) or 0)
-  end
-  return dl, ins
-end
-
 -- ---- Operations ------------------------------------------------------------
 -- name -> sorted member names, for the groups of the repo packages
 local function syncGroups()
@@ -805,625 +359,28 @@ local function syncGroups()
   return groups
 end
 
--- Targets with every group name (that is not also a package) replaced by
--- the group's members.
-local function expandGroups(targets)
-  if not synced() then sync() end
-  local db, groups, out = syncdb(), nil, {}
-  for _, t in ipairs(targets) do
-    local members
-    if not db[depName(t)] then
-      groups = groups or syncGroups()
-      members = groups[t]
-    end
-    if members then
-      header(("There are %d members in group %s:"):format(#members, t))
-      term.cwrite(T.fg, "   " .. table.concat(members, "  ") .. "\n")
-      for _, m in ipairs(members) do out[#out + 1] = m end
-    else
-      out[#out + 1] = t
-    end
-  end
-  return out
-end
-
--- "Optional dependencies for X" with the ones already there marked.
-local function showOptional(p)
-  if not p.optdepend or #p.optdepend == 0 then return end
-  term.cwrite(T.accent, "Optional dependencies for " .. p.name .. "\n")
-  for _, o in ipairs(p.optdepend) do
-    term.cwrite(T.fg, "    " .. o)
-    if isInstalled(depName(o)) then term.cwrite(T.cyan, " [installed]") end
-    term.write("\n")
-  end
-end
-
-local function install(targets)
-  if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
-  targets = expandGroups(targets)
-  local wantBios, rest = false, {}
-  for _, t in ipairs(targets) do
-    if t == "bytebios" then wantBios = true else rest[#rest + 1] = t end
-  end
-  local labels = {}
-  if wantBios then
-    local st, i = biosStatus()
-    if st == "unknown" then err("bytebios needs a newer byteos; run pacman -Syu first"); return 1 end
-    if st == "none" then err("this computer has no EEPROM"); return 1 end
-    if st == "current" then warn("bytebios-" .. i.installed .. " is up to date -- reinstalling") end
-    if st == "foreign" then info("the current BIOS is kept; pacman -R bytebios puts it back") end
-    labels[1] = "bytebios-" .. (i.available or "?")
-  end
-  local list = {}
-  if #rest > 0 then
-    info("resolving dependencies...")
-    list = resolve(rest)
-    if not list then return 1 end
-    for _, t in ipairs(rest) do
-      local i, p = localInfo(t), syncdb()[t]
-      if i and p and bpk.vercmp(i.version, p.version) == 0 then
-        warn(t .. "-" .. p.version .. " is up to date -- reinstalling")
-      end
-    end
-    info("looking for conflicting packages...")
-    if not noConflicts(list) then return 1 end
-  end
-  for _, n in ipairs(names(list)) do labels[#labels + 1] = n end
-  local dl, ins = sizes(list)
-  if not confirmPackages(labels, "Proceed with installation?", #list > 0 and dl, #list > 0 and ins) then return 1 end
-  local ok = true
-  if wantBios then
-    header("Flashing ByteBIOS...")
-    ok = flashBios()
-  end
-  if #list > 0 then
-    local named = {}
-    for _, t in ipairs(rest) do named[depName(t)] = true end
-    local items = {}
-    for _, p in ipairs(list) do
-      -- what was asked for is explicit; a new dependency is a dependency
-      local reason = named[p.name] and "explicit" or (not isInstalled(p.name) and "dependency" or nil)
-      items[#items + 1] = { db = p, reason = reason }
-    end
-    ok = commit(items) and ok
-    if ok then for _, p in ipairs(list) do showOptional(p) end end
-  end
-  return ok and 0 or 1
-end
-
--- -U: install package files; missing dependencies come from the repos.
-local function installFiles(paths)
-  if #paths == 0 then err("no targets specified (use -h for help)"); return 1 end
-  local items, provided, labels, missing, ins, infos = {}, {}, {}, {}, 0, {}
-  for _, p in ipairs(paths) do
-    local path = shell.normalize(p)
-    local h = fs.open(path, "r")
-    if not h then err("'" .. p .. "': file not found"); return 1 end
-    local pkg, e = bpk.inspect(h)
-    h:close()
-    if not pkg then err("'" .. p .. "': " .. e); return 1 end
-    items[#items + 1] = { path = path, reason = "explicit" }
-    infos[#infos + 1] = pkg.info
-    provided[pkg.info.name] = pkg.info.version
-    labels[#labels + 1] = pkg.info.name .. "-" .. pkg.info.version
-    ins = ins + (tonumber(pkg.info.isize) or 0)
-    for _, d in ipairs(pkg.info.depend) do missing[#missing + 1] = d end
-  end
-  info("resolving dependencies...")
-  local need = {}
-  for _, d in ipairs(missing) do
-    local dn, op, want = parseDep(d)
-    if not satisfies(provided[dn] or (localInfo(dn) or {}).version, op, want) then need[#need + 1] = d end
-  end
-  local deps = {}
-  if #need > 0 then
-    deps = resolve(need, provided)
-    if not deps then return 1 end
-  end
-  for _, p in ipairs(deps) do infos[#infos + 1] = p end
-  info("looking for conflicting packages...")
-  if not noConflicts(infos) then return 1 end
-  local all = names(deps)
-  for _, l in ipairs(labels) do all[#all + 1] = l end
-  local dl, dins = sizes(deps)
-  if not confirmPackages(all, "Proceed with installation?", dl, ins + dins) then return 1 end
-  local tx = {}
-  for _, p in ipairs(deps) do tx[#tx + 1] = { db = p } end
-  for _, it in ipairs(items) do tx[#tx + 1] = it end
-  return commit(tx) and 0 or 1
-end
-
--- ---- Base system -----------------------------------------------------------
--- The OS itself is the "byteos" package. It is in no repo database: pacman
--- upgrades it file by file from the git repository named in pacman.conf.
-local function baseRepo()
-  local o = readRepos().options or {}
-  return o.BaseRepo or "DevStarByte/ByteOS-OC", o.BaseBranch or "master"
-end
-
--- Returns the pending base upgrade, or nil if there is none / it cannot
--- be checked right now (the reason is printed).
-local function checkBase()
-  if not require("internet").available() then
-    info(" no internet card: skipping the byteos base system")
-    return nil
-  end
-  local repo, branch = baseRepo()
-  local up, e = require("sysupgrade").check(repo, branch)
-  if not up then warn("cannot check byteos for updates: " .. e); return nil end
-  if up.uptodate then return nil end
-  return up
-end
-
-local function upgradeBase(up)
-  local sysupgrade = require("sysupgrade")
-  header("Retrieving byteos " .. up.version .. " from " .. up.repo .. "...")
-  local ok, e = sysupgrade.download(up, progress)
-  if not ok then
-    term.write("\n")
-    err("failed to retrieve byteos: " .. e)
-    info("the base system was not changed")
-    return false
-  end
-  progress(("downloaded %d file%s"):format(up.downloaded, up.downloaded == 1 and "" or "s"), 1)
-  term.write("\n")
-  header("Upgrading byteos...")
-  ok, e = sysupgrade.apply(up, function(label, frac) progress("upgrading " .. label, frac) end)
-  if not ok then term.write("\n"); err(e); return false end
-  progress(("upgraded byteos to %s"):format(up.version), 1)
-  term.write("\n")
-  k.log(("upgraded byteos (%s -> %s)"):format(tostring(up.oldVersion), up.version), "pacman")
-  for _, path in ipairs(up.pacnew) do
-    warn(path .. " installed as " .. path .. ".new")
-  end
-  return true
-end
-
-local function upgrade()
-  sync()
-  header("Starting full system upgrade...")
-  local base = checkBase()
-  local db, outdated = syncdb(), {}
-  for _, n in ipairs(installedNames()) do
-    local i, p = localInfo(n), db[n]
-    if p and i and bpk.vercmp(p.version, i.version or "0") > 0 then outdated[#outdated + 1] = n end
-  end
-  local list = {}
-  if #outdated > 0 then
-    list = resolve(outdated)
-    if not list or not noConflicts(list) then return 1 end
-  end
-  -- ByteBIOS is only reflashed if it is already on the EEPROM; another
-  -- BIOS is never replaced without an explicit `pacman -S bytebios`.
-  local biosState, biosInfo = biosStatus()
-  local biosNow = not base and biosState == "outdated"
-  if not base and #list == 0 and not biosNow then
-    info(" there is nothing to do")
-    if biosState == "foreign" then biosHint() end
-    return 0
-  end
-
-  local labels = {}
-  if base then labels[1] = "byteos-" .. base.version end
-  if biosNow then labels[#labels + 1] = "bytebios-" .. (biosInfo.available or "?") end
-  for _, n in ipairs(names(list)) do labels[#labels + 1] = n end
-  local dl = sizes(list)
-  if not confirmPackages(labels, "Proceed with installation?", dl) then return 1 end
-
-  local ok = true
-  if base then
-    ok = upgradeBase(base)
-    -- the upgrade may have brought a new /boot/eeprom.lua
-    if ok and biosState ~= "foreign" and biosStatus() == "outdated" then biosNow = true end
-  end
-  if ok and biosNow then
-    header("Updating ByteBIOS on the EEPROM...")
-    ok = flashBios()
-  end
-  if ok and #list > 0 then
-    local items = {}
-    for _, p in ipairs(list) do items[#items + 1] = { db = p } end
-    ok = commit(items)
-  end
-  if base and ok then
-    term.cwrite(T.accent, ":: ")
-    term.cwrite(T.bright, "byteos was upgraded; reboot to start the new version\n")
-  end
-  if ok and biosState == "foreign" then biosHint() end
-  return ok and 0 or 1
-end
-
-local function rollback()
-  local sysupgrade = require("sysupgrade")
-  if not sysupgrade.canRollback() then err("there is no byteos upgrade to roll back"); return 1 end
-  if not confirm("Restore byteos from before the last upgrade?") then return 1 end
-  sysupgrade.rollback()
-  info("previous byteos restored; reboot to use it")
-  return 0
-end
-
--- Packages that -R refuses to remove (HoldPkg in pacman.conf).
-local function held()
-  local set = { byteos = true }
-  for n in ((readRepos().options or {}).HoldPkg or ""):gmatch("%S+") do set[n] = true end
-  return set
-end
-
-local function removePackage(name, idx, total, nosave)
-  local label = ("(%d/%d) removing %s"):format(idx, total, name)
-  progress(label, 0)
-  local i = localInfo(name)
-  local hooks = readIf(LOCAL_DIR .. "/" .. name .. "/install")
-  runHook(hooks, "pre_remove", i.version)
-  local crcs, notes = backupCrcs(i), {}
-  for _, f in ipairs(localFiles(name)) do
-    if fs.exists(f) and not fs.isDirectory(f) then
-      if crcs[f] and not nosave and crcOf(readIf(f)) ~= crcs[f] then
-        if fs.exists(f .. ".pacsave") then fs.remove(f .. ".pacsave") end
-        fs.rename(f, f .. ".pacsave")
-        notes[#notes + 1] = f .. " saved as " .. f .. ".pacsave"
-      else
-        fs.remove(f)
-      end
-    end
-  end
-  fs.remove(LOCAL_DIR .. "/" .. name)
-  progress(label, 1); term.write("\n")
-  k.log(("removed %s (%s)"):format(name, tostring(i.version)), "pacman")
-  runHook(hooks, "post_remove", i.version)
-  for _, note in ipairs(notes) do warn(note) end
-end
-
--- Installed packages that need `name`, leaving out those in `except`.
-local function requiredBy(name, except)
-  local out = {}
-  for _, n in ipairs(installedNames()) do
-    if not (except and except[n]) then
-      for _, d in ipairs(localInfo(n).depend) do
-        if depName(d) == name then out[#out + 1] = n; break end
-      end
-    end
-  end
-  return out
-end
-
--- -R [-s] [-n]: recursive also takes the dependencies of what goes that
--- were installed as dependencies and that nothing staying needs; nosave
--- deletes changed config files instead of keeping them as .pacsave.
-local function remove(targets, opts)
-  opts = opts or {}
-  if #targets == 0 then err("no targets specified (use -h for help)"); return 1 end
-  local hold, set, labels = held(), {}, {}
-  for _, t in ipairs(targets) do set[t] = true end
-  for _, pkg in ipairs(targets) do
-    if pkg == "bytebios" then
-      local st, i = biosStatus()
-      if st ~= "current" and st ~= "outdated" then err("target not found: bytebios"); return 1 end
-      if not bios().canRestore() then
-        err("the BIOS from before ByteBIOS was not saved, so bytebios cannot be removed")
-        return 1
-      end
-      labels[#labels + 1] = "bytebios-" .. i.installed
-    elseif not isInstalled(pkg) then
-      err("target not found: " .. pkg); return 1
-    elseif hold[pkg] then
-      err(pkg .. " is part of the base system and cannot be removed (HoldPkg)")
-      return 1
-    else
-      labels[#labels + 1] = pkg .. "-" .. (localInfo(pkg).version or "?")
-    end
-  end
-  info("checking dependencies...")
-  if opts.recursive then
-    targets = { table.unpack(targets) }
-    local i = 1
-    while i <= #targets do -- targets grows while it is walked: deps of deps
-      local pi = targets[i] ~= "bytebios" and localInfo(targets[i])
-      for _, d in ipairs(pi and pi.depend or {}) do
-        local dn = depName(d)
-        local di = not set[dn] and not hold[dn] and localInfo(dn)
-        if di and di.reason == "dependency" and #requiredBy(dn, set) == 0 then
-          set[dn] = true
-          targets[#targets + 1] = dn
-          labels[#labels + 1] = dn .. "-" .. (di.version or "?")
-        end
-      end
-      i = i + 1
-    end
-  end
-  local broken = false
-  for _, n in ipairs(installedNames()) do
-    if not set[n] then
-      for _, d in ipairs(localInfo(n).depend) do
-        if set[depName(d)] then
-          err(("removing %s breaks dependency '%s' required by %s"):format(depName(d), d, n))
-          broken = true
-        end
-      end
-    end
-  end
-  if broken then return 1 end
-  if not confirmPackages(labels, "Do you want to remove these packages?") then return 1 end
-  header("Processing package changes...")
-  local ok = true
-  for i, pkg in ipairs(targets) do
-    if pkg == "bytebios" then
-      local label = ("(%d/%d) restoring the previous BIOS"):format(i, #targets)
-      progress(label, 0)
-      local done, e = bios().restore()
-      if done then progress(label, 1); term.write("\n")
-      else term.write("\n"); err("bytebios: " .. e); ok = false end
-    else
-      removePackage(pkg, i, #targets, opts.nosave)
-    end
-  end
-  return ok and 0 or 1
-end
-
--- -Q [pkg...]: installed packages with their versions (only the named ones)
-local function queryAll(targets)
-  local want, rc = {}, 0
-  for _, t in ipairs(targets or {}) do want[t] = true end
-  local function show(name, version)
-    if next(want) and not want[name] then return end
-    want[name] = nil
-    term.cwrite(T.bright, name .. " ")
-    term.cwrite(T.green, version .. "\n")
-  end
-  for _, n in ipairs(installedNames()) do show(n, localInfo(n).version or "?") end
-  local st, i = biosStatus()
-  if st == "current" or st == "outdated" then show("bytebios", i.installed) end
-  for n in pairs(want) do err("package '" .. n .. "' was not found"); rc = 1 end
-  return rc
-end
-
-local function row(label, value)
-  term.cwrite(T.bright, term.pad(label, 16))
-  term.cwrite(T.muted, ": ")
-  term.cwrite(T.fg, ((value and value ~= "") and value or "None") .. "\n")
-end
-
--- -Qe, -Qd, -Qt and their mixes (-Qdt: orphans); q: names only
-local function queryFiltered(flags, targets)
-  local explicit, deps, unneeded, quiet = flags:find("e"), flags:find("d"), flags:find("t"), flags:find("q")
-  local want = {}
-  for _, t in ipairs(targets) do want[t] = true end
-  for _, n in ipairs(installedNames()) do
-    local i = localInfo(n)
-    local reason = i.reason or "explicit"
-    local keep = (not next(want) or want[n])
-      and (not explicit or reason == "explicit")
-      and (not deps or reason == "dependency")
-      and (not unneeded or #requiredBy(n) == 0)
-    if keep then
-      if quiet then term.write(n .. "\n")
-      else term.cwrite(T.bright, n .. " "); term.cwrite(T.green, (i.version or "?") .. "\n") end
-    end
-  end
-  return 0
-end
-
--- -D --asdeps | --asexplicit <pkg>...: change why packages are installed
-local function setReason(targets)
-  local flag = targets[1]
-  local reason = flag == "--asdeps" and "dependency" or flag == "--asexplicit" and "explicit"
-  if not reason or #targets < 2 then
-    err("usage: pacman -D --asdeps|--asexplicit <pkg>..."); return 1
-  end
-  for i = 2, #targets do
-    local name = targets[i]
-    local pi = localInfo(name)
-    if not pi then err("package '" .. name .. "' was not found"); return 1 end
-    pi.reason = reason
-    fs.writeAll(LOCAL_DIR .. "/" .. name .. "/desc", bpk.formatInfo(pi))
-    info(("%s: install reason has been set to '%s'"):format(name,
-      reason == "explicit" and "explicitly installed" or "installed as dependency"))
-  end
-  return 0
-end
-
--- "Optional Deps" rows: one per suggestion, [installed] where it is
-local function optionalRows(i)
-  if #i.optdepend == 0 then return row("Optional Deps", nil) end
-  for n, o in ipairs(i.optdepend) do
-    term.cwrite(T.bright, term.pad(n == 1 and "Optional Deps" or "", 16))
-    term.cwrite(T.muted, n == 1 and ": " or "  ")
-    term.cwrite(T.fg, o)
-    if isInstalled(depName(o)) then term.cwrite(T.cyan, " [installed]") end
-    term.write("\n")
-  end
-end
-
 -- Queries anyone may run sync first only as root.
 local function ensureSynced()
   if synced() then return end
   if k.user() == "root" then
-    sync()
+    P.sync()
   else
     warn("the package databases are not synchronized; run sudo pacman -Sy")
   end
 end
 
--- -Si <pkg>...: what the repositories say about packages
-local function syncInfo(targets)
-  if #targets == 0 then err("no targets specified"); return 1 end
-  ensureSynced()
-  local rc = 0
-  for n, name in ipairs(targets) do
-    local p = syncdb()[name]
-    if not p then
-      notFound(name); rc = 1
-    else
-      if n > 1 then term.write("\n") end
-      row("Repository", p.repo)
-      row("Name", p.name)
-      row("Version", p.version)
-      row("Description", p.desc)
-      row("URL", p.url)
-      row("Groups", table.concat(p.group, "  "))
-      row("Depends On", table.concat(p.depend, "  "))
-      optionalRows(p)
-      row("Conflicts With", table.concat(p.conflict, "  "))
-      row("Download Size", p.csize and kib(p.csize))
-      row("Installed Size", p.isize and kib(p.isize))
-    end
-  end
-  return rc
-end
-
--- -Sg / -Qg [group...]: "group package" lines, for the repositories or
--- for what is installed
-local function queryGroups(targets, installedOnly)
-  local groups = {}
-  if installedOnly then
-    for _, n in ipairs(installedNames()) do
-      for _, g in ipairs(localInfo(n).group) do
-        groups[g] = groups[g] or {}
-        table.insert(groups[g], n)
-      end
-    end
-  else
-    ensureSynced()
-    groups = syncGroups()
-  end
-  local list = targets
-  if #list == 0 then
-    list = {}
-    for g in pairs(groups) do list[#list + 1] = g end
-    table.sort(list)
-  end
-  local rc = 0
-  for _, g in ipairs(list) do
-    if not groups[g] then err("group '" .. g .. "' was not found"); rc = 1
-    else
-      table.sort(groups[g])
-      for _, n in ipairs(groups[g]) do
-        term.cwrite(T.bright, g .. " ")
-        term.write(n .. "\n")
-      end
-    end
-  end
-  return rc
-end
-
-local function queryInfo(pkg)
-  if not pkg then err("no targets specified"); return 1 end
-  if pkg == "bytebios" then return queryBios() end
-  local i = localInfo(pkg)
-  if not i then err("package '" .. pkg .. "' was not found"); return 1 end
-  local requiredBy = {}
-  for _, n in ipairs(installedNames()) do
-    for _, d in ipairs(localInfo(n).depend) do
-      if depName(d) == pkg then requiredBy[#requiredBy + 1] = n end
-    end
-  end
-  local backups = {}
-  for p in pairs(backupCrcs(i)) do backups[#backups + 1] = p end
-  table.sort(backups)
-  local files = localFiles(pkg)
-  row("Name", i.name)
-  row("Version", i.version)
-  row("Description", i.desc)
-  row("URL", i.url)
-  row("Install Reason", (i.reason or "explicit") == "explicit" and "Explicitly installed"
-    or "Installed as a dependency for another package")
-  row("Groups", table.concat(i.group, "  "))
-  row("Depends On", table.concat(i.depend, "  "))
-  optionalRows(i)
-  row("Required By", table.concat(requiredBy, "  "))
-  row("Conflicts With", table.concat(i.conflict, "  "))
-  row("Installed Size", i.isize and kib(i.isize))
-  row("Backup Files", table.concat(backups, "  "))
-  row("Files", tostring(#files))
-  for _, f in ipairs(files) do term.cwrite(T.muted, string.rep(" ", 18) .. f .. "\n") end
-  return 0
-end
-
--- -Ql [pkg...]: the files of installed packages (all without names)
-local function queryFiles(targets)
-  local list = #targets > 0 and targets or installedNames()
-  local rc = 0
-  for _, n in ipairs(list) do
-    if not isInstalled(n) then
-      err("package '" .. n .. "' was not found"); rc = 1
-    else
-      for _, f in ipairs(localFiles(n)) do
-        term.cwrite(T.bright, n .. " ")
-        term.write(f .. "\n")
-      end
-    end
-  end
-  return rc
-end
-
--- -Qo <file...>: which installed package owns a file
-local function queryOwner(paths)
-  if #paths == 0 then err("no file was specified for --owns"); return 1 end
-  local rc = 0
-  for _, a in ipairs(paths) do
-    local path = shell.normalize(a)
-    local owner
-    for _, n in ipairs(installedNames()) do
-      for _, f in ipairs(localFiles(n)) do
-        if f == path then owner = n break end
-      end
-      if owner then break end
-    end
-    if owner then
-      term.write(path .. " is owned by ")
-      term.cwrite(T.bright, owner .. " ")
-      term.cwrite(T.green, (localInfo(owner).version or "?") .. "\n")
-    else
-      err("No package owns " .. path); rc = 1
-    end
-  end
-  return rc
-end
-
--- -Sc: empty the package cache (downloads left behind by failed installs)
--- and leftovers of interrupted database syncs.
-local function cleanCache()
-  local files, bytes = {}, 0
-  for _, f in ipairs(fs.list(CACHE_DIR) or {}) do
-    if not f:match("/$") then files[#files + 1] = CACHE_DIR .. "/" .. f end
-  end
-  for _, f in ipairs(fs.list(SYNC_DIR) or {}) do
-    if f:match("%.part$") or f:match("%.sig$") or f:match("/$") then
-      files[#files + 1] = SYNC_DIR .. "/" .. f:gsub("/$", "")
-    end
-  end
-  for _, f in ipairs(files) do bytes = bytes + (fs.size(f) or 0) end
-  info("Cache directory: " .. CACHE_DIR .. "/")
-  if #files == 0 then info(" the cache is already empty"); return 0 end
-  if not confirm(("Remove %d cached file%s (%s)?"):format(#files, #files == 1 and "" or "s", kib(bytes))) then return 1 end
-  for _, f in ipairs(files) do fs.remove(f) end
-  info(" removed " .. #files .. " file" .. (#files == 1 and "" or "s"))
-  return 0
-end
-
-local function search(pat)
-  ensureSynced()
-  local names_ = repoNames()
-  for _, repo in ipairs(names_) do
-    for _, p in ipairs(bpk.parseDb(readIf(SYNC_DIR .. "/" .. repo .. ".db"))) do
-      local okn, hitn = pcall(string.find, p.name, pat or "")
-      local okd, hitd = pcall(string.find, p.desc or "", pat or "")
-      if (okn and hitn) or (okd and hitd) then
-        term.cwrite(T.magenta, repo .. "/")
-        term.cwrite(T.bright, p.name .. " ")
-        term.cwrite(T.green, p.version)
-        local i = localInfo(p.name)
-        if i then
-          term.cwrite(T.cyan, i.version == p.version and " [installed]"
-            or (" [installed: " .. tostring(i.version) .. "]"))
-        end
-        term.write("\n")
-        term.cwrite(T.fg, "    " .. (p.desc or "") .. "\n")
-      end
-    end
-  end
-  return 0
-end
+-- what the parts use from here
+P.CONF_PATH, P.LOCAL_DIR, P.SYNC_DIR, P.CACHE_DIR = CONF_PATH, LOCAL_DIR, SYNC_DIR, CACHE_DIR
+function P.forgetDb() dbs = nil end -- after a sync
+P.ensureDirs = ensureDirs; P.readRepos = readRepos; P.header = header; P.info = info
+P.warn = warn; P.err = err; P.progress = progress; P.confirm = confirm; P.kib = kib
+P.parent = parent; P.mkdirp = mkdirp; P.readIf = readIf; P.crcOf = crcOf; P.repoNames = repoNames
+P.packageServer = packageServer; P.synced = synced; P.syncdb = syncdb; P.localInfo = localInfo
+P.localFiles = localFiles; P.installedNames = installedNames; P.isInstalled = isInstalled
+P.backupCrcs = backupCrcs; P.depName = depName; P.parseDep = parseDep; P.satisfies = satisfies
+P.runHook = runHook; P.bios = bios; P.biosStatus = biosStatus; P.flashBios = flashBios
+P.biosHint = biosHint; P.queryBios = queryBios; P.notFound = notFound; P.syncGroups = syncGroups
+P.ensureSynced = ensureSynced
 
 -- ===== argument dispatch =====
 local function usage()
@@ -1457,80 +414,91 @@ local function usage()
   term.cwrite(T.muted, "options: --noconfirm  do not ask for confirmation\n")
 end
 
-local rest = {}
-for _, a in ipairs(args) do
-  if a == "--noconfirm" then NOCONFIRM = true else rest[#rest + 1] = a end
-end
-local op = rest[1]
-local targets = {}
-for i = 2, #rest do
-  if rest[i] == "-" then -- the targets come from the pipe: pacman -Qdtq | pacman -Rns -
-    FROM_PIPE = true
-    for name in ((stdin and stdin.read("a")) or ""):gmatch("%S+") do targets[#targets + 1] = name end
+-- Arguments and the operation. Run inside main() so the libraries in
+-- TRANSIENT are let go however pacman ends.
+local function main()
+  local rest = {}
+  for _, a in ipairs(args) do
+    if a == "--noconfirm" then NOCONFIRM = true else rest[#rest + 1] = a end
+  end
+  local op = rest[1]
+  local targets = {}
+  for i = 2, #rest do
+    if rest[i] == "-" then -- the targets come from the pipe: pacman -Qdtq | pacman -Rns -
+      FROM_PIPE = true
+      for name in ((stdin and stdin.read("a")) or ""):gmatch("%S+") do targets[#targets + 1] = name end
+    else
+      targets[#targets + 1] = rest[i]
+    end
+  end
+
+  -- Everything that changes the system needs root; queries work for anyone.
+  local QUERY = { ["-Q"] = true, ["-Qi"] = true, ["-Ql"] = true, ["-Qo"] = true, ["-Ss"] = true,
+                  ["-Qg"] = true, ["-Sg"] = true, ["-Si"] = true, ["-h"] = true, ["--help"] = true }
+  local qflags = op and op:match("^%-Q([edtq]+)$")
+  local rflags = op and op:match("^%-R([ns]*)$")
+  if op and not QUERY[op] and not qflags and k.user() ~= "root" then
+    err("you cannot perform this operation unless you are root.")
+    term.cwrite(T.muted, "  run it with ")
+    term.cwrite(T.blue, "sudo pacman " .. table.concat(args, " ") .. "\n")
+    return 1
+  end
+  if k.user() == "root" then ensureDirs() end
+
+  if not op or op == "-h" or op == "--help" then
+    usage()
+    return op and 0 or 1
+  elseif op == "-Syu" or op == "-Su" or op == "-Syyu" then
+    return P.upgrade()
+  elseif op == "-Sy" or op == "-Syy" then
+    if not P.sync() then return 1 end
+    if #targets > 0 then return P.install(targets) end
+    return 0
+  elseif op == "--rollback" then
+    return P.rollback()
+  elseif op == "-S" then
+    return P.install(targets)
+  elseif op == "-U" then
+    return P.installFiles(targets)
+  elseif rflags then
+    local opts = { recursive = rflags:find("s") ~= nil, nosave = rflags:find("n") ~= nil }
+    local list = {}
+    for _, t in ipairs(targets) do
+      if t == "--recursive" then opts.recursive = true
+      elseif t == "--nosave" then opts.nosave = true
+      else list[#list + 1] = t end
+    end
+    return P.remove(list, opts)
+  elseif qflags then
+    return P.queryFiltered(qflags, targets)
+  elseif op == "-D" then
+    return P.setReason(targets)
+  elseif op == "-Q" then
+    if targets[1] == "-i" or targets[1] == "i" then return P.queryInfo(targets[2]) end
+    return P.queryAll(targets)
+  elseif op == "-Ql" then
+    return P.queryFiles(targets)
+  elseif op == "-Qo" then
+    return P.queryOwner(targets)
+  elseif op == "-Sc" then
+    return P.cleanCache()
+  elseif op == "-Qi" then
+    return P.queryInfo(targets[1])
+  elseif op == "-Ss" then
+    return P.search(targets[1])
+  elseif op == "-Si" then
+    return P.syncInfo(targets)
+  elseif op == "-Sg" or op == "-Qg" then
+    return P.queryGroups(targets, op == "-Qg")
   else
-    targets[#targets + 1] = rest[i]
+    err("invalid option '" .. op .. "' (use -h for help)"); return 1
   end
-end
-
--- Everything that changes the system needs root; queries work for anyone.
-local QUERY = { ["-Q"] = true, ["-Qi"] = true, ["-Ql"] = true, ["-Qo"] = true, ["-Ss"] = true,
-                ["-Qg"] = true, ["-Sg"] = true, ["-Si"] = true, ["-h"] = true, ["--help"] = true }
-local qflags = op and op:match("^%-Q([edtq]+)$")
-local rflags = op and op:match("^%-R([ns]*)$")
-if op and not QUERY[op] and not qflags and k.user() ~= "root" then
-  err("you cannot perform this operation unless you are root.")
-  term.cwrite(T.muted, "  run it with ")
-  term.cwrite(T.blue, "sudo pacman " .. table.concat(args, " ") .. "\n")
-  return 1
-end
-if k.user() == "root" then ensureDirs() end
-
-if not op or op == "-h" or op == "--help" then
-  usage()
-  return op and 0 or 1
-elseif op == "-Syu" or op == "-Su" or op == "-Syyu" then
-  return upgrade()
-elseif op == "-Sy" or op == "-Syy" then
-  if not sync() then return 1 end
-  if #targets > 0 then return install(targets) end
   return 0
-elseif op == "--rollback" then
-  return rollback()
-elseif op == "-S" then
-  return install(targets)
-elseif op == "-U" then
-  return installFiles(targets)
-elseif rflags then
-  local opts = { recursive = rflags:find("s") ~= nil, nosave = rflags:find("n") ~= nil }
-  local list = {}
-  for _, t in ipairs(targets) do
-    if t == "--recursive" then opts.recursive = true
-    elseif t == "--nosave" then opts.nosave = true
-    else list[#list + 1] = t end
-  end
-  return remove(list, opts)
-elseif qflags then
-  return queryFiltered(qflags, targets)
-elseif op == "-D" then
-  return setReason(targets)
-elseif op == "-Q" then
-  if targets[1] == "-i" or targets[1] == "i" then return queryInfo(targets[2]) end
-  return queryAll(targets)
-elseif op == "-Ql" then
-  return queryFiles(targets)
-elseif op == "-Qo" then
-  return queryOwner(targets)
-elseif op == "-Sc" then
-  return cleanCache()
-elseif op == "-Qi" then
-  return queryInfo(targets[1])
-elseif op == "-Ss" then
-  return search(targets[1])
-elseif op == "-Si" then
-  return syncInfo(targets)
-elseif op == "-Sg" or op == "-Qg" then
-  return queryGroups(targets, op == "-Qg")
-else
-  err("invalid option '" .. op .. "' (use -h for help)"); return 1
 end
-return 0
+
+local ok, rc = pcall(main)
+for _, n in ipairs(TRANSIENT) do
+  if not hadLib[n] then package.loaded[n] = nil end
+end
+if not ok then error(rc, 0) end
+return rc
