@@ -6,7 +6,7 @@
 ]]--
 local fs, bpk, T = k.fs, require("bpk"), term.theme
 local sha256 = require("sha256")
-local CONF_PATH, LOCAL_DIR, SYNC_DIR, CACHE_DIR = P.CONF_PATH, P.LOCAL_DIR, P.SYNC_DIR, P.CACHE_DIR
+local LOCAL_DIR, CACHE_DIR = P.LOCAL_DIR, P.CACHE_DIR
 
 -- Repo packages for `targets` plus every dependency that is not installed
 -- yet, dependencies first. `provided` names count as installed. Returns

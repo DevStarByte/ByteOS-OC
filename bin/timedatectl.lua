@@ -18,7 +18,7 @@ end
 
 if cmd == "status" then
   local t, real = clock.now()
-  local name, off, abbr = clock.zone(t)
+  local name, _, abbr = clock.zone(t)
   if real then
     row("Local time", clock.date("%a %F %T %Z", t))
     row("Universal time", clock.date("%a %F %T UTC", t, true))

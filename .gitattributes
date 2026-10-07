@@ -1,0 +1,5 @@
+# ByteOS's files go onto an OpenComputers disk as they are: always with \n
+# line endings, also in a Windows checkout (core.autocrlf would give them
+# \r\n, which the OS and the tests do not expect).
+* text=auto eol=lf
+*.bpk binary

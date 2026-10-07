@@ -5,7 +5,7 @@
   functions is first needed (see PARTS there); P is shared by all parts.
 ]]--
 local fs, bpk, T = k.fs, require("bpk"), term.theme
-local CONF_PATH, LOCAL_DIR, SYNC_DIR, CACHE_DIR = P.CONF_PATH, P.LOCAL_DIR, P.SYNC_DIR, P.CACHE_DIR
+local CONF_PATH, SYNC_DIR = P.CONF_PATH, P.SYNC_DIR
 
 -- Copy <server>/<name> into the file `dest`. A server is a URL (through the
 -- internet card) or a directory. Returns size, crc32 or nil, reason.

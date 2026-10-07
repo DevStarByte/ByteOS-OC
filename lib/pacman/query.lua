@@ -5,7 +5,7 @@
   functions is first needed (see PARTS there); P is shared by all parts.
 ]]--
 local fs, bpk, T = k.fs, require("bpk"), term.theme
-local CONF_PATH, LOCAL_DIR, SYNC_DIR, CACHE_DIR = P.CONF_PATH, P.LOCAL_DIR, P.SYNC_DIR, P.CACHE_DIR
+local LOCAL_DIR, SYNC_DIR, CACHE_DIR = P.LOCAL_DIR, P.SYNC_DIR, P.CACHE_DIR
 
 -- -Q [pkg...]: installed packages with their versions (only the named ones)
 local function queryAll(targets)

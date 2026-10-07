@@ -4,8 +4,7 @@
   A part of /bin/pacman.lua, loaded into the same run when one of its
   functions is first needed (see PARTS there); P is shared by all parts.
 ]]--
-local fs, bpk, T = k.fs, require("bpk"), term.theme
-local CONF_PATH, LOCAL_DIR, SYNC_DIR, CACHE_DIR = P.CONF_PATH, P.LOCAL_DIR, P.SYNC_DIR, P.CACHE_DIR
+local bpk, T = require("bpk"), term.theme
 
 -- ---- Base system -----------------------------------------------------------
 -- The OS itself is the "byteos" package. It is in no repo database: pacman

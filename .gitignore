@@ -1,16 +1,46 @@
-# Written by the first-boot setup wizard; machine-specific and, in the case
-# of etc/shadow, contains passwords. Never commit these.
+# What ByteOS writes when this folder is its disk (in Ocelot Desktop, or
+# copied onto a computer and booted): machine-specific state, never part of
+# the OS itself.
+
+# the first-boot setup wizard; etc/shadow holds password hashes
 etc/.installed
 etc/shadow
 etc/group
 etc/hosts
 etc/timezone
+# new versions of config files the user changed, kept by pacman -Syu
+etc/*.new
+
+# runtime directories made by init, and the logs
+tmp/
+run/
+mnt/
 var/log/
+
+# users' homes and root's shell history
+home/*
+!home/root/
+home/root/.byteshell_history
+
+# owners and modes set with chmod / chown
+var/lib/perms
+
+# pacman: synced databases, the download cache, installed packages (only the
+# base system's entry belongs here) and the byteos upgrade state
 var/lib/pacman/sync/
-# sysupdate's local state, backups and download staging area
-var/lib/sysupdate/
+var/lib/pacman/local/*
+!var/lib/pacman/local/byteos/
+var/lib/pacman/byteos/
 var/cache/
-ocelot-desktop-v1.14.2.jar# signing keys never belong in the repository
+
+# what packages install
+usr/*
+!usr/share/
+usr/share/*
+!usr/share/man/
+
+# signing keys never belong in the repository
 *.pem
+
 # Ocelot Desktop, the OpenComputers emulator used to try ByteOS locally
 ocelot-desktop-*.jar

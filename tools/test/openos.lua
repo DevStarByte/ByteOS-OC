@@ -66,7 +66,6 @@ package.loaded.computer = { getBootAddress = function() return "openos00-floppy"
   tmpAddress = function() return "tmpfs000-xxxx" end, shutdown = function(r) print("[shutdown, reboot=" .. tostring(r) .. "]") end }
 local answers = {}
 for a in (os.getenv("ANSWERS") or ""):gmatch("[^|]*") do answers[#answers + 1] = a end
-local realRead = io.read
 io.read = function() local a = table.remove(answers, 1); io.write((a or "<eof>") .. "\n"); return a end
 local exitCode
 os.exit = function(c) exitCode = c; error("__exit__", 0) end

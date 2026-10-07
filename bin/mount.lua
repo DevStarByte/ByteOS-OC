@@ -6,7 +6,6 @@
   themselves, also when inserted later; see lsblk.
 ]]--
 local args = arg or {}
-local T = term.theme
 if #args == 0 then
   local list = k.fs.mounts()
   table.sort(list, function(a, b) return a.path < b.path end)
