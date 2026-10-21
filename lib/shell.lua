@@ -816,6 +816,25 @@ function shell.builtins.fg(args)
 end
 
 -- ---- Scripts ---------------------------------------------------------------
+-- Run fn(...) with traps of its own: a `trap 'cmd' EXIT` set inside runs
+-- when fn ends, however it ends (exit, an error, Ctrl+C).
+local function withTraps(fn, ...)
+  local c = ctx()
+  local saved = c.traps
+  c.traps = nil
+  local res = table.pack(pcall(fn, ...))
+  local onExit = c.traps and c.traps.EXIT
+  c.traps = saved
+  if onExit then
+    local interrupted = shell.interrupted
+    shell.interrupted = false
+    pcall(shell.execute, onExit)
+    shell.interrupted = interrupted
+  end
+  if not res[1] then error(res[2], 0) end
+  return table.unpack(res, 2, res.n)
+end
+
 -- Run a script: every line as if typed, with $0 = the script and $1... its
 -- arguments. `exit n` ends it with status n; Ctrl+C stops it.
 function shell.runScript(path, args, io)
@@ -825,7 +844,7 @@ function shell.runScript(path, args, io)
   local saved = c.params
   c.params = { [0] = path }
   for i, a in ipairs(args or {}) do c.params[i] = a end
-  local ok, rc = pcall(shell.withIO, io, shell.execute, src)
+  local ok, rc = pcall(shell.withIO, io, withTraps, shell.execute, src)
   c.params = saved
   if not ok then
     if rc == "__exit__" then return shell.exitCode or shell.status end
@@ -1070,7 +1089,8 @@ end
 
 shell.builtins["true"] = function() return 0 end
 shell.builtins["false"] = function() return 1 end
-for _, name in ipairs({ "functions", "break", "continue", "return", "test", "[", "read", "math" }) do
+for _, name in ipairs({ "functions", "break", "continue", "return", "test", "[", "read", "math",
+                        "eval", "exec", "shift", "trap", "type", "command", "umask" }) do
   shell.builtins[name] = function(...) return blocks().builtins[name](...) end
 end
 
@@ -1290,7 +1310,7 @@ end
 
 -- Read and run commands until exit, logout or Ctrl+D. A nested shell
 -- (StarShell) passes logout on to the login shell and ends on exit.
-function shell.loop(prompt, nested)
+local function loop(prompt, nested)
   prompt = prompt or shell.prompt
   local lineedit = require("lineedit")
   if k.process.tty() then k.process.tty().title = shell.promptPwd() end
@@ -1331,6 +1351,8 @@ function shell.loop(prompt, nested)
     end
   end
 end
+
+function shell.loop(prompt, nested) return withTraps(loop, prompt, nested) end
 
 function shell.repl()
   if not pcall(shell.startup, true) then return end -- exit/logout in a startup file

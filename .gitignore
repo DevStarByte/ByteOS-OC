@@ -22,8 +22,11 @@ home/*
 !home/root/
 home/root/.byteshell_history
 
-# owners and modes set with chmod / chown
+# owners and modes set with chmod / chown, symbolic links made with ln -s
 var/lib/perms
+var/lib/links
+# the system's scheduled jobs (crontab; users' are in their homes)
+etc/crontab
 
 # pacman: synced databases, the download cache, installed packages (only the
 # base system's entry belongs here) and the byteos upgrade state

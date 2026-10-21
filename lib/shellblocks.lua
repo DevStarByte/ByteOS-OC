@@ -1,7 +1,7 @@
 --[[
   /lib/shellblocks.lua - ByteShell's scripting: if/while/for/function
   blocks, and the built-ins test, [, read, math, functions, break,
-  continue and return.
+  continue, return, eval, exec, shift, trap, type, command and umask.
 
   /lib/shell.lua loads this the first time a command line uses one of
   them, so a session that never does keeps it out of memory.
@@ -360,6 +360,7 @@ local UNARY = {
   ["-d"] = function(p) return fs.isDirectory(shell.normalize(p)) end,
   ["-s"] = function(p) p = shell.normalize(p); return fs.exists(p) and not fs.isDirectory(p) and (fs.size(p) or 0) > 0 end,
   ["-r"] = function(p) return fs.exists(shell.normalize(p)) end,
+  ["-L"] = function(p) return fs.readlink ~= nil and fs.readlink(shell.normalize(p)) ~= nil end,
   ["-z"] = function(s) return s == "" end,
   ["-n"] = function(s) return s ~= "" end,
 }
@@ -488,6 +489,109 @@ function B.math(args)
   end
   if v == math.floor(v) and math.abs(v) < 2^53 then I.out().write(("%d\n"):format(v))
   else I.out().write((("%.6f"):format(v):gsub("0+$", "")) .. "\n") end
+  return 0
+end
+
+-- ---- eval, exec, shift, trap, type, command, umask -------------------------
+
+local function quote(s) return "'" .. s:gsub("'", "'\\''") .. "'" end
+
+-- eval ARGS: run the arguments, joined by spaces, as a command line
+function B.eval(args) return shell.execute(table.concat(args, " ")) end
+
+-- exec CMD...: run CMD, then leave the shell (or script) with its status
+function B.exec(args)
+  if #args == 0 then return 0 end
+  local words = {}
+  for i, a in ipairs(args) do words[i] = quote(a) end
+  shell.exitCode = I.executeList(table.concat(words, " "))
+  error("__exit__", 0)
+end
+
+-- shift [N]: drop the first N (1) arguments; $2 becomes $1 and so on
+function B.shift(args)
+  local n = tonumber(args[1] or 1)
+  local params = I.ctx().params
+  if not n or n < 0 or n % 1 ~= 0 then shell.err("shift", "not a count: " .. args[1]); return 2 end
+  if n > #params then return 1 end
+  local rest = {}
+  for i = n + 1, #params do rest[#rest + 1] = params[i] end
+  for i = 1, #params do params[i] = rest[i] end
+  return 0
+end
+
+-- trap 'CMD' EXIT    run CMD when this script (or interactive shell) ends
+-- trap - EXIT        forget it;  trap  lists it
+function B.trap(args)
+  local c = I.ctx()
+  if #args == 0 then
+    if c.traps and c.traps.EXIT then I.out().write("trap -- " .. quote(c.traps.EXIT) .. " EXIT\n") end
+    return 0
+  end
+  if #args < 2 then shell.err("trap", "usage: trap 'CMD' EXIT | trap - EXIT"); return 2 end
+  local rc = 0
+  for i = 2, #args do
+    local sig = args[i]:upper():gsub("^SIG", "")
+    if sig == "EXIT" or sig == "0" then
+      c.traps = c.traps or {}
+      c.traps.EXIT = args[1] ~= "-" and args[1] or nil
+    else
+      shell.err("trap", args[i] .. ": only EXIT can be trapped"); rc = 1
+    end
+  end
+  return rc
+end
+
+-- What NAME is, as type and command -v describe it: kind, detail
+local function whatIs(name)
+  if shell.aliases[name] then return "alias", shell.aliases[name] end
+  if shell.keywords[name] then return "keyword" end
+  if shell.functions[name] then return "function" end
+  if shell.builtins[name] then return "builtin" end
+  local path = shell.resolveBin(name)
+  if path and fs.exists(path) and not fs.isDirectory(path) then return "file", path end
+end
+
+-- type NAME...: whether each is an alias, keyword, function, built-in or file
+function B.type(args)
+  local rc = 0
+  for _, name in ipairs(args) do
+    local kind, detail = whatIs(name)
+    local o = I.out()
+    if kind == "alias" then o.write(name .. " is aliased to " .. quote(detail) .. "\n")
+    elseif kind == "keyword" then o.write(name .. " is a shell keyword\n")
+    elseif kind == "function" then o.write(name .. " is a function\n")
+    elseif kind == "builtin" then o.write(name .. " is a shell builtin\n")
+    elseif kind == "file" then o.write(name .. " is " .. detail .. "\n")
+    else shell.err("type", name .. ": not found"); rc = 1 end
+  end
+  return rc
+end
+
+-- command -v NAME...: the path of a program, or the name of a built-in,
+-- function or keyword (an alias prints its definition); -V as type
+function B.command(args)
+  local flag = args[1]
+  if flag == "-V" then return B.type({ table.unpack(args, 2) }) end
+  if flag ~= "-v" then shell.err("command", "usage: command -v|-V NAME..."); return 2 end
+  local rc = 0
+  for i = 2, #args do
+    local kind, detail = whatIs(args[i])
+    if kind == "file" then I.out().write(detail .. "\n")
+    elseif kind == "alias" then I.out().write("alias " .. args[i] .. "=" .. quote(detail) .. "\n")
+    elseif kind then I.out().write(args[i] .. "\n")
+    else rc = 1 end
+  end
+  return rc
+end
+
+-- umask [MODE]: show or set (octal, as 027) the bits new files do not get
+function B.umask(args)
+  if not fs.umask then shell.err("umask", "not supported by this kernel"); return 1 end
+  if not args[1] then I.out().write(("%04o\n"):format(fs.umask())); return 0 end
+  local m = args[1]:match("^[0-7]+$") and tonumber(args[1], 8)
+  if not m or m > 511 then shell.err("umask", "not an octal mode: " .. args[1]); return 2 end
+  fs.umask(m)
   return 0
 end
 

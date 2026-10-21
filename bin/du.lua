@@ -1,5 +1,5 @@
 -- du [-s] [-h] [path...] - disk usage of directories (KiB, or -h readable)
---   -s  only the total for each path
+--   -s  only the total for each path; symbolic links count nothing
 local units = require("units")
 local args = arg or {}
 local opt, paths = {}, {}
@@ -12,6 +12,7 @@ local function show(size, name)
   term.write((opt.h and units.bytes(size) or tostring(math.ceil(size / 1024))) .. "\t" .. name .. "\n")
 end
 local function walk(real, display, top)
+  if not top and fs.readlink(real) then return 0 end
   if not fs.isDirectory(real) then return fs.size(real) or 0 end
   local sum = 0
   for _, e in ipairs(fs.list(real) or {}) do

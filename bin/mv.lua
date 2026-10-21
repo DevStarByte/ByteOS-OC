@@ -16,7 +16,7 @@ for _, p in ipairs(paths) do
   local src = shell.normalize(p)
   local dst = intoDir and files.join(target, src:match("[^/]+$") or "") or target
   local ok, err
-  if not k.fs.exists(src) then
+  if not k.fs.exists(src) and not k.fs.readlink(src) then
     ok, err = nil, "no such file or directory"
   elseif dst == src or dst:sub(1, #src + 1) == src .. "/" then
     ok, err = nil, "cannot move it into itself"

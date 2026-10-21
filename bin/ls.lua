@@ -1,5 +1,6 @@
 -- ls [-a] [-l] [-1] [path...] - list directory contents
 --   -a  show hidden (dot) files     -l  long listing     -1  one per line
+--   symbolic links are cyan; -l shows where they point: name -> target
 local T = term.theme
 local args = arg or {}
 local opts, paths = {}, {}
@@ -12,7 +13,8 @@ for _, a in ipairs(args) do
 end
 if #paths == 0 then paths[1] = _G.PWD or "/" end
 
-local function colorFor(name, isDir)
+local function colorFor(name, isDir, link)
+  if link then return T.cyan end
   if isDir then return T.blue end
   if name:sub(1, 1) == "." then return T.muted end
   if name:match("%.lua$") then return T.green end
@@ -33,7 +35,7 @@ local function listing(path)
     if opts.a or name:sub(1, 1) ~= "." then
       local full = (path == "/" and "" or path) .. "/" .. name
       local isDir = k.fs.isDirectory(full)
-      entries[#entries + 1] = { name = name, dir = isDir, full = full }
+      entries[#entries + 1] = { name = name, dir = isDir, full = full, link = k.fs.readlink(full) }
     end
   end
   -- directories first, then files, each alphabetical
@@ -61,11 +63,13 @@ local function long(entries)
     ow, gw = math.max(ow, #e.stat.owner), math.max(gw, #e.stat.group)
   end
   for _, e in ipairs(entries) do
-    local size = e.dir and "-" or human(k.fs.size(e.full) or 0)
-    term.cwrite(T.muted, (e.dir and "d" or "-") .. modeString(e.stat.mode) .. "  ")
+    local size = (e.dir or e.link) and "-" or human(k.fs.size(e.full) or 0)
+    local kind = e.link and "lrwxrwxrwx" or (e.dir and "d" or "-") .. modeString(e.stat.mode)
+    term.cwrite(T.muted, kind .. "  ")
     term.cwrite(T.fg, term.pad(e.stat.owner, ow + 1) .. term.pad(e.stat.group, gw + 1))
     term.cwrite(T.fg, ("%6s  "):format(size))
-    term.cwrite(colorFor(e.name, e.dir), e.name .. (e.dir and "/" or ""))
+    term.cwrite(colorFor(e.name, e.dir, e.link), e.name .. ((e.dir and not e.link) and "/" or ""))
+    if e.link then term.cwrite(T.muted, " -> "); term.cwrite(e.dir and T.blue or T.fg, e.link) end
     term.write("\n")
   end
 end
@@ -87,7 +91,7 @@ local function grid(entries)
       local e = entries[(c - 1) * rows + r]
       if e then
         local last = c == cols or not entries[c * rows + r]
-        term.cwrite(colorFor(e.name, e.dir), last and e.name or term.pad(e.name, colw))
+        term.cwrite(colorFor(e.name, e.dir, e.link), last and e.name or term.pad(e.name, colw))
       end
     end
     term.write("\n")
@@ -97,12 +101,14 @@ end
 local rc = 0
 for i, p in ipairs(paths) do
   local path = shell.normalize(p)
-  if not k.fs.exists(path) then
+  local link = k.fs.readlink(path)
+  if not k.fs.exists(path) and not link then
     shell.err("ls", "cannot access '" .. p .. "': no such file or directory")
     rc = 2
-  elseif not k.fs.isDirectory(path) then
-    if opts.l then long({ { name = p, dir = false, full = path } })
-    else term.cwrite(colorFor(p, false), p .. "\n") end
+  elseif not k.fs.isDirectory(path) or (link and opts.l) then
+    local e = { name = p, dir = k.fs.isDirectory(path), full = path, link = link }
+    if opts.l then long({ e })
+    else term.cwrite(colorFor(p, false, link), p .. "\n") end
   else
     if #paths > 1 then
       if i > 1 then term.write("\n") end

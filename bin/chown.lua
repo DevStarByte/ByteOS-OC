@@ -36,7 +36,8 @@ local function change(path, shown)
   if recursive and fs.isDirectory(path) then
     for _, e in ipairs(fs.list(path) or {}) do
       local name = e:gsub("/$", "")
-      change(path .. "/" .. name, shown .. "/" .. name)
+      -- -R does not follow links inside the tree
+      if not fs.readlink(path .. "/" .. name) then change(path .. "/" .. name, shown .. "/" .. name) end
     end
   end
 end

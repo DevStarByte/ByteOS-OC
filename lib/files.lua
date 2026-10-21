@@ -2,7 +2,9 @@
   /lib/files.lua - copying files and whole directories (cp, mv)
 
     files.copy(src, dst, recursive) -> true | nil, reason
-        a directory needs `recursive`; dst must not lie inside src
+        a directory needs `recursive`; dst must not lie inside src. A
+        symbolic link is copied as what it points to, or with `recursive`
+        as a link
     files.join(dir, name) -> "dir/name" (also for dir = "/")
 ]]--
 local fs = kernel.fs
@@ -13,6 +15,12 @@ function files.join(dir, name)
 end
 
 function files.copy(src, dst, recursive)
+  local target = recursive and fs.readlink and fs.readlink(src)
+  if target then
+    local ok, e = fs.link(target, dst)
+    if not ok then return nil, "cannot create " .. dst .. ": " .. tostring(e) end
+    return true
+  end
   if fs.isDirectory(src) then
     if not recursive then return nil, src .. " is a directory (use -r)" end
     if dst == src or dst:sub(1, #src + 1) == src .. "/" then

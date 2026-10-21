@@ -37,7 +37,9 @@ end
 
 local EXPECTED = { clock = true, lineedit = true, net = true, shell = true, systemd = true,
                    term = true, theme = true, tty = true }
-local BUDGET = 145 -- KiB of library code at the prompt (134 when this was written)
+-- KiB of library code at the prompt (134 with Lua 5.4 when this was
+-- written); Lua 5.3 counts the same code about 17% larger
+local BUDGET = _VERSION == "Lua 5.3" and 170 or 145
 
 test("at the prompt only the libraries in use stay loaded, within budget", function()
   keys({ "memsnap", "<enter>", "<ctrl+d>" }); answers({ "root", "rootpw" })

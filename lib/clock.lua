@@ -191,7 +191,7 @@ function clock.date(fmt, t, utc)
     Y = tostring(y), y = z2(y % 100), m = z2(m), d = z2(d), e = ("%2d"):format(d),
     H = z2(hh), M = z2(mi), S = z2(ss), I = z2((hh + 11) % 12 + 1), p = hh < 12 and "AM" or "PM",
     a = DAYS[wd + 1]:sub(1, 3), A = DAYS[wd + 1], b = MONTHNAMES[m]:sub(1, 3), B = MONTHNAMES[m],
-    j = ("%03d"):format(yday), Z = abbr, s = tostring(t), ["%"] = "%",
+    j = ("%03d"):format(yday), Z = abbr, s = tostring(t), ["%"] = "%", w = tostring(wd),
     z = ("%s%02d%02d"):format(off < 0 and "-" or "+", math.abs(off) // 3600, math.abs(off) % 3600 // 60),
   }
   codes.F = codes.Y .. "-" .. codes.m .. "-" .. codes.d

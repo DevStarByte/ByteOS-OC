@@ -38,8 +38,9 @@ term.cwrite(T.muted, ("  ·  %d commands\n\n"):format(#names))
 grid(names, T.green)
 term.write("\n")
 term.cwrite(T.bright, "Shell built-ins\n")
-grid({ ".", "[", "alias", "break", "cd", "continue", "exit", "export", "false", "fg", "functions", "history",
-  "jobs", "logout", "math", "not", "read", "return", "set", "source", "test", "true", "unalias", "wait" }, T.yellow)
+grid({ ".", "[", "alias", "break", "cd", "command", "continue", "eval", "exec", "exit", "export", "false", "fg",
+  "functions", "history", "jobs", "logout", "math", "not", "read", "return", "set", "shift", "source", "test",
+  "trap", "true", "type", "umask", "unalias", "wait" }, T.yellow)
 term.write("\n")
 term.cwrite(T.bright, "Blocks  ")
 term.cwrite(T.muted, "if/else if/else  while  for X in ...  function name  begin  ... end;  $(cmd)\n")

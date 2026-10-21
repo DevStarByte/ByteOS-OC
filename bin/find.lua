@@ -1,9 +1,11 @@
 --[[
-  find [path...] [-name pattern] [-type f|d] [-maxdepth n] - list files
+  find [path...] [-name pattern] [-type f|d|l] [-maxdepth n] - list files
+
+  find does not follow symbolic links into other directories.
 
     -name    file names matching a wildcard pattern: -name '*.lua'
              (quote it, or the shell expands it first)
-    -type    f for files, d for directories
+    -type    f for files, d for directories, l for symbolic links
     -maxdepth how many directory levels to descend
 ]]--
 local args = arg or {}
@@ -26,9 +28,11 @@ if name then
 end
 
 local function walk(real, show, depth)
-  local isDir = fs.isDirectory(real)
+  local link = fs.readlink(real) ~= nil
+  local isDir = not link and fs.isDirectory(real)
   local base = show:match("([^/]+)/?$") or show
-  if (not pattern or base:match(pattern)) and (not kind or (kind == "d") == isDir) then
+  local is = link and "l" or isDir and "d" or "f"
+  if (not pattern or base:match(pattern)) and (not kind or kind == is) then
     term.write(show .. "\n")
   end
   if isDir and depth < maxdepth then
@@ -42,7 +46,7 @@ end
 local rc = 0
 for _, p in ipairs(paths) do
   local real = shell.normalize(p)
-  if fs.exists(real) then walk(real, p, 0)
+  if fs.exists(real) or fs.readlink(real) then walk(real, p, 0)
   else term.write("find: '" .. p .. "': no such file or directory\n"); rc = 1 end
 end
 return rc

@@ -239,6 +239,73 @@ local generation = 0
 local function bump() generation = generation + 1 end
 function kernel.fs.generation() return generation end
 
+-- Symbolic links. The disks cannot store them either, so they are kept in
+-- LINKS ("path<tab>target" lines) and every path is followed through them
+-- before it reaches a disk. A relative target counts from the link's
+-- directory. Without links this costs one next() per call.
+local LINKS = "/var/lib/links"
+local links, loadingLinks   -- path -> target; loaded when first needed
+
+local function loadLinks()
+  if links then return links end
+  if loadingLinks then return {} end -- reading LINKS itself goes through here
+  loadingLinks = true
+  local l = {}
+  for line in (readPrivileged(LINKS) or ""):gmatch("[^\r\n]+") do
+    local p, t = line:match("^([^\t]+)\t(.+)$")
+    if p then l[p] = t end
+  end
+  links, loadingLinks = l, nil
+  return l
+end
+
+local function saveLinks()
+  local lines = {}
+  for p, t in pairs(links) do lines[#lines + 1] = p .. "\t" .. t end
+  table.sort(lines)
+  privileged = privileged + 1
+  local ok, err = pcall(kernel.fs.writeAll, LINKS, #lines > 0 and table.concat(lines, "\n") .. "\n" or "")
+  privileged = privileged - 1
+  bump()
+  if not ok then error(err, 0) end
+end
+
+-- The path with every link in it replaced by where it points. With
+-- keepLast the last part stays as it is (rm, mv and readlink act on the
+-- link itself). nil, reason when links point at each other in a circle.
+local function follow(path, keepLast)
+  local l = loadLinks()
+  if next(l) == nil then return path end
+  local p = clean(path)
+  for _ = 1, 16 do
+    local found, i = nil, 1
+    repeat
+      local e = p:find("/", i + 1, true)
+      local pre = e and p:sub(1, e - 1) or p
+      if l[pre] and (e or not keepLast) then found = pre end
+      i = e
+    until found or not e
+    if not found then return p end
+    local t = l[found]
+    if t:sub(1, 1) ~= "/" then t = found:match("^(.*)/") .. "/" .. t end
+    p = clean(t .. p:sub(#found + 1))
+  end
+  return nil, "too many levels of symbolic links"
+end
+
+local function parentOf(p) local d = p:match("^(.*)/") return (d == nil or d == "") and "/" or d end
+
+-- Links at path and below it move to `to` (or go away with to = nil).
+local function moveLinks(path, to)
+  local l, moving = loadLinks(), {}
+  for p in pairs(l) do if under(p, path) then moving[#moving + 1] = p end end
+  if #moving == 0 then return end
+  local targets = {}
+  for i, p in ipairs(moving) do targets[i] = l[p]; l[p] = nil end
+  if to then for i, p in ipairs(moving) do l[to .. p:sub(#path + 1)] = targets[i] end end
+  saveLinks()
+end
+
 function kernel.fs.mount(path, proxy)
   if currentUser ~= "root" then return nil, DENIED end
   mounts[path] = proxy
@@ -291,44 +358,99 @@ local function holdsMount(path)
 end
 
 function kernel.fs.exists(path)
+  path = follow(path); if not path then return false end
   local p, sub = resolve(path); if not p then return false end
   return p.exists(sub) or holdsMount(path)
 end
 
 function kernel.fs.isDirectory(path)
+  path = follow(path); if not path then return false end
   local p, sub = resolve(path); if not p then return false end
   return p.isDirectory(sub) or holdsMount(path)
 end
 
 function kernel.fs.size(path)
+  path = follow(path); if not path then return 0 end
   local p, sub = resolve(path); if not p then return 0 end
   return p.size(sub)
 end
 
 function kernel.fs.list(path)
+  path = follow(path); if not path then return {} end
   local p, sub = resolve(path); if not p then return {} end
   local out, seen = {}, {}
   for _, n in ipairs(p.list(sub) or {}) do
     out[#out+1] = n
     seen[(n:gsub("/$", ""))] = true
   end
-  -- mount points show up in their parent directory (/mnt/<id>/)
+  -- mount points and links show up in their parent directory (/mnt/<id>/)
   local dir = clean(path)
-  for mp in pairs(mounts) do
+  local function add(mp, isDir)
     local parent, name = mp:match("^(.*)/([^/]+)$")
     if name and (parent == "" and "/" or parent) == dir and not seen[name] then
-      out[#out+1] = name .. "/"
+      seen[name] = true
+      out[#out+1] = name .. (isDir(mp) and "/" or "")
     end
   end
+  for mp in pairs(mounts) do add(mp, function() return true end) end
+  for lp in pairs(loadLinks()) do add(lp, kernel.fs.isDirectory) end
   table.sort(out)
   return out
 end
 
+-- Files and directories made while a user's umask is not the usual 022
+-- get their mode from it (kept in PERMS like a chmod).
+local umasks = {}  -- user -> mask
+function kernel.fs.umask(mask)
+  local old = umasks[currentUser] or 18
+  if mask then umasks[currentUser] = mask & 511 end
+  return old
+end
+
+local function masked(path, isDir)
+  local mask = umasks[currentUser]
+  if not mask or mask == 18 or privileged > 0 then return end
+  local p = clean(path)
+  local m = metaOf(p, isDir)
+  loadPerms()[p] = { owner = m.owner, group = m.group, mode = (isDir and 511 or 438) & ~mask }
+  savePerms()
+end
+
 function kernel.fs.makeDirectory(path)
+  local e
+  path, e = follow(path, true); if not path then return false, e end
+  if loadLinks()[path] then return false, "file exists" end
   if not allowed(path, true) then return false, DENIED end
   local p, sub = resolve(path); if not p then return false end
   bump()
-  return p.makeDirectory(sub)
+  local ok, err = p.makeDirectory(sub)
+  if ok then masked(path, true) end
+  return ok, err
+end
+
+-- ln -s: a link at path to target (kept as given).
+function kernel.fs.link(target, path)
+  local e
+  path, e = follow(path, true); if not path then return nil, e end
+  path = clean(path)
+  if loadLinks()[path] or kernel.fs.exists(path) then return nil, "file exists" end
+  if not kernel.fs.isDirectory(parentOf(path)) then return nil, "no such directory" end
+  if not allowed(path, true) then return nil, DENIED end
+  links[path] = target
+  saveLinks()
+  return true
+end
+
+-- Where the link at path points (its last part is not followed), or nil.
+function kernel.fs.readlink(path)
+  path = follow(path, true)
+  return path and loadLinks()[clean(path)]
+end
+
+-- path with every link in it followed; nil, reason for a circle.
+function kernel.fs.realpath(path)
+  local p, e = follow(path)
+  return p and clean(p), e
 end
 
 -- Entries in PERMS for path and everything below it move to `to` (or go
@@ -348,36 +470,60 @@ local function movePerms(path, to)
   savePerms()
 end
 
+-- A link itself is removed (or renamed) where its directory allows it.
+local function linkWritable(p) return allowed(parentOf(p), true) end
+
 function kernel.fs.remove(path)
+  local e
+  path, e = follow(path, true); if not path then return false, e end
+  local l = loadLinks()
+  if l[clean(path)] then
+    if not linkWritable(clean(path)) then return false, DENIED end
+    l[clean(path)] = nil
+    saveLinks()
+    return true
+  end
   if not allowed(path, true) then return false, DENIED end
   local p, sub = resolve(path); if not p then return false end
   bump()
   local ok, err = p.remove(sub)
-  if ok then movePerms(clean(path), nil) end
+  if ok then movePerms(clean(path), nil); moveLinks(clean(path), nil) end
   return ok, err
 end
 
 function kernel.fs.rename(from, to)
+  local e
+  from, e = follow(from, true); if not from then return false, e end
+  to, e = follow(to, true); if not to then return false, e end
+  local l = loadLinks()
+  local a, b = clean(from), clean(to)
+  if l[a] then
+    if l[b] or kernel.fs.exists(b) then return false, "file exists" end
+    if not linkWritable(a) or not linkWritable(b) then return false, DENIED end
+    l[b], l[a] = l[a], nil
+    saveLinks()
+    return true
+  end
   if not allowed(from, true) or not allowed(to, true) then return false, DENIED end
   local pa, sa = resolve(from)
   local pb, sb = resolve(to)
   if not pa or not pb or pa.address ~= pb.address then return false, "cross-device" end
   bump()
   local ok, err = pa.rename(sa, sb)
-  if ok then movePerms(clean(from), clean(to)) end
+  if ok then movePerms(a, b); moveLinks(a, b) end
   return ok, err
 end
 
 -- { owner, group, mode, listed }: listed when chmod/chown set them.
 function kernel.fs.stat(path)
-  local p = clean(path)
+  local p = clean(follow(path) or path)
   local m = metaOf(p, kernel.fs.isDirectory(p))
   return { owner = m.owner, group = m.group, mode = m.mode, listed = loadPerms()[p] ~= nil }
 end
 
 -- chmod: root or the owner may change a file's mode (a number, 0-4095).
 function kernel.fs.chmod(path, mode)
-  local p = clean(path)
+  local p = clean(follow(path) or path)
   if not kernel.fs.exists(p) then return nil, "no such file" end
   local m = metaOf(p, kernel.fs.isDirectory(p))
   if currentUser ~= "root" and m.owner ~= currentUser then return nil, DENIED end
@@ -399,7 +545,7 @@ end
 
 -- chown: only root may give a file to another owner and/or group.
 function kernel.fs.chown(path, owner, group)
-  local p = clean(path)
+  local p = clean(follow(path) or path)
   if currentUser ~= "root" then return nil, DENIED end
   if not kernel.fs.exists(p) then return nil, "no such file" end
   local m = metaOf(p, kernel.fs.isDirectory(p))
@@ -409,18 +555,24 @@ function kernel.fs.chown(path, owner, group)
 end
 
 function kernel.fs.open(path, mode)
+  local e
+  path, e = follow(path); if not path then return nil, e end
   local writing = (mode or "r"):find("[wa]") ~= nil
   if not allowed(path, writing) then return nil, DENIED end
+  local new
   if writing then
     local c = clean(path)
-    -- someone edits the account files or PERMS by hand: read them again
+    -- someone edits the account files, PERMS or LINKS by hand: read them again
     if c == "/etc/group" or c == "/etc/passwd" then groupsOf = {} end
     if c == PERMS and privileged == 0 then perms = nil end
+    if c == LINKS and privileged == 0 then links = nil end
+    new = umasks[currentUser] and not kernel.fs.exists(path)
     bump()
   end
   local p, sub = resolve(path); if not p then return nil, "not found" end
   local h, err = p.open(sub, mode or "r")
   if not h then return nil, err end
+  if new then masked(path, false) end
   local file = {}
   function file:read(n) return p.read(h, n or math.huge) end
   function file:write(d) return p.write(h, d) end

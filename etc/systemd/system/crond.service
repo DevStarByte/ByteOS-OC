@@ -1,0 +1,6 @@
+[Unit]
+Description=Command Scheduler
+
+[Service]
+ExecStart=crond
+Restart=on-failure

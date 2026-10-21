@@ -60,12 +60,15 @@ More details and other ways to install are under
   while you type, grey autosuggestions, history search with ↑, Tab completion,
   a persistent `~/.byteshell_history`, aliases, `;`/`&&`/`||` and auto-cd,
   plus pipes, redirection, wildcards, `$(command)`, `if`/`while`/`for`/
-  `function` blocks, `test`, `read`, `math` and shell scripts.
+  `function` blocks, `test`, `read`, `math`, `eval`, `shift`, `trap` and
+  shell scripts.
 - **Commands** —
-  files: `ls cat cp mv rm mkdir touch find less edit chmod chown mktemp`;
-  text: `grep head tail wc sort uniq cut tr sed diff tee xargs seq basename dirname sha256sum`;
-  system: `df du free date timedatectl sleep uname hostname neofetch which env help reboot shutdown`;
-  processes, services and logs: `ps kill systemctl journalctl dmesg logger`;
+  files: `ls cat cp mv rm rmdir mkdir touch find stat ln readlink realpath less edit chmod chown mktemp tar`;
+  text: `grep head tail wc sort uniq cut tr sed diff cmp tee xargs seq basename dirname sha256sum base64
+  printf yes tac rev nl paste`;
+  system: `df du free date timedatectl uptime sleep uname hostname neofetch which env help reboot shutdown`;
+  processes, services and logs: `ps kill systemctl journalctl dmesg logger crontab watch timeout time`;
+  Lua: `lua` (a prompt to try Lua line by line, or `lua file.lua`);
   help: `man` (`man <command>`, `man byteshell`, `man -k <word>`);
   users: `whoami id groups passwd su sudo useradd userdel usermod`;
   disks: `mount umount lsblk`; internet: `wget curl`; between computers:
@@ -217,7 +220,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.16.2 lua54 GNU/ByteOS
+ByteOS byteos 1.17.0 lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -249,7 +252,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.15.0
+byteos 1.17.0
 cowsay 0.2.0
 ```
 
@@ -300,6 +303,43 @@ drwxrwxr-x  alice wheel       -  team/
 
 The disks cannot store owners, so the changes are kept in `/var/lib/perms`
 and follow the files through `mv` and `rm`.
+
+`umask` decides what new files get: `umask 077` in `~/.shrc` makes them
+`rw-------` (directories `rwx------`); the default 022 gives the usual
+`644`/`755`.
+
+### Links
+
+`ln -s TARGET LINK` makes a symbolic link:
+
+```sh
+alice@byteos ~> ln -s /mnt/1a2b3c4d/music ~/music
+alice@byteos ~> ls -l ~
+lrwxrwxrwx  root root      -  music -> /mnt/1a2b3c4d/music
+alice@byteos ~> readlink -f ~/music      # where it finally leads
+```
+
+A link is followed everywhere (`cat`, `cd`, editors, programs), while `rm`
+and `mv` act on the link itself; `find` and `du` do not walk through links,
+and `cp -r` and `tar` copy them as links. The disks cannot store links, so
+they are kept in `/var/lib/links`; a link on a removable disk works while
+that disk is mounted at the same place. There are no hard links. Links do
+not get around permissions: what a link leads to is checked as if you had
+named it directly.
+
+### Archives
+
+`tar` packs files, directories and links into one file, in the standard
+ustar format, so the archive also opens on a PC (and a PC's opens here):
+
+```sh
+alice@byteos ~> tar -cvf /mnt/1a2b3c4d/home.tar -C /home alice
+alice@byteos ~> tar -tvf /mnt/1a2b3c4d/home.tar       # what is inside
+alice@byteos ~> tar -xf home.tar -C /tmp/restore      # unpack elsewhere
+```
+
+A whole folder fits through `netcp` this way. There is no compression
+(`-z`), and absolute paths and `..` are not unpacked.
 
 Passwords are stored as salted SHA-256 hashes (`$sha256$512$salt$hash`). A
 plain-text password from an older ByteOS is converted the next time that user
@@ -410,10 +450,33 @@ end < /etc/motd
 
 `if`/`else if`/`else`, `while`, `for NAME in ...`, `function`, `break`,
 `continue`, `return`, `and`/`or` and `test`/`[ ]`, `read`, `math`, `true`,
-`false` are described in `man byteshell`. Typing an unfinished block at the
-prompt asks for its next lines. Text tools for scripts: `sort uniq cut tr
-sed diff tee xargs seq basename dirname sha256sum mktemp`; `sed` uses Lua
-patterns, like `grep`.
+`false` are described in `man byteshell`, as are `eval`, `exec`, `shift`,
+`trap '...' EXIT` (clean up when the script ends), `type` and
+`command -v` (`if command -v wget; ...; end`). Typing an unfinished block
+at the prompt asks for its next lines. Text tools for scripts: `sort uniq
+cut tr sed diff cmp tee xargs seq basename dirname sha256sum base64 printf
+tac rev nl paste mktemp`; `sed` uses Lua patterns, like `grep`.
+
+Pipes hand the whole output of one command to the next once it has
+finished, rather than streaming it. So `yes` stops by itself after 1000
+lines when it writes into a pipe (`yes | sudo pacman -S cowsay`).
+
+### Lua
+
+`lua` gives a prompt to try Lua line by line: an expression shows its
+value (tables one level deep), an unfinished statement asks for more with
+`>>`, `exit` or Ctrl+D leaves. `component`, `computer`, `fs`, `term` and
+`kernel` are at hand:
+
+```
+root@byteos ~# lua
+> computer.freeMemory() // 1024
+312
+> for addr, kind in component.list() do print(kind) end
+```
+
+`lua script.lua args`, `lua -e 'print(1 + 1)'` and `... | lua -` run code
+without the prompt.
 
 `Ctrl+C` stops a program that is waiting for a key or an event, and skips the
 rest of the command line (status 130). OpenComputers ends a program that
@@ -496,6 +559,31 @@ root@byteos ~# journalctl -u sudo           # one program or service; -f follows
 root@byteos ~# dmesg                        # everything since boot, with seconds since power-on
 root@byteos ~# logger -t backup done        # write your own line
 ```
+
+**Scheduled jobs** work as with cron. `crontab -e` opens your jobs in the
+editor, one per line: five time fields (minute, hour, day, month,
+weekday) and the command, or `@hourly`, `@daily`, `@weekly`, `@monthly`,
+`@reboot`. The `crond` service runs each job as its user; what a job
+prints goes to the log (`journalctl -u crond`):
+
+```sh
+alice@byteos ~> crontab -e
+*/15 * * * *    echo still here
+0 7 * * mon-fri sh ~/bin/morning.sh
+@daily          rm -r /tmp/cache
+alice@byteos ~> crontab -l                     # show them; -r removes them all
+root@byteos ~# systemctl enable --now crond    # off by default, it needs some memory
+```
+
+Jobs are kept in `~/.crontab`; `/etc/crontab` takes a user name before the
+command. crond goes by the real time once `timesyncd` has it. Without an
+internet card it uses the world's time, where a minute lasts under a
+second. For systemd-style `.timer` units there is the `timers` package.
+
+**Timing commands:** `time cmd` says how long a command took, `timeout 30
+cmd` stops it after 30 seconds (status 124), `watch -n 5 df` reruns a
+command full screen every 5 seconds (q quits), and `uptime` shows how long
+the computer has been running.
 
 Programs in the background must wait with `k.event.pull` (as `sleep` and
 `term.read` do); keyboard input always goes to the foreground.
@@ -905,7 +993,12 @@ git config core.hooksPath tools/hooks
 ```
 
 Commits that only touch files the tests don't cover (like this README) skip
-it, and `git commit --no-verify` skips it once.
+it, and `git commit --no-verify` skips it once. GitHub runs the same tests
+with Lua 5.3 and 5.4 on every push and pull request.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) explains how to work on ByteOS: tests,
+code conventions, releases, packages and the signing key.
+[CHANGELOG.md](CHANGELOG.md) lists what each version changed.
 
 ## License
 

@@ -1,0 +1,39 @@
+# Run the test suite (tools/test/run.lua) on every push and pull request,
+# with Lua 5.3 and 5.4: the same tests the pre-commit hook runs, also for
+# commits made without the hook and for other people's pull requests.
+# Changes to the documents alone skip it, as the hook does.
+name: Tests
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lua: ["5.3", "5.4"]
+    name: Lua ${{ matrix.lua }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # openssl (signatures) and tzdata (the clock's time zones) are compared
+      # against the PC's own; the runner image has both
+      - name: Install Lua ${{ matrix.lua }}
+        run: sudo apt-get update -q && sudo apt-get install -y -q lua${{ matrix.lua }}
+
+      - name: Run the tests
+        run: lua${{ matrix.lua }} tools/test/run.lua

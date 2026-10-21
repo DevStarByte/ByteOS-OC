@@ -1,6 +1,9 @@
 --[[
   cp [-r] <source>... <target> - copy files; -r copies directories too
 
+  A symbolic link is copied as what it points to; with -r links are
+  copied as links.
+
   With several sources, or when the target is a directory, the copies go
   into it: cp -r /etc /bin /mnt/1a2b3c4d/backup/
 ]]--
@@ -17,7 +20,7 @@ if #paths > 1 and not intoDir then term.write("cp: target '" .. target .. "' is 
 local rc = 0
 for _, p in ipairs(paths) do
   local src = shell.normalize(p)
-  if not k.fs.exists(src) then
+  if not k.fs.exists(src) and not (recursive and k.fs.readlink(src)) then
     term.write("cp: " .. p .. ": no such file or directory\n"); rc = 1
   else
     local dst = intoDir and files.join(target, src:match("[^/]+$") or "") or target

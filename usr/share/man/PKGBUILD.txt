@@ -42,8 +42,9 @@ Build and install it inside ByteOS:
   makepkg [dir]                 writes mytool-1.0.0-1.bpk
   sudo pacman -U mytool-1.0.0-1.bpk
 
-To publish it, put the directory into pkgs/<repo>/ on the packages branch
-and run tools/mkrepo.lua on a PC (see the README).
+To publish it, push the directory into pkgs/<repo>/ on the packages
+branch: GitHub builds and signs the packages a minute later (or run
+tools/mkrepo.lua on a PC; see CONTRIBUTING.md in the repository).
 
 A command's manual page is the comment at the top of its program, and a
 package may install a topic page as /usr/share/man/<name>.txt.
