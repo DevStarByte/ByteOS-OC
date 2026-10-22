@@ -1,0 +1,4 @@
+# Für Elise, the opening (Beethoven)
+tempo 140
+E5/2 D#5/2 | E5/2 D#5/2 E5/2 B4/2 D5/2 C5/2 | A4 R/2 C4/2 E4/2 A4/2 | B4 R/2 E4/2 G#4/2 B4/2
+C5 R/2 E4/2 E5/2 D#5/2 | E5/2 D#5/2 E5/2 B4/2 D5/2 C5/2 | A4 R/2 C4/2 E4/2 A4/2 | B4 R/2 E4/2 C5/2 B4/2 | A4*2

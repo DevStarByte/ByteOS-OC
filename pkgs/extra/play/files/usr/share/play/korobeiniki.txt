@@ -1,0 +1,5 @@
+# Korobeiniki (Russian folk song, the Tetris theme)
+tempo 150
+E5 B4/2 C5/2 D5 C5/2 B4/2 | A4 A4/2 C5/2 E5 D5/2 C5/2 | B4. C5/2 D5 E5 | C5 A4 A4 R
+D5. F5/2 A5 G5/2 F5/2 | E5. C5/2 E5 D5/2 C5/2 | B4 B4/2 C5/2 D5 E5 | C5 A4 A4 R
+E5 B4/2 C5/2 D5 C5/2 B4/2 | A4 A4/2 C5/2 E5 D5/2 C5/2 | B4. C5/2 D5 E5 | C5 A4 A4 R

@@ -1,0 +1,12 @@
+function post_install()
+  print("low-stock alerts: set minimums in /etc/me-monitor.conf, then sudo systemctl enable --now me-monitor")
+end
+function post_upgrade()
+  local systemd = require("systemd")
+  if systemd.status("me-monitor").active == "active" then systemd.restart("me-monitor") end
+end
+function pre_remove()
+  local systemd = require("systemd")
+  systemd.stop("me-monitor")
+  systemd.disable("me-monitor")
+end

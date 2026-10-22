@@ -1,0 +1,6 @@
+# Ode to Joy (Beethoven, Symphony No. 9)
+tempo 120
+E4 E4 F4 G4 | G4 F4 E4 D4 | C4 C4 D4 E4 | E4. D4/2 D4*2
+E4 E4 F4 G4 | G4 F4 E4 D4 | C4 C4 D4 E4 | D4. C4/2 C4*2
+D4 D4 E4 C4 | D4 E4/2 F4/2 E4 C4 | D4 E4/2 F4/2 E4 D4 | C4 D4 G3*2
+E4 E4 F4 G4 | G4 F4 E4 D4 | C4 C4 D4 E4 | D4. C4/2 C4*2

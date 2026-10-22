@@ -1,0 +1,12 @@
+function post_install()
+  print("automatic control: sudo systemctl enable --now reactorctl (settings in /etc/reactorctl.conf)")
+end
+function post_upgrade()
+  local systemd = require("systemd")
+  if systemd.status("reactorctl").active == "active" then systemd.restart("reactorctl") end
+end
+function pre_remove()
+  local systemd = require("systemd")
+  systemd.stop("reactorctl")
+  systemd.disable("reactorctl")
+end

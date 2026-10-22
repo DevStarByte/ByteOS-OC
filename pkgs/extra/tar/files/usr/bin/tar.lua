@@ -8,6 +8,9 @@
       -v        name every file (with -t also its mode, owner, size, date)
       -C DIR    work in DIR: -c takes the paths from there, -x unpacks there
       -f -      the archive comes from / goes into a pipe
+      -z        gzip it (.tar.gz); needs the gzip package. Packed
+                archives are recognized when listing and unpacking
+                anyway: tar -xf notes.tar.gz
 
   The letters may be joined and the dash left out: tar cvf notes.tar ~/notes.
   Archives are POSIX ustar, so tar on a PC opens them, and ByteOS opens
@@ -17,19 +20,19 @@
   777 directory from /tmp does not make a home directory 777).
   A leading / is taken off the names, and a member with .. in its path is
   skipped, so an archive cannot write outside where it is unpacked.
-  There is no compression (-z, -j).
+  gzip (-z) is the only compression (no -j, -J).
 ]]--
 local args = arg or {}
 local clock = require("clock")
 local rc = 0
 local function fail(msg) shell.err("tar", msg); rc = 2 end
 local function usage()
-  term.write("usage: tar -c|-t|-x [-v] -f ARCHIVE [-C DIR] [PATH...]\n")
+  term.write("usage: tar -c|-t|-x [-v] [-z] -f ARCHIVE [-C DIR] [PATH...]\n")
   return 2
 end
 
 -- ---- options ------------------------------------------------------------------
-local mode, verbose, archive, dir
+local mode, verbose, archive, dir, gz
 local paths = {}
 local i = 1
 while i <= #args do
@@ -48,8 +51,9 @@ while i <= #args do
         i = i + 1
         if not args[i] then shell.err("tar", "-" .. c .. " needs a name"); return 2 end
         if c == "f" then archive = args[i] else dir = args[i] end
-      elseif c == "z" or c == "j" or c == "J" or c == "a" then
-        shell.err("tar", "compression is not supported"); return 2
+      elseif c == "z" then gz = true
+      elseif c == "j" or c == "J" or c == "a" then
+        shell.err("tar", "only gzip compression (-z) is supported"); return 2
       else
         shell.err("tar", "unknown option -" .. c); return usage()
       end
@@ -137,9 +141,23 @@ local function modeString(kind, m)
   return table.concat(s)
 end
 
+-- The gzip package's library, for -z (and archives that turn out packed).
+local function loadDeflate()
+  local ok, d = pcall(require, "deflate")
+  if not ok then return nil, "tar -z needs the gzip package: pacman -S gzip" end
+  package.loaded.deflate = nil -- gone from memory once tar ends
+  return d
+end
+
 -- ---- create ----------------------------------------------------------------------
 local function create()
   if #paths == 0 then shell.err("tar", "nothing to pack: give files or directories"); return 2 end
+  local deflate
+  if gz then
+    local e
+    deflate, e = loadDeflate()
+    if not deflate then shell.err("tar", e); return 2 end
+  end
   -- what is written goes out in pieces of a few KiB (each disk write is a
   -- component call)
   local sink, file
@@ -153,6 +171,11 @@ local function create()
     file, e = fs.open(archivePath, "w")
     if not file then shell.err("tar", archive .. ": " .. tostring(e)); return 2 end
     sink = function(s) file:write(s) end
+  end
+  local packer
+  if deflate then
+    packer = deflate.gzipStream(sink, { breathe = function() k.event.pull(0) end })
+    sink = packer.write
   end
   local pending, size = {}, 0
   local function emit(s)
@@ -212,6 +235,7 @@ local function create()
   end
   emit(ZERO); emit(ZERO)
   if size > 0 then sink(table.concat(pending)) end
+  if packer then packer.finish() end
   if file then file:close() end
   return rc
 end
@@ -231,6 +255,31 @@ local function reader()
       return c
     end
   end
+  -- a .tar.gz (with -z, or seen by its first bytes): unpacked on the way,
+  -- piece by piece; gunzip hands its pieces over through a coroutine
+  local first = nextChunk()
+  local pushed = first
+  local function raw()
+    if pushed then local c = pushed; pushed = nil; return c end
+    return nextChunk()
+  end
+  local fetch = raw
+  if first and (gz or first:sub(1, 2) == "\31\139") then
+    local deflate, e = loadDeflate()
+    if not deflate then return nil, e end
+    local done = false
+    local unpack = coroutine.wrap(function()
+      local ok, err = deflate.gunzip(raw, function(s) coroutine.yield(s) end)
+      if not ok then error(archive .. ": " .. err, 0) end
+    end)
+    fetch = function()
+      if done then return nil end
+      local c = unpack()
+      if c == nil then done = true end
+      return c
+    end
+  end
+  nextChunk = fetch
   local buf, pos, eof = "", 1, false
   return function(n)
     while #buf - pos + 1 < n and not eof do

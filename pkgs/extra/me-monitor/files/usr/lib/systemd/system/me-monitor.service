@@ -1,0 +1,6 @@
+[Unit]
+Description=ME Network Stock Alerts
+
+[Service]
+ExecStart=me-monitord
+Restart=on-failure

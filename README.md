@@ -24,6 +24,10 @@ Small, everyday tools. Always enabled.
 | [lshw](pkgs/core/lshw)       | 1.0.0 | Every component with its details. `lshw -short`, `lshw memory` |
 | [redstone](pkgs/core/redstone) | 1.0.0 | Read and set redstone signals and bundled cables. `redstone set top 15` |
 | [timers](pkgs/core/timers)   | 1.0.0 | Start services on a schedule, like cron: `.timer` units, `timers`, `man systemd.timer`. |
+| [lua-json](pkgs/core/lua-json) | 1.0.0 | JSON for Lua scripts and the `lua` prompt: `json = require("json")`, `json.decode(text)`, `json.encode(t, { pretty = true })`. |
+| [pastebin](pkgs/core/pastebin) | 1.0.0 | Get, run and share programs on pastebin.com: `pastebin get CODE file`, `pastebin run CODE`, `pastebin put file` (needs a developer key in `/etc/pastebin.conf`). |
+| [gitget](pkgs/core/gitget)     | 1.0.0 | Download a GitHub repository, or one folder or file of it: `gitget user/repo [path] [-o dir]`. |
+| [xxd](pkgs/core/xxd)           | 1.0.0 | A file's bytes in hex like vim's xxd (`-c -g -s -l -p`), and back with `xxd -r`. |
 
 ## extra/
 
@@ -40,7 +44,14 @@ Bigger or more demo-y packages. Enabled by default in `/etc/pacman.conf`.
 | [2048](pkgs/extra/2048)       | 1.0.0 | **Game.** Slide-the-tiles puzzle. Arrows to move, `r` restart, `q` quit. |
 | [btop](pkgs/extra/btop)       | 1.0.0 | Full-screen monitor: memory, energy, disks, network, services, processes (`k` stops one). |
 | [power](pkgs/extra/power)     | 1.0.0 | Energy stored, use per second, time left. `power -w` keeps watching. |
-| [tar](pkgs/extra/tar)         | 1.0.0 | Pack files, directories and links into ustar archives that open on a PC too. `tar -cvf home.tar ~`, `tar -xf a.tar dir/file` |
+| [gzip](pkgs/extra/gzip)       | 1.0.0 | Pack and unpack .gz files: `gzip`, `gunzip`, `zcat`, and `tar -z`. Opens a PC's .gz and the other way round. |
+| [tar](pkgs/extra/tar)         | 1.1.0 | Pack files, directories and links into ustar archives that open on a PC too. `tar -cvf home.tar ~`, `tar -xf a.tar dir/file`, `tar -czf` with the gzip package. |
+| [play](pkgs/extra/play)       | 1.0.0 | Tunes on the speaker or on note blocks: `play ode-to-joy`, `play -n "C4 E4 G4"`, `play -l` for the songs it brings. |
+| [irc](pkgs/extra/irc)         | 1.0.0 | Chat on IRC through the internet card: `irc -j byteos` (irc.libera.chat by default), `/join`, `/msg`, `/me`, `/quit`. |
+| [robot](pkgs/extra/robot)     | 1.0.0 | Drive OpenComputers robots and drones from the shell: `robot move forward 3`, `robot dig`, `robot info`, step files with `repeat` (`robot run tunnel.txt`), `robot drone move 0 5 0`. |
+| [holo](pkgs/extra/holo)       | 1.0.0 | Draw on a hologram projector: `holo text "HI"`, `holo shape sphere`, colours, scale, `holo spin` (tier 2). |
+| [reactorctl](pkgs/extra/reactorctl) | 1.0.0 | Big/Extreme Reactors: status of reactors and turbines, `on`/`off`, control rods, `watch`; the `reactorctl` service sets the rods by the energy buffer (`/etc/reactorctl.conf`). |
+| [me-monitor](pkgs/extra/me-monitor) | 1.0.0 | Applied Energistics 2: power, items, crafting CPUs, `find`, `watch`; the `me-monitor` service alerts when items fall below their minimum (`/etc/me-monitor.conf`). |
 | [rsh](pkgs/extra/rsh)         | 1.0.0 | Remote shell over ByteNet: `rsh alice@box2 uptime`, or a prompt there. |
 | [netfs](pkgs/extra/netfs)     | 1.0.0 | Shared folders over ByteNet: share in `/etc/netfs.conf`, `netfs mount box2:pub /mnt/pub`. |
 | [hyprbyte](pkgs/extra/hyprbyte) | 1.4.0 | Tiling window manager like Hyprland: terminals side by side, 9 workspaces, `hyprctl`; no bar of its own (quickshell draws one). Start it with `start-hyprbyte`; Alt+Enter opens a terminal. Layers, key grabs and `bind =` for the ecosystem below (1.2). |

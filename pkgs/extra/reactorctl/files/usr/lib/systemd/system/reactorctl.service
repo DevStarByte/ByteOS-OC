@@ -1,0 +1,6 @@
+[Unit]
+Description=Automatic Reactor Control
+
+[Service]
+ExecStart=reactorctld
+Restart=on-failure
