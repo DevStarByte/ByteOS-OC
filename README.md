@@ -40,6 +40,7 @@ Bigger or more demo-y packages. Enabled by default in `/etc/pacman.conf`.
 | [2048](pkgs/extra/2048)       | 1.0.0 | **Game.** Slide-the-tiles puzzle. Arrows to move, `r` restart, `q` quit. |
 | [btop](pkgs/extra/btop)       | 1.0.0 | Full-screen monitor: memory, energy, disks, network, services, processes (`k` stops one). |
 | [power](pkgs/extra/power)     | 1.0.0 | Energy stored, use per second, time left. `power -w` keeps watching. |
+| [tar](pkgs/extra/tar)         | 1.0.0 | Pack files, directories and links into ustar archives that open on a PC too. `tar -cvf home.tar ~`, `tar -xf a.tar dir/file` |
 | [rsh](pkgs/extra/rsh)         | 1.0.0 | Remote shell over ByteNet: `rsh alice@box2 uptime`, or a prompt there. |
 | [netfs](pkgs/extra/netfs)     | 1.0.0 | Shared folders over ByteNet: share in `/etc/netfs.conf`, `netfs mount box2:pub /mnt/pub`. |
 | [hyprbyte](pkgs/extra/hyprbyte) | 1.4.0 | Tiling window manager like Hyprland: terminals side by side, 9 workspaces, `hyprctl`; no bar of its own (quickshell draws one). Start it with `start-hyprbyte`; Alt+Enter opens a terminal. Layers, key grabs and `bind =` for the ecosystem below (1.2). |
