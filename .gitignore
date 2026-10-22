@@ -47,3 +47,8 @@ usr/share/*
 
 # Ocelot Desktop, the OpenComputers emulator used to try ByteOS locally
 ocelot-desktop-*.jar
+
+# the documentation site: built by mkdocs, the command reference made by
+# tools/gendocs.lua (both in .github/workflows/docs.yml)
+site/
+docs/reference/commands.md

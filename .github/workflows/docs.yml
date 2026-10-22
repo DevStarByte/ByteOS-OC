@@ -1,0 +1,60 @@
+# Build the documentation site (mkdocs.yml, docs/) and publish it on GitHub
+# Pages whenever the docs or the commands change on master. The command
+# reference is made from the commands' own manual pages first, so it always
+# matches the system.
+#
+# Needs Pages turned on once: Settings -> Pages -> Source: GitHub Actions.
+name: Docs
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "bin/**"
+      - "sbin/**"
+      - "overrides/**"
+      - "tools/gendocs.lua"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Lua and MkDocs
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q lua5.4
+          pip install "mkdocs-material==9.6.*"
+
+      - name: Make the command reference
+        run: lua5.4 tools/gendocs.lua
+
+      - name: Build the site
+        run: mkdocs build --strict
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

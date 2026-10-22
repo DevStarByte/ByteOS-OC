@@ -8,6 +8,9 @@ You get a familiar layout (`/bin`, `/etc`, `/home`, `/usr`, `/var`), a shell mod
 users with `sudo`, services, **`neofetch`**, an `init` system that prints `[ OK ]` lines,
 the works.
 
+**Documentation:** <https://devstarbyte.github.io/ByteOS-OC/>: installing, the shell,
+every command and package, networking, the desktop and modded Minecraft, with search.
+
 ```
    ____        _        ___  ____
   | __ ) _   _| |_ ___ / _ \/ ___|

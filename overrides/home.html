@@ -1,0 +1,56 @@
+{#-
+  The landing page (docs/index.md uses it with `template: home.html`): a hero
+  with a terminal that boots ByteOS line by line, then the page's Markdown.
+  The boot lines are the ones /sbin/init really prints.
+-#}
+{% extends "main.html" %}
+
+{% block tabs %}
+  {{ super() }}
+  <section class="bx-hero">
+    <div class="bx-hero__inner md-grid">
+      <div class="bx-hero__text">
+        <p class="bx-hero__kicker">for the OpenComputers Minecraft mod</p>
+        <h1 class="bx-hero__title">An Arch&nbsp;Linux that runs inside&nbsp;Minecraft.</h1>
+        <p class="bx-hero__lead">
+          ByteOS gives the computers in your world a fish-style shell, the
+          <code>pacman</code> package manager, users with <code>sudo</code>,
+          services, networking and a tiling desktop, all in Lua.
+        </p>
+        <div class="bx-hero__buttons">
+          <a href="{{ 'getting-started/install/' | url }}" class="md-button md-button--primary">Install ByteOS</a>
+          <a href="{{ 'getting-started/first-steps/' | url }}" class="md-button">First steps</a>
+          <a href="{{ config.repo_url }}" class="md-button bx-hero__github">GitHub</a>
+        </div>
+      </div>
+      <div class="bx-term" aria-label="ByteOS booting and installing a package">
+        <div class="bx-term__bar">
+          <span class="bx-term__dot bx-term__dot--r"></span>
+          <span class="bx-term__dot bx-term__dot--y"></span>
+          <span class="bx-term__dot bx-term__dot--g"></span>
+          <span class="bx-term__title">tty1 · byteos</span>
+        </div>
+        <pre class="bx-term__screen"><code><span class="l" style="--i:0"><span class="t-dim">[   0.004]</span> <span class="t-blue">ByteOS 1.17.1</span></span>
+<span class="l" style="--i:1"><span class="t-dim">[   0.031]</span> booting from 1a2b3c4d...</span>
+<span class="l" style="--i:2">[<span class="t-ok">  OK  </span>] Loaded terminal driver (Tier 3 GPU, 160x50).</span>
+<span class="l" style="--i:3">[<span class="t-ok">  OK  </span>] Mounted 2 filesystems.</span>
+<span class="l" style="--i:4">[<span class="t-ok">  OK  </span>] Found internet card.</span>
+<span class="l" style="--i:5">[<span class="t-ok">  OK  </span>] Started Network Time Synchronization.</span>
+<span class="l" style="--i:6">[<span class="t-ok">  OK  </span>] Started ByteNet Network Daemon.</span>
+<span class="l" style="--i:7">[<span class="t-ok">  OK  </span>] Reached target Multi-User System.</span>
+<span class="l" style="--i:8"> </span>
+<span class="l" style="--i:9">byteos login: <span class="t-bright">alice</span></span>
+<span class="l" style="--i:10"><span class="t-green">alice</span>@byteos <span class="t-green">~</span>&gt; <span class="t-blue">sudo</span> pacman <span class="t-cyan">-S</span> play</span>
+<span class="l" style="--i:11"><span class="t-dim">:: Processing package changes...</span></span>
+<span class="l" style="--i:12"> (1/1) installing play          <span class="t-blue">[##############]</span> 100%</span>
+<span class="l" style="--i:13"><span class="t-green">alice</span>@byteos <span class="t-green">~</span>&gt; <span class="t-blue">play</span> ode-to-joy <span class="t-dim">♪ ♫ ♪</span></span>
+<span class="l" style="--i:14"><span class="t-green">alice</span>@byteos <span class="t-green">~</span>&gt; <span class="bx-term__cursor"></span></span></code></pre>
+      </div>
+    </div>
+  </section>
+{% endblock %}
+
+{#- the hero is the title: no automatic heading, no edit button -#}
+{% block content %}
+  {{ page.content }}
+{% endblock %}

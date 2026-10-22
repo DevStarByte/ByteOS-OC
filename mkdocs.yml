@@ -1,0 +1,110 @@
+# The ByteOS documentation site: the pages are in docs/, GitHub builds the
+# site with .github/workflows/docs.yml and publishes it on GitHub Pages.
+# Try it locally:  pip install mkdocs-material  then  mkdocs serve
+site_name: ByteOS
+site_description: An Arch-Linux-flavoured operating system for the OpenComputers Minecraft mod
+site_url: https://devstarbyte.github.io/ByteOS-OC/
+repo_url: https://github.com/DevStarByte/ByteOS-OC
+repo_name: DevStarByte/ByteOS-OC
+edit_uri: edit/master/docs/
+copyright: MIT licensed. Minecraft is a trademark of Mojang AB; OpenComputers © Sangar et al.
+
+theme:
+  name: material
+  custom_dir: overrides
+  language: en
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    logo: material/console-line
+    repo: fontawesome/brands/github
+  # dark like a terminal by default; the toggle switches to light
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/prompts.js
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      # language-sh etc. on each block: shell sessions get window buttons and
+      # coloured prompts (stylesheets/extra.css, javascripts/prompts.js)
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installing: getting-started/install.md
+      - First steps: getting-started/first-steps.md
+      - Troubleshooting: getting-started/troubleshooting.md
+  - Using ByteOS:
+      - The shell: using/shell.md
+      - Scripts: using/scripting.md
+      - Files, disks and links: using/files.md
+      - Users and permissions: using/users.md
+      - Programs, services and logs: using/processes.md
+      - Lua: using/lua.md
+  - Networking:
+      - Between computers (ByteNet): network/bytenet.md
+      - The internet: network/internet.md
+  - Packages:
+      - pacman: packages/pacman.md
+      - Package list: packages/list.md
+      - Making packages: packages/making.md
+  - Desktop:
+      - Hyprbyte: desktop/hyprbyte.md
+  - Modded Minecraft:
+      - Overview: modded/index.md
+      - Reactors: modded/reactors.md
+      - Applied Energistics 2: modded/ae2.md
+      - Robots and drones: modded/robots.md
+      - Holograms and music: modded/holo-music.md
+  - Reference:
+      - Commands: reference/commands.md
+      - Configuration files: reference/config.md
+      - Contributing: reference/contributing.md
