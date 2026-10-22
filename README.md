@@ -340,8 +340,9 @@ alice@byteos ~> tar -xf home.tar -C /tmp/restore      # unpack elsewhere
 alice@byteos ~> tar -xf home.tar alice/notes.txt      # only that file
 ```
 
-A whole folder fits through `netcp` this way. There is no compression
-(`-z`), and absolute paths and `..` are not unpacked.
+A whole folder fits through `netcp` this way. With the `gzip` package
+`tar -czf` packs smaller and `.tar.gz` files unpack too; absolute paths
+and `..` are not unpacked.
 
 Passwords are stored as salted SHA-256 hashes (`$sha256$512$salt$hash`). A
 plain-text password from an older ByteOS is converted the next time that user
@@ -644,8 +645,19 @@ Besides the small tools and games, the repositories have:
 | `lshw`     | every component with its details (`lshw -short`, `lshw memory`) |
 | `power`    | energy stored, use per second and how long it lasts (`power -w` keeps watching) |
 | `tar`      | pack files, directories and links into archives that open on a PC too (`tar -cvf home.tar ~`) |
+| `gzip`     | gzip, gunzip, zcat; `tar -z` and .tar.gz files (`tar -xf notes.tar.gz`) |
+| `play`     | tunes on the speaker or on note blocks (`play ode-to-joy`, `play -n "C4 E4 G4"`) |
+| `irc`      | chat on IRC through the internet card (`irc -j byteos`) |
+| `robot`    | drives robots and drones from the shell or a step file (`robot move forward 3`, `robot run tunnel.txt`) |
+| `holo`     | draws text and shapes on a hologram projector (`holo text "HI"`, `holo shape sphere`) |
+| `reactorctl` | Big/Extreme Reactors: status, on/off, control rods; a service that sets the rods by the energy buffer |
+| `me-monitor` | Applied Energistics 2: power, items, crafting CPUs, and alerts when items run low |
 | `redstone` | read and set redstone signals and bundled cables |
 | `timers`   | start services on a schedule, like cron: `.timer` units (`man systemd.timer`) |
+| `lua-json` | JSON for scripts and the `lua` prompt (`require("json")`) |
+| `pastebin` | get, run and share programs on pastebin.com (`pastebin get CODE file`) |
+| `gitget`   | download a GitHub repository or one folder of it (`gitget user/repo bin`) |
+| `xxd`      | hex dumps of files and back (`xxd file`, `xxd -r`) |
 | `rsh`      | remote shell over ByteNet |
 | `netfs`    | shared folders over ByteNet |
 | `hyprbyte` | a tiling window manager, see below |

@@ -1,26 +1,10 @@
 -- The packages on the packages branch: built with tools/mkrepo.lua,
--- installed with pacman and tried out on fake hardware. The sources come
--- from $BYTEOS_PKGS (a packages checkout) or else the packages branch.
+-- installed with pacman and tried out on fake hardware (see
+-- tools/test/pkgrepo.lua for where the sources come from).
 users()
-local LUA = arg[-1] or "lua"
 local function q(p) return "'" .. p:gsub("'", "'\\''") .. "'" end
-local SRV = ROOT .. "/srv"
-os.execute("mkdir -p " .. q(SRV))
-local src = os.getenv("BYTEOS_PKGS")
-local found
-if src then
-  found = os.execute("cp -r " .. q(src .. "/pkgs") .. " " .. q(SRV)) == true
-else
-  for _, ref in ipairs({ "packages", "origin/packages" }) do
-    if os.execute(("git -C %s archive %s pkgs 2>/dev/null | tar -x -C %s 2>/dev/null"):format(q(REPO), ref, q(SRV))) == true then
-      found = true; break
-    end
-  end
-end
-if not found then print("PASS packages branch not found, skipped"); return end
-os.execute(("%s %s/tools/mkrepo.lua %s >/dev/null"):format(q(LUA), q(REPO), q(SRV)))
-put("/etc/pacman.conf", "[options]\nHoldPkg = byteos\nSigLevel = Never\n\n[core]\nServer = /srv/core\n\n[extra]\nServer = /srv/extra\n")
-local P = "pacman --noconfirm "
+local P = dofile(REPO .. "/tools/test/pkgrepo.lua")
+if not P then return end
 local ME = "5e1f0000-0000-0000-0000-000000000001"
 network({}, ME)
 
@@ -488,7 +472,7 @@ test("tar: through a pipe, leading / and long names", function()
   run("mkdir /tmp/lo; tar xf /tmp/long.tar -C /tmp/lo")
   eq(file("/tmp/lo" .. long:sub(5)), "deep", "a name over 100 characters uses the prefix field")
   local err, rc = run("tar czf /tmp/z.tar /tmp/src")
-  has(err, "compression is not supported"); eq(rc, 2)
+  has(err, "tar -z needs the gzip package"); eq(rc, 2) -- gzip is not installed here (see pkg_compress)
 end)
 
 test("tar: members with .. are skipped, garbage is refused", function()
@@ -549,3 +533,115 @@ test("tar: only the named members", function()
   eq(bad, 2); has(out, "src/nope: not found in the archive")
 end)
 
+
+-- play (extra/play): songs on the speaker and on note blocks
+test("play installs, plays notes on the speaker with the right pitch and length", function()
+  lacks(run(P .. "-S play"), "error")
+  local beeps = {}
+  computer.beep = function(f, d) beeps[#beeps + 1] = { f, d } end
+  local _, rc = run("play -t 6000 -n 'A4 C4 R A5*2 Bb4/2 C#5.'")
+  eq(rc, 0)
+  eq(#beeps, 5, "a rest makes no sound")
+  local function near(a, b, what) ok(math.abs(a - b) < 0.01, what .. ": " .. a .. " vs " .. b) end
+  near(beeps[1][1], 440, "A4"); near(beeps[2][1], 261.63, "C4"); near(beeps[3][1], 880, "A5")
+  near(beeps[4][1], 466.16, "Bb4"); near(beeps[5][1], 554.37, "C#5")
+  -- one beat at 6000 bpm is 10 ms, of which the speaker plays 90 %
+  near(beeps[1][2] * 1000, 9, "one beat"); near(beeps[3][2] * 1000, 18, "*2")
+  near(beeps[4][2] * 1000, 4.5, "/2"); near(beeps[5][2] * 1000, 13.5, "a dot adds half")
+  has(run("play -n 'C9'"), "above 2000 Hz are skipped")
+end)
+
+test("play: the songs it brings, and mistakes with their line", function()
+  local list = run("play -l")
+  has(list, "ode-to-joy"); has(list, "Ode to Joy (Beethoven"); has(list, "korobeiniki"); has(list, "fur-elise")
+  local beeps = {}
+  computer.beep = function(f, d) beeps[#beeps + 1] = { f, d } end
+  eq(select(2, run("play -t 6000 ode-to-joy")), 0)
+  eq(#beeps, 62, "every note of the song")
+  for _, song in ipairs({ "twinkle", "korobeiniki", "fur-elise" }) do
+    eq(select(2, run("play -t 6000 " .. song)), 0, song .. " plays")
+  end
+  put("/tmp/bad.txt", "# broken\ntempo 100\nC4 D4 # a comment\nE4 X9\n")
+  local out, rc = run("play /tmp/bad.txt")
+  eq(rc, 1); has(out, "/tmp/bad.txt, line 4: not a note: X9")
+  has(run("play -n 'C4/0'"), "not a length: C4/0")
+  local _, missing = run("play nosuchsong")
+  eq(missing, 1)
+end)
+
+test("play: note blocks take over from the speaker", function()
+  local played, beeps = {}, 0
+  computer.beep = function() beeps = beeps + 1 end
+  plug("iron_noteblock", "nb000000-1", { playNote = function(_, n) played[#played + 1] = n end })
+  run("play -t 6000 -n 'F#3 F#5 C4 C7 C2'")
+  eq(table.concat(played, " "), "0 24 6 18 6", "two octaves from F#3, others moved into them")
+  eq(beeps, 0)
+  run("play -s -t 6000 -n 'C4'")
+  eq(beeps, 1, "-s: the speaker anyway")
+  undisk("nb000000-1")
+end)
+
+-- irc (extra/irc): a fake server behind a fake internet card
+local function typed(text)
+  local list = {}
+  for _, cp in utf8.codes(text) do list[#list + 1] = { "key_down", "kbd", cp, 0 } end
+  list[#list + 1] = { "key_down", "kbd", 13, 28 }
+  return list
+end
+
+test("irc signs in, joins, chats, answers PING and quits", function()
+  lacks(run(P .. "-S irc"), "error")
+  local sent, asked, closedSock = {}, nil, false
+  local incoming = {
+    ":srv 433 * alice :Nickname is already in use",
+    ":srv 001 alice_ :Welcome to the test network",
+    ":srv 332 alice_ #byteos :All about ByteOS",
+    ":bob!b@h PRIVMSG #byteos :hi there alice_",
+    "PING :tick",
+    ":carol!c@h PRIVMSG #byteos :\1ACTION waves\1",
+    ":dave!d@h PRIVMSG alice_ :psst",
+  }
+  local sock = {
+    finishConnect = function() return true end,
+    read = function() local l = table.remove(incoming, 1); return l and (l .. "\r\n") or "" end,
+    write = function(s)
+      sent[#sent + 1] = s
+      if s:match("^JOIN #byteos") then table.insert(incoming, 1, ":alice_!a@h JOIN #byteos") end
+      return true
+    end,
+    close = function() closedSock = true end,
+  }
+  plug("internet", "inet-aaaa", { connect = function(host, port) asked = host .. ":" .. port; return sock end })
+  local keys = {}
+  for _, s in ipairs({ "hello world", "/me waves back", "/msg dave hi", "/nope" }) do
+    for _, sig in ipairs(typed(s)) do keys[#keys + 1] = sig end
+  end
+  for _, sig in ipairs(typed("/quit bye")) do keys[#keys + 1] = sig end
+  signals(keys)
+  local out, rc = run("irc -n alice -p 6697 -j byteos irc.example.net")
+  undisk("inet-aaaa") -- before anything can fail: a later irc would find it
+  eq(rc, 0, out)
+  eq(asked, "irc.example.net:6697")
+  local all = table.concat(sent)
+  eq(sent[1], "NICK alice\r\n"); eq(sent[2], "USER alice 0 * :ByteOS user\r\n")
+  has(all, "NICK alice_\r\n", "a taken nick gets a _")
+  has(all, "JOIN #byteos\r\n"); has(all, "PONG :tick\r\n")
+  has(all, "PRIVMSG #byteos :hello world\r\n")
+  has(all, "PRIVMSG #byteos :\1ACTION waves back\1\r\n")
+  has(all, "PRIVMSG dave :hi\r\n"); has(all, "QUIT :bye\r\n")
+  ok(closedSock, "the connection was closed")
+  has(out, "irc.example.net  #byteos  alice_", "the status line")
+  has(out, "topic of #byteos: All about ByteOS")
+  has(out, "<bob> hi there alice_"); has(out, "* carol waves"); has(out, "*dave* psst")
+  has(out, "<alice_> hello world"); has(out, "-> *dave* hi")
+  has(out, "unknown command /nope")
+  has(out, "[#byteos] ", "the input line names where text goes")
+end)
+
+test("irc without a usable internet card", function()
+  has(run("irc"), "no internet card")
+  plug("internet", "inet-aaab", { request = function() end })
+  has(run("irc"), "cannot open TCP connections")
+  undisk("inet-aaab")
+  has(run("irc -n '1bad'"), "not a usable nick")
+end)
