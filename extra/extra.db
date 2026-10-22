@@ -177,6 +177,16 @@ csize = 2895
 crc32 = 240b0a7d
 sha256 = 4176cccac9e98725aed824f0a6b80e2cbb6b381c057b359cf932113c7153e330
 
+name = tar
+version = 1.0.0-1
+desc = pack files into ustar archives, list and unpack them (opens on a PC too)
+depend = byteos>=1.16.0
+isize = 16913
+filename = tar-1.0.0-1.bpk
+csize = 10792
+crc32 = 6a400ff1
+sha256 = b5550946103a2b996565ce40a86e7c3631d3d207d8429a4d9df2add9be9a2541
+
 name = vim
 version = 1.0.0-1
 desc = modal text editor in the style of Vim: normal, insert and command mode
