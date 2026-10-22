@@ -47,6 +47,26 @@ csize = 3137
 crc32 = 6edfaa47
 sha256 = 72d447d776829ef786f549fac6c66f136991d6b2930939a1efcdf85d3477ca7d
 
+name = gzip
+version = 1.0.0-1
+desc = pack and unpack .gz files: gzip, gunzip, zcat, and tar -z (opens a PC's .gz too)
+depend = byteos>=1.16.0
+isize = 21592
+filename = gzip-1.0.0-1.bpk
+csize = 15070
+crc32 = fce3013f
+sha256 = 881b511b40e556ec91ff85a39318a1ebb945d0fb38e7ccfde7dd7c4cd154777c
+
+name = holo
+version = 1.0.0-1
+desc = draw text and shapes on a hologram projector (holo text "HI", holo shape sphere)
+depend = byteos>=1.16.0
+isize = 8284
+filename = holo-1.0.0-1.bpk
+csize = 6020
+crc32 = c8599d5b
+sha256 = ad95b9a06a3270a20b3eb13a14c0c09a18a078cce2cbea393ecce41ba58b0a41
+
 name = hyprbyte
 version = 1.4.0-1
 desc = tiling window manager in the spirit of Hyprland: windows, workspaces, a bar
@@ -90,6 +110,16 @@ csize = 4495
 crc32 = 9b00ae87
 sha256 = 0c7a5fe08f4cb6680c30c7f7d3856172a569120456dc2050a2d20ce0be8b5df0
 
+name = irc
+version = 1.0.0-1
+desc = chat on IRC through the internet card (irc -j byteos)
+depend = byteos>=1.16.0
+isize = 15808
+filename = irc-1.0.0-1.bpk
+csize = 10789
+crc32 = 9e1c1f40
+sha256 = dd4fe6648f6152aace4459adb1ddcd5d1f2290ff7cf15c4bd1653782d3453345
+
 name = libnotify
 version = 1.0.0-1
 desc = notifications: notify-send and the library programs use to send them
@@ -98,6 +128,18 @@ filename = libnotify-1.0.0-1.bpk
 csize = 3208
 crc32 = cb58f6b5
 sha256 = 44bed636a35830a1d122086232288eb7fc305d6429b5451b59c8e41f6edb7002
+
+name = me-monitor
+version = 1.0.0-1
+desc = Applied Energistics 2: power, items, crafting CPUs and low-stock alerts
+depend = byteos>=1.16.0
+optdepend = libnotify: alerts as notifications (with dunst)
+backup = /etc/me-monitor.conf
+isize = 9518
+filename = me-monitor-1.0.0-1.bpk
+csize = 9326
+crc32 = 0ae7a6fa
+sha256 = adc653ceb899ee9f45d0da7753f93c6613768ca71804cf52cc17b5b4673b0a8e
 
 name = nano
 version = 2.0.0-1
@@ -119,6 +161,16 @@ csize = 10838
 crc32 = d22122fe
 sha256 = 29c7ad67b66c920d2a325615e560de1d06c16de6f0b04d3fbcfa6c3a541f49b3
 
+name = play
+version = 1.0.0-1
+desc = play tunes on the speaker or on note blocks (play ode-to-joy, play -n "C4 E4 G4")
+depend = byteos>=1.16.0
+isize = 7250
+filename = play-1.0.0-1.bpk
+csize = 6270
+crc32 = e9c7ab69
+sha256 = 4bb8f0870a1d3b60792868e23dcf083215a7842cb31d5b00e0a85a6b20d0a038
+
 name = power
 version = 1.0.0-1
 desc = the computer's energy: stored, use per second, time left
@@ -138,6 +190,27 @@ filename = quickshell-1.0.1-1.bpk
 csize = 12231
 crc32 = 7988ffa5
 sha256 = f6f777bf9810d23d794d4ac8f40a0b1bcb87ffa8d44d8bd57055b87f5aee8d55
+
+name = reactorctl
+version = 1.0.0-1
+desc = Big/Extreme Reactors: status, control and automatic control rods by the energy buffer
+depend = byteos>=1.16.0
+backup = /etc/reactorctl.conf
+isize = 12493
+filename = reactorctl-1.0.0-1.bpk
+csize = 10938
+crc32 = 49089125
+sha256 = a1a459b23295ed1694bb0b83c4325e24eef42ef2370af2d28197a4b8be6feb1b
+
+name = robot
+version = 1.0.0-1
+desc = drive robots and drones from the shell, or from a step file (robot move forward 3)
+depend = byteos>=1.16.0
+isize = 8378
+filename = robot-1.0.0-1.bpk
+csize = 6020
+crc32 = da3e65e1
+sha256 = ab8e3e2e0572920a4dcfe994472267b244e6816ef0aa063b11689aa0f6ec10cc
 
 name = rofi
 version = 1.0.0-1
@@ -178,14 +251,15 @@ crc32 = 240b0a7d
 sha256 = 4176cccac9e98725aed824f0a6b80e2cbb6b381c057b359cf932113c7153e330
 
 name = tar
-version = 1.0.0-1
+version = 1.1.0-1
 desc = pack files into ustar archives, list and unpack them (opens on a PC too)
 depend = byteos>=1.16.0
-isize = 16913
-filename = tar-1.0.0-1.bpk
-csize = 10792
-crc32 = 6a400ff1
-sha256 = b5550946103a2b996565ce40a86e7c3631d3d207d8429a4d9df2add9be9a2541
+optdepend = gzip: tar -z for .tar.gz
+isize = 18628
+filename = tar-1.1.0-1.bpk
+csize = 11921
+crc32 = eef6c5df
+sha256 = 9afc154d64c4a638faf3750f6e3dd10f0e04fcdc5446ebe9256544b39a8f36ba
 
 name = vim
 version = 1.0.0-1

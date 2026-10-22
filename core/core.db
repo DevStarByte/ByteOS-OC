@@ -16,6 +16,17 @@ csize = 2105
 crc32 = dd5da3ea
 sha256 = 5d96887c87b6aea12b02004e38f6517879857f978423f39ed25c1dfb0c89a9f9
 
+name = gitget
+version = 1.0.0-1
+desc = download a GitHub repository, or one folder or file of it (gitget user/repo)
+depend = byteos>=1.16.0
+depend = lua-json
+isize = 6588
+filename = gitget-1.0.0-1.bpk
+csize = 5518
+crc32 = 46648529
+sha256 = e146ecd338519e60b416c571e239fb246fced54a9afb6951be337f37f5547ef7
+
 name = hello
 version = 1.0.0-1
 desc = a friendly greeter package
@@ -42,6 +53,27 @@ filename = lshw-1.0.0-1.bpk
 csize = 2285
 crc32 = 39e365ca
 sha256 = 35e719ae270e9dac266cbddda02055a9b7f5d3d9ee4c8a26bea238f49bdba094
+
+name = lua-json
+version = 1.0.0-1
+desc = JSON for Lua scripts: json.decode and json.encode (require("json"))
+depend = byteos>=1.16.0
+isize = 8886
+filename = lua-json-1.0.0-1.bpk
+csize = 6159
+crc32 = 3919236e
+sha256 = b7f3713d29c2159161c0cccc7c691d0628675cc417f3eb2e584b4b97bd8f971c
+
+name = pastebin
+version = 1.0.0-1
+desc = get, run and share programs on pastebin.com (pastebin get CODE file)
+depend = byteos>=1.16.0
+backup = /etc/pastebin.conf
+isize = 5659
+filename = pastebin-1.0.0-1.bpk
+csize = 4881
+crc32 = 371891f5
+sha256 = 9c1dcdac427d5d9a3e051b9edb2f9e89587ffcb6cd7a75a2aceb6825788309d3
 
 name = redstone
 version = 1.0.0-1
@@ -79,3 +111,13 @@ filename = uptime-1.0.0-1.bpk
 csize = 650
 crc32 = 3971d29a
 sha256 = b3bee23e91cf0e376ca2911a9453435e55177abb2580933d8d3c0c1fb07bbb7a
+
+name = xxd
+version = 1.0.0-1
+desc = a file's bytes in hex (xxd file), and a hex dump back into bytes (xxd -r)
+depend = byteos>=1.16.0
+isize = 4270
+filename = xxd-1.0.0-1.bpk
+csize = 3679
+crc32 = 15aa4338
+sha256 = fb4c44e4e6b3e48f99c7dd607cf18d88d9b3f5adb0a7f81e65236789249d558e
