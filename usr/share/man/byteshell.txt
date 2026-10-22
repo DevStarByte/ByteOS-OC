@@ -113,11 +113,17 @@ BUILT-IN COMMANDS
                            its status
   shift [N]                drop the first N (1) arguments: $2 becomes $1
   trap 'CMD' EXIT          run CMD when the script (or this shell) ends,
-                           also after exit or Ctrl+C; trap - EXIT forgets
-                           it, trap shows it. Only EXIT can be trapped.
+                           also after exit or Ctrl+C
+  trap 'CMD' INT           on Ctrl+C run CMD, then go on with the next
+                           command (CMD may exit); trap '' INT just goes
+                           on. trap - EXIT|INT forgets one, trap shows them.
+                           Only EXIT and INT can be trapped.
   type NAME...             alias, keyword, function, built-in or program?
   command -v NAME...       where a program is (a built-in's name); status 1
                            if there is none: if command -v wget; ...; end
+  command NAME ARGS        run the program or built-in NAME, even when a
+                           function or alias has that name:
+                           function ls; command ls -l $@; end
   umask [MODE]             show or set the permissions new files do not
                            get, in octal: umask 077 keeps them private.
                            It lasts until you log out: put it in ~/.shrc

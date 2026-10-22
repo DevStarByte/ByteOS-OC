@@ -1,4 +1,4 @@
--- lua, tar, timeout, time, uptime and watch.
+-- lua, timeout, time, uptime and watch (tar is a package: see packages.lua).
 local function sh(c) return os.execute(c) == true end
 local function q(p) return "'" .. p:gsub("'", "'\\''") .. "'" end
 local hostTar = sh("command -v tar >/dev/null 2>&1")
@@ -28,101 +28,6 @@ test("the lua prompt: values, multi-line chunks, errors, exit", function()
   keys({ "<ctrl+d>" })
   local _, rc2 = run("lua")
   eq(rc2, 0, "Ctrl+D leaves")
-end)
-
--- a member header as another tar might write it
-local function header(name, kind, size)
-  local function field(s, n) return s .. ("\0"):rep(n - #s) end
-  local h = field(name, 100) .. "0000644\0" .. "0000000\0" .. "0000000\0" .. ("%011o\0"):format(size)
-    .. "00000000000\0" .. "        " .. kind .. field("", 100) .. "ustar\0" .. "00" .. field("root", 32)
-    .. field("root", 32) .. ("\0"):rep(16) .. field("", 155) .. ("\0"):rep(12)
-  local sum = 0
-  for i = 1, 512 do sum = sum + h:byte(i) end
-  return h:sub(1, 148) .. ("%06o\0 "):format(sum) .. h:sub(157)
-end
-
-put("/tmp/src/a.txt", "hello\n")
-put("/tmp/src/sub/b.txt", string.rep("0123456789", 300))
-put("/tmp/src/sub/deep/c.txt", "")
-
-test("tar: create, list, extract with directories and -C", function()
-  local _, rc = run("tar -cf /tmp/x.tar -C /tmp src")
-  eq(rc, 0)
-  local data = file("/tmp/x.tar")
-  eq(#data % 512, 0, "whole blocks")
-  eq(data:sub(258, 262), "ustar", "ustar magic at offset 257")
-  local sum = 0
-  for i = 1, 512 do sum = sum + ((i >= 149 and i <= 156) and 32 or data:byte(i)) end
-  eq(tonumber(data:sub(149, 154), 8), sum, "header checksum")
-  eq(data:sub(1, 4), "src/")
-  eq(data:sub(-1024), ("\0"):rep(1024), "two zero blocks at the end")
-  eq(run("tar -tf /tmp/x.tar"), "src/\nsrc/a.txt\nsrc/sub/\nsrc/sub/b.txt\nsrc/sub/deep/\nsrc/sub/deep/c.txt\n")
-  has(run("tar tvf /tmp/x.tar"), "-rw-rw-rw- root/root     3000 ", "files in /tmp are rw for everyone")
-  run("mkdir /tmp/out")
-  eq(run("tar xvf /tmp/x.tar -C /tmp/out"), "src/\nsrc/a.txt\nsrc/sub/\nsrc/sub/b.txt\nsrc/sub/deep/\nsrc/sub/deep/c.txt\n")
-  eq(file("/tmp/out/src/a.txt"), "hello\n")
-  eq(file("/tmp/out/src/sub/b.txt"), string.rep("0123456789", 300))
-  eq(file("/tmp/out/src/sub/deep/c.txt"), "")
-  local verbose = run("tar -cvf /tmp/y.tar -C /tmp/src a.txt")
-  eq(verbose, "a.txt\n")
-end)
-
-test("tar: through a pipe, leading / and long names", function()
-  eq(run("tar cf - -C /tmp src/sub/deep | tar tf -"), "src/sub/deep/\nsrc/sub/deep/c.txt\n")
-  has(run("tar cf /tmp/abs.tar /tmp/src/a.txt"), "removing leading '/'")
-  eq(run("tar tf /tmp/abs.tar"), "tmp/src/a.txt\n")
-  run("mkdir /tmp/abs; cd /tmp/abs; tar xf /tmp/abs.tar; cd /")
-  eq(file("/tmp/abs/tmp/src/a.txt"), "hello\n", "unpacked below the current directory")
-  local long = "/tmp/" .. string.rep("d", 60) .. "/" .. string.rep("e", 60) .. "/f.txt"
-  put(long, "deep")
-  run("tar cf /tmp/long.tar -C /tmp " .. long:sub(6))
-  run("mkdir /tmp/lo; tar xf /tmp/long.tar -C /tmp/lo")
-  eq(file("/tmp/lo" .. long:sub(5)), "deep", "a name over 100 characters uses the prefix field")
-  local err, rc = run("tar czf /tmp/z.tar /tmp/src")
-  has(err, "compression is not supported"); eq(rc, 2)
-end)
-
-test("tar: members with .. are skipped, garbage is refused", function()
-  put("/tmp/evil.tar", header("../evil.txt", "0", 4) .. "evil" .. ("\0"):rep(508)
-    .. header("ok.txt", "0", 2) .. "ok" .. ("\0"):rep(510) .. ("\0"):rep(1024))
-  run("mkdir /tmp/ev")
-  local out, rc = run("tar xf /tmp/evil.tar -C /tmp/ev")
-  has(out, "'..'"); eq(rc, 2)
-  ok(not file("/tmp/evil.txt"), "nothing written outside")
-  eq(file("/tmp/ev/ok.txt"), "ok", "the other members are unpacked")
-  put("/tmp/junk.tar", string.rep("x", 1024))
-  has(run("tar tf /tmp/junk.tar"), "does not look like a tar archive")
-end)
-
-test("tar: stricter modes come back for root, the perms file stays small", function()
-  put("/tmp/m/secret", "s")
-  run("chmod 600 /tmp/m/secret")
-  run("tar cf /tmp/m.tar -C /tmp m")
-  run("mkdir /home/root/r; tar xf /tmp/m.tar -C /home/root/r")
-  eq(kernel.fs.stat("/home/root/r/m/secret").mode, tonumber("600", 8))
-  local perms = file("/var/lib/perms") or ""
-  has(perms, "/home/root/r/m/secret")
-  lacks(perms, "/home/root/r/m\n", "a directory that already has its mode is not listed")
-end)
-
-test("tar: symbolic links", function()
-  if not kernel.fs.link then return end
-  run("mkdir /tmp/ln; echo t > /tmp/ln/target")
-  ok(kernel.fs.link("target", "/tmp/ln/link"))
-  has(run("tar cf /tmp/ln.tar -C /tmp ln; tar tvf /tmp/ln.tar"), "ln/link -> target")
-  run("mkdir /tmp/ln2; tar xf /tmp/ln.tar -C /tmp/ln2")
-  eq(kernel.fs.readlink("/tmp/ln2/ln/link"), "target")
-end)
-
-test("tar: archives open on a PC and the other way round", function()
-  if not hostTar then return end
-  local listed = io.popen("tar -tf " .. q(ROOT .. "/tmp/x.tar")):read("a")
-  eq(listed, "src/\nsrc/a.txt\nsrc/sub/\nsrc/sub/b.txt\nsrc/sub/deep/\nsrc/sub/deep/c.txt\n")
-  ok(sh("cd " .. q(ROOT .. "/tmp") .. " && tar --format=ustar -cf host.tar src"), "host tar packs")
-  run("mkdir /tmp/fromhost; tar xf /tmp/host.tar -C /tmp/fromhost")
-  eq(file("/tmp/fromhost/src/sub/b.txt"), string.rep("0123456789", 300))
-  ok(sh("cd " .. q(ROOT .. "/tmp") .. " && tar --format=gnu -cf gnu.tar src"), "host tar packs (gnu)")
-  has(run("tar tf /tmp/gnu.tar"), "src/sub/deep/c.txt")
 end)
 
 test("timeout stops a slow command and passes on a quick one's status", function()
@@ -160,4 +65,12 @@ test("watch shows the command and quits on q", function()
   signals({ { "key_down", "keyboard", 113, 16 } })
   local plain = run("watch -t -n 0.1 'echo a; echo b'")
   lacks(plain, "Every"); has(plain, "a\nb\n")
+end)
+
+test("the lua prompt remembers what was typed, also next time", function()
+  keys({ "41 + 1", "<enter>", "exit", "<enter>" })
+  run("lua")
+  ok(file("/home/root/.lua_history"):sub(-7) == "41 + 1\n", "the line was added to ~/.lua_history")
+  keys({ "<up>", "<enter>", "exit", "<enter>" })
+  has(run("lua"), "42\n", "↑ brings back the line from the last run")
 end)

@@ -4,6 +4,21 @@ What changed in each ByteOS release. `sudo pacman -Syu` brings a
 computer up to the newest one; `pacman --rollback` undoes the last
 upgrade. The commit of each release has the full story.
 
+## 1.17.1 — 2026-10-21
+
+- `id -u`, `-g`, `-G` and `-n` (`id -un` prints your name).
+- `ls -l` shows when each file last changed; `ls -t` sorts newest first,
+  `ls -r` reverses the order. A link's line shows the link's own owner.
+- `command NAME ARGS` runs the program or built-in even when a function
+  or alias has that name.
+- `trap '...' INT` runs on Ctrl+C, and the script goes on with its next
+  command.
+- `tar` is a package now (`sudo pacman -S tar`, in `extra`) instead of
+  part of the base system; upgrading removes `/bin/tar`. It also takes
+  member names: `tar -xf a.tar dir/file`.
+- The `lua` prompt keeps its history in `~/.lua_history`.
+- crond stays off until needed: `crontab` run by root offers to start it.
+
 ## 1.17.0 — 2026-10-21
 
 - **Lua:** `lua` opens a prompt to try Lua line by line (expressions show

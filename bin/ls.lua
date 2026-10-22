@@ -1,5 +1,8 @@
--- ls [-a] [-l] [-1] [path...] - list directory contents
+-- ls [-a] [-l] [-t] [-r] [-1] [path...] - list directory contents
 --   -a  show hidden (dot) files     -l  long listing     -1  one per line
+--   -t  newest first                -r  reverse the order
+--   -l shows when a file last changed: the time this year, the year for
+--   files older than half a year (as the disk keeps it)
 --   symbolic links are cyan; -l shows where they point: name -> target
 local T = term.theme
 local args = arg or {}
@@ -38,12 +41,35 @@ local function listing(path)
       entries[#entries + 1] = { name = name, dir = isDir, full = full, link = k.fs.readlink(full) }
     end
   end
-  -- directories first, then files, each alphabetical
-  table.sort(entries, function(a, b)
-    if a.dir ~= b.dir then return a.dir end
-    return a.name:lower() < b.name:lower()
-  end)
+  if opts.t then
+    -- newest first, names in alphabetical order on a tie
+    for _, e in ipairs(entries) do e.time = k.fs.lastModified(e.full) or 0 end
+    table.sort(entries, function(a, b)
+      if a.time ~= b.time then return a.time > b.time end
+      return a.name:lower() < b.name:lower()
+    end)
+  else
+    -- directories first, then files, each alphabetical
+    table.sort(entries, function(a, b)
+      if a.dir ~= b.dir then return a.dir end
+      return a.name:lower() < b.name:lower()
+    end)
+  end
+  if opts.r then
+    for i = 1, #entries // 2 do entries[i], entries[#entries + 1 - i] = entries[#entries + 1 - i], entries[i] end
+  end
   return entries
+end
+
+-- "Oct 21 14:03" this half year, "Oct 21  2025" before, blank if unknown.
+-- Without the real time (no timesyncd) "now" is the world's, which cannot
+-- be compared with the disk's times: then always with the year.
+local clock = require("clock")
+local HALF_YEAR = 182 * 86400
+local function when(t)
+  if not t or t == 0 then return ("%12s"):format("") end
+  local now, real = clock.now()
+  return clock.date((real and math.abs(now - t) < HALF_YEAR) and "%b %e %H:%M" or "%b %e  %Y", t)
 end
 
 -- 493 -> "rwxr-xr-x"
@@ -59,7 +85,7 @@ end
 local function long(entries)
   local ow, gw = 0, 0
   for _, e in ipairs(entries) do
-    e.stat = k.fs.stat(e.full)
+    e.stat = k.fs.stat(e.full, e.link ~= nil) -- a link's own owner
     ow, gw = math.max(ow, #e.stat.owner), math.max(gw, #e.stat.group)
   end
   for _, e in ipairs(entries) do
@@ -68,6 +94,8 @@ local function long(entries)
     term.cwrite(T.muted, kind .. "  ")
     term.cwrite(T.fg, term.pad(e.stat.owner, ow + 1) .. term.pad(e.stat.group, gw + 1))
     term.cwrite(T.fg, ("%6s  "):format(size))
+    if e.time == nil then e.time = k.fs.lastModified(e.full) end
+    term.cwrite(T.muted, when(e.time) .. "  ")
     term.cwrite(colorFor(e.name, e.dir, e.link), e.name .. ((e.dir and not e.link) and "/" or ""))
     if e.link then term.cwrite(T.muted, " -> "); term.cwrite(e.dir and T.blue or T.fg, e.link) end
     term.write("\n")

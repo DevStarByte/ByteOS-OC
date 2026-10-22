@@ -876,7 +876,7 @@ function shell.run(line, io)
   local args = globWords(words, globs)
   local cmd = table.remove(args, 1)
 
-  if shell.functions[cmd] then return shell.callFunction(cmd, args, io) end
+  if shell.functions[cmd] and not io.noFunctions then return shell.callFunction(cmd, args, io) end
 
   local stdin = makeStdin(io.input)
   local t = (io.output or io.input) and makeTerm(io.output, stdin) or term
@@ -1005,6 +1005,17 @@ function shell.reportJobs()
   shell.jobs = keep
 end
 
+-- Ctrl+C stopped a command. With `trap 'cmd' INT` the trap runs (it may
+-- `exit`) and the script goes on with its next command; true then.
+local function interruptTrap()
+  local c = ctx()
+  local onInt = c.traps and c.traps.INT
+  if not onInt then return false end
+  shell.interrupted = false
+  if onInt ~= "" then shell.execute(onInt) end
+  return true
+end
+
 -- Run a command line: lists separated by ; or &, each list a && b || c
 -- of pipelines. A list ending in & runs in the background as a whole.
 -- Sets (in the foreground) and returns $status.
@@ -1029,7 +1040,7 @@ local function executeList(line)
           if go and parts[j]:match("%S") then
             rc = shell.pipeline(parts[j])
             if fg then shell.status = rc end
-            if shell.interrupted then return rc end
+            if shell.interrupted and not interruptTrap() then return rc end
           end
           if ops[j] == "&&" then go = rc == 0 elseif ops[j] == "||" then go = rc ~= 0 end
         end
@@ -1049,7 +1060,7 @@ shell.functions = {}   -- name -> parsed body
 
 shell._internal = {
   executeList = executeList, ctx = ctx, assign = assign, writeOut = writeOut,
-  closeParen = closeParen, READONLY = READONLY,
+  closeParen = closeParen, READONLY = READONLY, interruptTrap = interruptTrap,
   out = function() return out end, -- where built-ins print right now
 }
 

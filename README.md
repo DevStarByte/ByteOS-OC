@@ -63,7 +63,7 @@ More details and other ways to install are under
   `function` blocks, `test`, `read`, `math`, `eval`, `shift`, `trap` and
   shell scripts.
 - **Commands** —
-  files: `ls cat cp mv rm rmdir mkdir touch find stat ln readlink realpath less edit chmod chown mktemp tar`;
+  files: `ls cat cp mv rm rmdir mkdir touch find stat ln readlink realpath less edit chmod chown mktemp`;
   text: `grep head tail wc sort uniq cut tr sed diff cmp tee xargs seq basename dirname sha256sum base64
   printf yes tac rev nl paste`;
   system: `df du free date timedatectl uptime sleep uname hostname neofetch which env help reboot shutdown`;
@@ -220,7 +220,7 @@ component.eeprom.setLabel("ByteBIOS")
 ```sh
 root@byteos ~# neofetch
 root@byteos ~# uname -a
-ByteOS byteos 1.17.0 lua54 GNU/ByteOS
+ByteOS byteos 1.17.1 lua54 GNU/ByteOS
 
 root@byteos ~# pacman -Sy
 :: Synchronizing package databases...
@@ -252,7 +252,7 @@ root@byteos ~# cowsay "I run Arch... ish."
                 ||     ||
 
 root@byteos ~# pacman -Q
-byteos 1.17.0
+byteos 1.17.1
 cowsay 0.2.0
 ```
 
@@ -298,7 +298,7 @@ alice@byteos ~> chmod 600 notes.txt          # only alice may read it
 alice@byteos ~> chmod go-rx ~/private        # nobody else gets inside
 root@byteos ~# mkdir /srv/team; chown alice:wheel /srv/team; chmod 775 /srv/team
 alice@byteos ~> ls -l /srv
-drwxrwxr-x  alice wheel       -  team/
+drwxrwxr-x  alice wheel       -  Oct 21 14:03  team/
 ```
 
 The disks cannot store owners, so the changes are kept in `/var/lib/perms`
@@ -315,13 +315,13 @@ and follow the files through `mv` and `rm`.
 ```sh
 alice@byteos ~> ln -s /mnt/1a2b3c4d/music ~/music
 alice@byteos ~> ls -l ~
-lrwxrwxrwx  root root      -  music -> /mnt/1a2b3c4d/music
+lrwxrwxrwx  alice users       -  Oct 21 14:05  music -> /mnt/1a2b3c4d/music
 alice@byteos ~> readlink -f ~/music      # where it finally leads
 ```
 
 A link is followed everywhere (`cat`, `cd`, editors, programs), while `rm`
 and `mv` act on the link itself; `find` and `du` do not walk through links,
-and `cp -r` and `tar` copy them as links. The disks cannot store links, so
+and `cp -r` and `tar` (a package) copy them as links. The disks cannot store links, so
 they are kept in `/var/lib/links`; a link on a removable disk works while
 that disk is mounted at the same place. There are no hard links. Links do
 not get around permissions: what a link leads to is checked as if you had
@@ -329,13 +329,15 @@ named it directly.
 
 ### Archives
 
-`tar` packs files, directories and links into one file, in the standard
-ustar format, so the archive also opens on a PC (and a PC's opens here):
+The `tar` package (`sudo pacman -S tar`, in `extra`) packs files,
+directories and links into one file, in the standard ustar format, so the
+archive also opens on a PC (and a PC's opens here):
 
 ```sh
 alice@byteos ~> tar -cvf /mnt/1a2b3c4d/home.tar -C /home alice
 alice@byteos ~> tar -tvf /mnt/1a2b3c4d/home.tar       # what is inside
 alice@byteos ~> tar -xf home.tar -C /tmp/restore      # unpack elsewhere
+alice@byteos ~> tar -xf home.tar alice/notes.txt      # only that file
 ```
 
 A whole folder fits through `netcp` this way. There is no compression
@@ -451,8 +453,9 @@ end < /etc/motd
 `if`/`else if`/`else`, `while`, `for NAME in ...`, `function`, `break`,
 `continue`, `return`, `and`/`or` and `test`/`[ ]`, `read`, `math`, `true`,
 `false` are described in `man byteshell`, as are `eval`, `exec`, `shift`,
-`trap '...' EXIT` (clean up when the script ends), `type` and
-`command -v` (`if command -v wget; ...; end`). Typing an unfinished block
+`trap '...' EXIT` (clean up when the script ends) and `trap '...' INT`
+(Ctrl+C), `type`, `command -v` (`if command -v wget; ...; end`) and
+`command NAME` (the program, not a function of the same name). Typing an unfinished block
 at the prompt asks for its next lines. Text tools for scripts: `sort uniq
 cut tr sed diff cmp tee xargs seq basename dirname sha256sum base64 printf
 tac rev nl paste mktemp`; `sed` uses Lua patterns, like `grep`.
@@ -572,7 +575,7 @@ alice@byteos ~> crontab -e
 0 7 * * mon-fri sh ~/bin/morning.sh
 @daily          rm -r /tmp/cache
 alice@byteos ~> crontab -l                     # show them; -r removes them all
-root@byteos ~# systemctl enable --now crond    # off by default, it needs some memory
+root@byteos ~# systemctl enable --now crond    # off until needed; crontab as root offers it
 ```
 
 Jobs are kept in `~/.crontab`; `/etc/crontab` takes a user name before the
@@ -640,6 +643,7 @@ Besides the small tools and games, the repositories have:
 | `btop`     | full-screen monitor: memory, energy, disks, network, services, processes (`k` stops one) |
 | `lshw`     | every component with its details (`lshw -short`, `lshw memory`) |
 | `power`    | energy stored, use per second and how long it lasts (`power -w` keeps watching) |
+| `tar`      | pack files, directories and links into archives that open on a PC too (`tar -cvf home.tar ~`) |
 | `redstone` | read and set redstone signals and bundled cables |
 | `timers`   | start services on a schedule, like cron: `.timer` units (`man systemd.timer`) |
 | `rsh`      | remote shell over ByteNet |

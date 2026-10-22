@@ -288,7 +288,7 @@ execNodes = function(nodes)
   local rc = shell.status
   local fg = k.process.isForeground()
   for _, node in ipairs(nodes) do
-    if shell.interrupted then return 130 end
+    if shell.interrupted and not I.interruptTrap() then return 130 end
     rc = withRedir(node.redir, function() return run[node.kind](node, rc) end)
     if fg then shell.status = rc end
   end
@@ -521,22 +521,28 @@ function B.shift(args)
 end
 
 -- trap 'CMD' EXIT    run CMD when this script (or interactive shell) ends
--- trap - EXIT        forget it;  trap  lists it
+-- trap 'CMD' INT     run CMD on Ctrl+C, then go on with the next command
+--                    (trap '' INT: just go on)
+-- trap - EXIT|INT    forget it;  trap  lists them
+local SIGNALS = { EXIT = "EXIT", ["0"] = "EXIT", INT = "INT", ["2"] = "INT" }
 function B.trap(args)
   local c = I.ctx()
   if #args == 0 then
-    if c.traps and c.traps.EXIT then I.out().write("trap -- " .. quote(c.traps.EXIT) .. " EXIT\n") end
+    for _, sig in ipairs({ "EXIT", "INT" }) do
+      local cmd = c.traps and c.traps[sig]
+      if cmd then I.out().write("trap -- " .. quote(cmd) .. " " .. sig .. "\n") end
+    end
     return 0
   end
-  if #args < 2 then shell.err("trap", "usage: trap 'CMD' EXIT | trap - EXIT"); return 2 end
+  if #args < 2 then shell.err("trap", "usage: trap 'CMD' EXIT|INT | trap - EXIT|INT"); return 2 end
   local rc = 0
   for i = 2, #args do
-    local sig = args[i]:upper():gsub("^SIG", "")
-    if sig == "EXIT" or sig == "0" then
+    local sig = SIGNALS[args[i]:upper():gsub("^SIG", "")]
+    if sig then
       c.traps = c.traps or {}
-      c.traps.EXIT = args[1] ~= "-" and args[1] or nil
+      c.traps[sig] = args[1] ~= "-" and args[1] or nil
     else
-      shell.err("trap", args[i] .. ": only EXIT can be trapped"); rc = 1
+      shell.err("trap", args[i] .. ": only EXIT and INT can be trapped"); rc = 1
     end
   end
   return rc
@@ -568,12 +574,19 @@ function B.type(args)
   return rc
 end
 
+-- command NAME ARGS: run the built-in or program NAME even when a function
+-- or alias has that name (function ls; command ls -l $@; end)
 -- command -v NAME...: the path of a program, or the name of a built-in,
 -- function or keyword (an alias prints its definition); -V as type
-function B.command(args)
+function B.command(args, io)
   local flag = args[1]
   if flag == "-V" then return B.type({ table.unpack(args, 2) }) end
-  if flag ~= "-v" then shell.err("command", "usage: command -v|-V NAME..."); return 2 end
+  if not flag then shell.err("command", "usage: command [-v|-V] NAME [ARGS...]"); return 2 end
+  if flag ~= "-v" then
+    local words = {}
+    for i, a in ipairs(args) do words[i] = quote(a) end
+    return shell.run(table.concat(words, " "), setmetatable({ noFunctions = true }, { __index = io }))
+  end
   local rc = 0
   for i = 2, #args do
     local kind, detail = whatIs(args[i])

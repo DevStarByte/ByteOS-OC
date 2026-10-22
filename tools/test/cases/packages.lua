@@ -430,3 +430,122 @@ test("vim edits like Vim: modes, operators, undo, :s and search", function()
   run("vim /tmp/v.txt")
   eq(file("/tmp/v.txt"), "abcdef\n")
 end)
+
+-- tar (extra/tar): packing, listing, unpacking, ustar compatibility
+local function sh(c) return os.execute(c) == true end
+
+test("tar installs from extra", function()
+  lacks(run(P .. "-S tar"), "error")
+  ok(file("/usr/bin/tar.lua"), "tar is in /usr/bin")
+end)
+
+-- a member header as another tar might write it
+local function header(name, kind, size)
+  local function field(s, n) return s .. ("\0"):rep(n - #s) end
+  local h = field(name, 100) .. "0000644\0" .. "0000000\0" .. "0000000\0" .. ("%011o\0"):format(size)
+    .. "00000000000\0" .. "        " .. kind .. field("", 100) .. "ustar\0" .. "00" .. field("root", 32)
+    .. field("root", 32) .. ("\0"):rep(16) .. field("", 155) .. ("\0"):rep(12)
+  local sum = 0
+  for i = 1, 512 do sum = sum + h:byte(i) end
+  return h:sub(1, 148) .. ("%06o\0 "):format(sum) .. h:sub(157)
+end
+
+put("/tmp/src/a.txt", "hello\n")
+put("/tmp/src/sub/b.txt", string.rep("0123456789", 300))
+put("/tmp/src/sub/deep/c.txt", "")
+
+test("tar: create, list, extract with directories and -C", function()
+  local _, rc = run("tar -cf /tmp/x.tar -C /tmp src")
+  eq(rc, 0)
+  local data = file("/tmp/x.tar")
+  eq(#data % 512, 0, "whole blocks")
+  eq(data:sub(258, 262), "ustar", "ustar magic at offset 257")
+  local sum = 0
+  for i = 1, 512 do sum = sum + ((i >= 149 and i <= 156) and 32 or data:byte(i)) end
+  eq(tonumber(data:sub(149, 154), 8), sum, "header checksum")
+  eq(data:sub(1, 4), "src/")
+  eq(data:sub(-1024), ("\0"):rep(1024), "two zero blocks at the end")
+  eq(run("tar -tf /tmp/x.tar"), "src/\nsrc/a.txt\nsrc/sub/\nsrc/sub/b.txt\nsrc/sub/deep/\nsrc/sub/deep/c.txt\n")
+  has(run("tar tvf /tmp/x.tar"), "-rw-rw-rw- root/root     3000 ", "files in /tmp are rw for everyone")
+  run("mkdir /tmp/out")
+  eq(run("tar xvf /tmp/x.tar -C /tmp/out"), "src/\nsrc/a.txt\nsrc/sub/\nsrc/sub/b.txt\nsrc/sub/deep/\nsrc/sub/deep/c.txt\n")
+  eq(file("/tmp/out/src/a.txt"), "hello\n")
+  eq(file("/tmp/out/src/sub/b.txt"), string.rep("0123456789", 300))
+  eq(file("/tmp/out/src/sub/deep/c.txt"), "")
+  local verbose = run("tar -cvf /tmp/y.tar -C /tmp/src a.txt")
+  eq(verbose, "a.txt\n")
+end)
+
+test("tar: through a pipe, leading / and long names", function()
+  eq(run("tar cf - -C /tmp src/sub/deep | tar tf -"), "src/sub/deep/\nsrc/sub/deep/c.txt\n")
+  has(run("tar cf /tmp/abs.tar /tmp/src/a.txt"), "removing leading '/'")
+  eq(run("tar tf /tmp/abs.tar"), "tmp/src/a.txt\n")
+  run("mkdir /tmp/abs; cd /tmp/abs; tar xf /tmp/abs.tar; cd /")
+  eq(file("/tmp/abs/tmp/src/a.txt"), "hello\n", "unpacked below the current directory")
+  local long = "/tmp/" .. string.rep("d", 60) .. "/" .. string.rep("e", 60) .. "/f.txt"
+  put(long, "deep")
+  run("tar cf /tmp/long.tar -C /tmp " .. long:sub(6))
+  run("mkdir /tmp/lo; tar xf /tmp/long.tar -C /tmp/lo")
+  eq(file("/tmp/lo" .. long:sub(5)), "deep", "a name over 100 characters uses the prefix field")
+  local err, rc = run("tar czf /tmp/z.tar /tmp/src")
+  has(err, "compression is not supported"); eq(rc, 2)
+end)
+
+test("tar: members with .. are skipped, garbage is refused", function()
+  put("/tmp/evil.tar", header("../evil.txt", "0", 4) .. "evil" .. ("\0"):rep(508)
+    .. header("ok.txt", "0", 2) .. "ok" .. ("\0"):rep(510) .. ("\0"):rep(1024))
+  run("mkdir /tmp/ev")
+  local out, rc = run("tar xf /tmp/evil.tar -C /tmp/ev")
+  has(out, "'..'"); eq(rc, 2)
+  ok(not file("/tmp/evil.txt"), "nothing written outside")
+  eq(file("/tmp/ev/ok.txt"), "ok", "the other members are unpacked")
+  put("/tmp/junk.tar", string.rep("x", 1024))
+  has(run("tar tf /tmp/junk.tar"), "does not look like a tar archive")
+end)
+
+test("tar: stricter modes come back for root, the perms file stays small", function()
+  put("/tmp/m/secret", "s")
+  run("chmod 600 /tmp/m/secret")
+  run("tar cf /tmp/m.tar -C /tmp m")
+  run("mkdir /home/root/r; tar xf /tmp/m.tar -C /home/root/r")
+  eq(kernel.fs.stat("/home/root/r/m/secret").mode, tonumber("600", 8))
+  local perms = file("/var/lib/perms") or ""
+  has(perms, "/home/root/r/m/secret")
+  -- the directory gets its group (root) back, but never the looser 777 /tmp had
+  local dir = perms:match("([^\n]*) /home/root/r/m\n")
+  ok(not dir or dir:match("^755 "), "the directory keeps its stricter mode: " .. tostring(dir))
+  eq(kernel.fs.stat("/home/root/r/m").mode, tonumber("755", 8))
+end)
+
+test("tar: symbolic links", function()
+  if not kernel.fs.link then return end
+  run("mkdir /tmp/ln; echo t > /tmp/ln/target")
+  ok(kernel.fs.link("target", "/tmp/ln/link"))
+  has(run("tar cf /tmp/ln.tar -C /tmp ln; tar tvf /tmp/ln.tar"), "ln/link -> target")
+  run("mkdir /tmp/ln2; tar xf /tmp/ln.tar -C /tmp/ln2")
+  eq(kernel.fs.readlink("/tmp/ln2/ln/link"), "target")
+end)
+
+test("tar: archives open on a PC and the other way round", function()
+  if not hostTar then return end
+  local listed = io.popen("tar -tf " .. q(ROOT .. "/tmp/x.tar")):read("a")
+  eq(listed, "src/\nsrc/a.txt\nsrc/sub/\nsrc/sub/b.txt\nsrc/sub/deep/\nsrc/sub/deep/c.txt\n")
+  ok(sh("cd " .. q(ROOT .. "/tmp") .. " && tar --format=ustar -cf host.tar src"), "host tar packs")
+  run("mkdir /tmp/fromhost; tar xf /tmp/host.tar -C /tmp/fromhost")
+  eq(file("/tmp/fromhost/src/sub/b.txt"), string.rep("0123456789", 300))
+  ok(sh("cd " .. q(ROOT .. "/tmp") .. " && tar --format=gnu -cf gnu.tar src"), "host tar packs (gnu)")
+  has(run("tar tf /tmp/gnu.tar"), "src/sub/deep/c.txt")
+end)
+
+
+test("tar: only the named members", function()
+  eq(run("tar -tf /tmp/x.tar src/sub/deep src/a.txt"), "src/a.txt\nsrc/sub/deep/\nsrc/sub/deep/c.txt\n")
+  run("mkdir /tmp/pick")
+  local _, rc = run("tar -xf /tmp/x.tar -C /tmp/pick src/a.txt")
+  eq(rc, 0)
+  eq(file("/tmp/pick/src/a.txt"), "hello\n")
+  ok(not file("/tmp/pick/src/sub/b.txt"), "nothing else was unpacked")
+  local out, bad = run("tar -xf /tmp/x.tar -C /tmp/pick src/nope")
+  eq(bad, 2); has(out, "src/nope: not found in the archive")
+end)
+

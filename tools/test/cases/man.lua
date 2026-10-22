@@ -3,7 +3,7 @@ test("a command's page is the comment at the top of its program", function()
   local out = run("man grep | head -n 3")
   has(out, "grep(1)  /bin/grep.lua")
   has(out, "grep [-i] [-v] [-n] [-c] [-F] pattern [file...]")
-  has(run("man ls"), "ls [-a] [-l] [-1] [path...]", "one-line -- headers work too")
+  has(run("man ls"), "ls [-a] [-l] [-t] [-r] [-1] [path...]", "one-line -- headers work too")
 end)
 
 test("commands from packages get pages the same way", function()

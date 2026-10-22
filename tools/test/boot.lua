@@ -51,6 +51,13 @@ local function fsProxy(root, addr, label)
     exists = function(p) return sh("test -e " .. q(root .. p)) end,
     isDirectory = function(p) return sh("test -d " .. q(root .. p)) end,
     size = function(p) local f = io.open(root .. p, "rb"); if not f then return 0 end local n = f:seek("end"); f:close(); return n end,
+    -- milliseconds since 1970, 0 for a missing file, like OpenComputers
+    lastModified = function(p)
+      local h = io.popen("stat -c %Y " .. q(root .. p) .. " 2>/dev/null")
+      local s = tonumber(h:read("a")) or 0
+      h:close()
+      return s * 1000
+    end,
     list = function(p)
       local t, h = {}, io.popen("ls -1Ap " .. q(root .. p) .. " 2>/dev/null")
       for l in h:lines() do t[#t + 1] = l end

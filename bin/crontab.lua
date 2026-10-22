@@ -19,7 +19,8 @@
   @daily @hourly stand for the five fields; @reboot runs when crond starts.
   A job runs as you, in your home directory; what it prints goes to the
   system log (journalctl -u crond). /etc/crontab (root's) has a user name
-  before the command. The crond service runs the jobs:
+  before the command. The crond service runs the jobs; it is off until
+  needed, and crontab run by root offers to start it. Otherwise:
 
     sudo systemctl enable --now crond
 ]]--
@@ -56,11 +57,23 @@ local function check(text)
   return bad
 end
 
+-- crond is off until someone has jobs: root is offered to turn it on
+-- (at the keyboard), everyone else told how.
 local function hint()
   local okS, systemd = pcall(require, "systemd")
-  if okS and systemd.status("crond").active ~= "active" then
-    term.write("note: crond is not running; start it with: sudo systemctl enable --now crond\n")
+  if not okS or systemd.status("crond").active == "active" then return end
+  if k.user() == "root" and stdin.isTerminal then
+    term.write("crond, which runs the jobs, is not running. Start it now and at every boot? [Y/n] ")
+    local answer = term.read() or "n"
+    if not answer:lower():match("^n") then
+      systemd.enable("crond")
+      local ok, err = systemd.start("crond")
+      if not ok then shell.err("crontab", "cannot start crond: " .. tostring(err)); return end
+      term.write("crond started\n")
+    end
+    return
   end
+  term.write("note: crond is not running; start it with: sudo systemctl enable --now crond\n")
 end
 
 if action == "-l" then

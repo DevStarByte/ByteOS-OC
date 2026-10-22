@@ -11,7 +11,8 @@
   Lua 5.1), and an unfinished statement (a function, a loop) asks for its
   next lines with >>. Variables stay for the whole session. exit or
   Ctrl+D leaves; Ctrl+C clears the line, or stops code that waits
-  (OpenComputers stops a loop that never waits by itself).
+  (OpenComputers stops a loop that never waits by itself). ↑ and ↓ go
+  through what you typed, also in earlier sessions (~/.lua_history).
 
   The code runs as you, with component, computer, require, k (the kernel),
   fs, term and shell at hand. A file that returns a number ends with that
@@ -111,7 +112,22 @@ if #codes > 0 then return 0 end
 
 -- ---- the prompt -------------------------------------------------------------
 local lineedit = require("lineedit")
+-- the prompt's history stays in ~/.lua_history between runs (the newest
+-- HISTMAX entries, as ByteShell keeps its own)
+local HISTMAX = 200
+local histFile = (_G.HOME or "/") .. "/.lua_history"
 local history = {}
+for l in ((fs.exists(histFile) and fs.readAll(histFile)) or ""):gmatch("[^\n]+") do history[#history + 1] = l end
+if #history > HISTMAX then
+  history = { table.unpack(history, #history - HISTMAX + 1) }
+  pcall(fs.writeAll, histFile, table.concat(history, "\n") .. "\n")
+end
+local function remember(entry)
+  if not entry:match("%S") or history[#history] == entry then return end
+  history[#history + 1] = entry
+  local f = fs.open(histFile, "a")
+  if f then f:write(entry .. "\n"); f:close() end
+end
 term.cwrite(T.accent, _VERSION)
 term.cwrite(T.muted, "  ·  exit or Ctrl+D to leave\n")
 
@@ -144,9 +160,7 @@ while true do
     if more == nil then fn = nil; perr = nil; break end
     src = src .. "\n" .. more
   end
-  if src:match("%S") and history[#history] ~= (src:gsub("\n", " ")) then
-    history[#history + 1] = src:gsub("\n", " ")
-  end
+  remember((src:gsub("\n", " ")))
   if fn then
     local ok, res = call(fn)
     if not ok then

@@ -515,10 +515,20 @@ function kernel.fs.rename(from, to)
 end
 
 -- { owner, group, mode, listed }: listed when chmod/chown set them.
-function kernel.fs.stat(path)
-  local p = clean(follow(path) or path)
-  local m = metaOf(p, kernel.fs.isDirectory(p))
+-- nofollow: a link's own owner (where it lives) instead of its target's.
+function kernel.fs.stat(path, nofollow)
+  local p = clean(follow(path, nofollow) or path)
+  local m = metaOf(p, not (nofollow and loadLinks()[p]) and kernel.fs.isDirectory(p))
   return { owner = m.owner, group = m.group, mode = m.mode, listed = loadPerms()[p] ~= nil }
+end
+
+-- When the file last changed, in seconds since 1970 (as the disk keeps
+-- it: the world's or the real time, depending on the mod's setup), or nil.
+function kernel.fs.lastModified(path)
+  path = follow(path); if not path then return nil end
+  local p, sub = resolve(path); if not p or not p.lastModified then return nil end
+  local ms = p.lastModified(sub)
+  return ms and ms > 0 and ms // 1000 or nil
 end
 
 -- chmod: root or the owner may change a file's mode (a number, 0-4095).

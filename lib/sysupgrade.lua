@@ -63,6 +63,8 @@ local OBSOLETE = {
   "bin/sysupdate.lua", "etc/sysupdate.conf", "bin/mkpkg.lua",
   -- a second, unused scheduler; the kernel has processes since 1.7.0
   "lib/thread.lua",
+  -- in the base system in 1.17.0 only; now the tar package (extra)
+  "bin/tar.lua",
 }
 
 local function classify(path)

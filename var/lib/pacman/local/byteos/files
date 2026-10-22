@@ -73,7 +73,6 @@
 /bin/systemctl.lua
 /bin/tac.lua
 /bin/tail.lua
-/bin/tar.lua
 /bin/tee.lua
 /bin/time.lua
 /bin/timedatectl.lua
