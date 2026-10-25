@@ -90,12 +90,46 @@ test("timers: calendar times", function()
   run("timers disable cal")
 end)
 
+test("timers: world time skips minutes, the clocks going back repeats them", function()
+  put("/etc/systemd/system/cal2.timer", "[Timer]\nOnCalendar=14:30\n")
+  put("/etc/systemd/system/cal2.service", "[Service]\nExecStart=true\n")
+  run("timers enable cal2")
+  local timers, real = require("timers"), package.loaded.clock
+  local T, synced, off = 14 * 3600 + 25 * 60, false, function() return 0 end
+  package.loaded.clock = setmetatable({ now = function() return T, synced end,
+    zone = function(t) return "X", off(t) end }, { __index = real })
+  local okRun, err = pcall(function()
+    -- without a synced clock a tick 5 s after the last is 6 world minutes on
+    for _ = 1, 4 do timers.tick(); T = T + 360 end
+    eq(timers.state.cal2.lastClock, 14 * 3600 + 31 * 60, "14:30 fell between two ticks")
+    -- 02:00-03:00 twice (UTC+2, then UTC+1 from 01:00 UTC): 02:30 runs once
+    put("/etc/systemd/system/cal2.timer", "[Timer]\nOnCalendar=02:30\n")
+    timers.state.cal2, synced = nil, true
+    local switch = 86400 + 3600
+    off = function(t) return t < switch and 7200 or 3600 end
+    local starts, last = 0, nil
+    for t = 86400 - 3600, 86400 + 3 * 3600, 30 do
+      T = t; timers.tick()
+      local st = timers.state.cal2
+      if st and st.lastClock ~= last then starts, last = starts + 1, st.lastClock end
+    end
+    eq(starts, 1, "one start in the night the clocks go back")
+  end)
+  package.loaded.clock = real
+  run("timers disable cal2")
+  if not okRun then error(err, 0) end
+end)
+
 test("rsh runs commands as the user, over the network", function()
   run("systemctl start rshd")
   for _ = 1, 5 do kernel.event.pull(0.01) end
   answers({ "alicepw" })
   local out, rc = run("rsh alice@" .. ME .. " whoami")
   has(out, "alice"); eq(rc, 0)
+  -- the time limit is not cut short by the network messages meanwhile
+  answers({ "alicepw" })
+  out, rc = run("rsh alice@" .. ME .. " sleep 0.3")
+  lacks(out, "stopped after"); eq(rc, 0, out)
   answers({ "wrong" })
   out, rc = run("rsh alice@" .. ME .. " whoami")
   has(out, "Permission denied"); eq(rc, 1)
@@ -123,6 +157,21 @@ test("netfs shares a folder, read-only and read-write", function()
   put("/etc/netfs.conf", "all / ro\n")
   _, _, okRead, data = net.request(ME, "netfs", 3, "all", "read", "/etc/shadow", 0, 100)
   ok(not okRead, "a share of / still hides /etc/shadow")
+  -- \\ is a / to the kernel; a link leads nowhere outside the share either
+  put("/etc/netfs.conf", "pub /srv/share ro\ndrop /srv/drop rw\n")
+  _, _, okRead, data = net.request(ME, "netfs", 3, "pub", "read", "..\\..\\etc\\hostname", 0, 100)
+  ok(not okRead, "a path with \\ stays inside: " .. tostring(data))
+  run("ln -s /etc /srv/share/out")
+  _, _, okRead, data = net.request(ME, "netfs", 3, "pub", "read", "/out/hostname", 0, 100)
+  ok(not okRead, "a link out of the share: " .. tostring(data))
+  put("/etc/motd.bak", "keep\n")
+  run("ln -s /etc/motd.bak /srv/drop/m")
+  local _, _, okWrite = net.request(ME, "netfs", 3, "drop", "write", "/m", "overwritten")
+  ok(not okWrite); eq(file("/etc/motd.bak"), "keep\n")
+  run("ln -s hello.txt /srv/share/in")
+  _, _, okRead, data = net.request(ME, "netfs", 3, "pub", "read", "/in", 0, 100)
+  ok(okRead); eq(data, "hi from the share\n", "a link inside the share works")
+  run("rm /srv/share/out /srv/share/in /srv/drop/m /etc/motd.bak")
   put("/etc/netfs.conf", "pub /srv/share ro\ndrop /srv/drop rw\n")
   has(run("echo nope > /mnt/pub/new.txt"), "")
   ok(not file("/srv/share/new.txt"), "read-only share not written")
@@ -535,6 +584,30 @@ test("tar: members with .. are skipped, garbage is refused", function()
   eq(file("/tmp/ev/ok.txt"), "ok", "the other members are unpacked")
   put("/tmp/junk.tar", string.rep("x", 1024))
   has(run("tar tf /tmp/junk.tar"), "does not look like a tar archive")
+end)
+
+test("tar: no writing through a link of the archive's own, no hard link out", function()
+  local function member(name, kind, link, body)
+    local h = header(name, kind, body and #body or 0)
+    if link then
+      h = h:sub(1, 157) .. link .. ("\0"):rep(100 - #link) .. h:sub(258)
+      local sum = 0
+      for i = 1, 512 do sum = sum + (i >= 149 and i <= 156 and 32 or h:byte(i)) end
+      h = h:sub(1, 148) .. ("%06o\0 "):format(sum) .. h:sub(157)
+    end
+    return h .. (body and body .. ("\0"):rep((512 - #body % 512) % 512) or "")
+  end
+  put("/tmp/out/keep.txt", "keep\n")
+  put("/tmp/sneaky.tar", member("lnk", "2", "/tmp/out") .. member("lnk/keep.txt", "0", nil, "pwned\n")
+    .. member("leak", "1", "../../etc/hostname") .. member("in", "2", "lnk/keep.txt") .. ("\0"):rep(1024))
+  run("mkdir /tmp/sn")
+  local out, rc = run("tar xvf /tmp/sneaky.tar -C /tmp/sn")
+  eq(rc, 2)
+  eq(file("/tmp/out/keep.txt"), "keep\n", "nothing written through the link")
+  has(out, "leak: links to ../../etc/hostname, outside the archive")
+  ok(not file("/tmp/sn/leak"))
+  -- the file went into a directory of that name; the link comes after and finds it there
+  eq(file("/tmp/sn/lnk/keep.txt"), "pwned\n"); has(out, "lnk: file exists")
 end)
 
 test("tar: stricter modes come back for root, the perms file stays small", function()

@@ -12,7 +12,7 @@ for how installing and upgrading works.
 
 ### tar
 
-`extra` · 1.1.0 · optional: `gzip`
+`extra` · 1.1.1 · optional: `gzip`
 
 Packs files, directories and symbolic links into one archive file, lists archives and
 unpacks them. The archives are the standard ustar format, so `tar` on a PC opens them
@@ -68,7 +68,7 @@ alice@byteos ~> tree /etc
 
 ### lua-json
 
-`core` · 1.0.0
+`core` · 1.0.1
 
 A JSON library for your Lua programs and the `lua` prompt: `json.decode` turns JSON text
 into Lua tables, `json.encode` the other way (with `{ pretty = true }` for readable
@@ -122,7 +122,7 @@ alice@byteos ~> gitget -n someone/tools                       # just list it
 
 ### irc
 
-`extra` · 1.0.0
+`extra` · 1.0.1
 
 A full-screen IRC chat client. It connects to irc.libera.chat (port 6667) unless you name
 another server, as your user name unless you give `-n NICK`. A line without `/` goes to
@@ -199,7 +199,7 @@ alice@byteos ~> sudo redstone bundled back red 255
 
 ### timers
 
-`core` · 1.0.0
+`core` · 1.0.1
 
 Starts services on a schedule, like cron or systemd timers: a `<name>.timer` file next to
 `<name>.service` in `/etc/systemd/system` says when (`OnCalendar=daily`, `14:30`,
@@ -220,7 +220,7 @@ Both need a **network card** in every computer involved. See
 
 ### rsh
 
-`extra` · 1.0.0
+`extra` · 1.0.1
 
 A remote shell: runs a command on another ByteOS computer as you (or another user) and
 prints what it printed, or gives you a prompt there until you type `exit`. The other
@@ -235,7 +235,7 @@ alice@byteos ~> rsh alice@server
 
 ### netfs
 
-`extra` · 1.0.0
+`extra` · 1.0.1
 
 Shared folders: use another computer's directories as if they were a disk. A computer
 shares folders by listing them in `/etc/netfs.conf` as `ro` (read only) or `rw`; its
@@ -255,7 +255,7 @@ ByteOS comes with `edit`. These two are for people who know their namesakes.
 
 ### nano
 
-`extra` · 2.0.0
+`extra` · 2.0.1
 
 A small editor in the style of GNU nano, with the shortcuts on the bottom two rows (^O
 write, ^X exit, ^W search, ^K/^U cut and paste, ^T go to line). `-l` shows line numbers.
@@ -267,7 +267,7 @@ alice@byteos ~> nano -l notes.txt
 
 ### vim
 
-`extra` · 1.0.0
+`extra` · 1.0.1
 
 A modal editor in the style of Vim: normal, insert and command mode, `hjkl`, `dd`, `yy`
 and `p`, undo and redo, `/search`, counts (`3dd`), `:w`, `:q`, `:wq` and
@@ -282,7 +282,7 @@ alice@byteos ~> vim notes.txt
 
 ### play
 
-`extra` · 1.0.0
+`extra` · 1.0.1
 
 Plays tunes on the computer's speaker, or on note blocks when there are any. Songs are
 simple text files of notes; four public-domain songs come with it. See
@@ -297,7 +297,7 @@ alice@byteos ~> play -n "C4 E4 G4 C5*2"
 
 ### snake and 2048
 
-`extra` · 1.0.1 each
+`extra` · 1.0.2 each
 
 Classic games. **snake**: steer with the arrow keys (or WASD), ++q++ quits. **2048**:
 slide the tiles with the arrow keys, ++r++ restarts, ++q++ quits.
@@ -337,11 +337,11 @@ fit together.
 
 | Package | Version | What it does |
 |---|---|---|
-| `hyprbyte` | 1.4.0 | a tiling window manager like Hyprland: windows side by side, nine workspaces, `hyprctl` |
+| `hyprbyte` | 1.4.1 | a tiling window manager like Hyprland: windows side by side, nine workspaces, `hyprctl` |
 | `quickshell` | 1.0.1 | bars and widgets for Hyprbyte, described in a Lua file |
-| `dunst` | 1.0.0 | notification pop-ups, with history and do-not-disturb (`dunstctl`) |
+| `dunst` | 1.0.1 | notification pop-ups, with history and do-not-disturb (`dunstctl`) |
 | `libnotify` | 1.0.0 | `notify-send` and the library programs use to send notifications |
-| `rofi` | 1.0.0 | a launcher (++alt+d++) and window switcher (++alt+w++) with fuzzy search |
+| `rofi` | 1.0.1 | a launcher (++alt+d++) and window switcher (++alt+w++) with fuzzy search |
 | `hyprlock` | 1.0.0 | a lock screen with a big clock (++alt+l++) |
 | `hypridle` | 1.0.0 | runs commands after a while without input, e.g. `hyprlock` |
 | `hyprpaper` | 1.0.0 | wallpapers: text pictures and patterns behind the windows |
@@ -358,6 +358,6 @@ Tools for other mods' machines, through OpenComputers. They have their own pages
 | Package | Version | What it does |
 |---|---|---|
 | `reactorctl` | 1.0.0 | Big/Extreme Reactors: status, on/off, control rods, automatic control by the energy buffer ([Reactors](../modded/reactors.md)) |
-| `me-monitor` | 1.0.0 | Applied Energistics 2: power, items, crafting CPUs, low-stock alerts ([AE2](../modded/ae2.md)) |
+| `me-monitor` | 1.0.1 | Applied Energistics 2: power, items, crafting CPUs, low-stock alerts ([AE2](../modded/ae2.md)) |
 | `robot` | 1.0.0 | drives robots and drones from the shell or a step file ([Robots and drones](../modded/robots.md)) |
 | `holo` | 1.0.0 | text and shapes on a hologram projector ([Holograms and music](../modded/holo-music.md)) |
