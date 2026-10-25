@@ -1,6 +1,6 @@
 return {
   name    = "2048",
-  version = "1.0.0",
+  version = "1.0.1",
   rel     = 1,
   desc    = "slide-the-tiles puzzle game",
 }

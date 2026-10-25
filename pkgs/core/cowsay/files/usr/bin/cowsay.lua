@@ -1,3 +1,9 @@
+--[[
+  cowsay - a cow that says what you tell it
+
+    cowsay Hello there     the cow says Hello there
+    cowsay                 the cow says Moo!
+]]--
 local args = arg or {}
 local msg = table.concat(args, " ")
 if msg == "" then msg = "Moo!" end

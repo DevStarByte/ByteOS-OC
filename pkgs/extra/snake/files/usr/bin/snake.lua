@@ -1,4 +1,11 @@
--- snake: classic snake game. Arrow keys to move, Q to quit.
+--[[
+  snake - eat the stars, don't hit the wall or yourself
+
+    snake                  start a game
+
+  Arrows or WASD   steer
+  q                quit (the score is printed)
+]]--
 local gpu = term.gpu
 local W, H = term.size()
 local PLAY_H = H - 2  -- leave bottom row for status

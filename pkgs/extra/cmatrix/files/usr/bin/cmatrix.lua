@@ -1,9 +1,13 @@
--- Matrix-style falling rain. Press any key to quit.
+--[[
+  cmatrix - green characters raining down the screen, as in The Matrix
+
+    cmatrix                any key (or Ctrl+C) stops it
+]]--
 local gpu = term.gpu
 local W, H = term.size()
 
 local glyphs = "01@#$%&*+=<>{}[]ABCDEFGHJKLMNPQRSTUVWXYZ"
-local function ch() return glyphs:sub(math.random(#glyphs), math.random(#glyphs)) end
+local function ch() local n = math.random(#glyphs); return glyphs:sub(n, n) end
 
 math.randomseed(math.floor(_G.computer.uptime() * 1000) % 2147483647)
 
@@ -13,14 +17,10 @@ for x = 1, W do cols[x] = math.random(-H, 0) end
 gpu.setBackground(0x000000)
 gpu.fill(1, 1, W, H, " ")
 
-local quit = false
-local function pollKey()
-  while _G.computer.pullSignal(0) do quit = true end
-end
 -- prefer kernel.event.pull with tiny timeout to remain cooperative
-local pull = (k and k.event and k.event.pull) or function(t) _G.computer.pullSignal(t or 0) end
+local pull = (k and k.event and k.event.pull) or function(t) return _G.computer.pullSignal(t or 0) end
 
-for frame = 1, 1000 do
+while true do
   for x = 1, W do
     local y = cols[x]
     if y >= 1 and y <= H then

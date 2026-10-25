@@ -96,9 +96,9 @@ end
 -- there are no comments). nil, "where: why" on a mistake.
 local function parse(src, comments)
   local list, lineNo = {}, 0
-  for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+  for raw in (src .. "\n"):gmatch("([^\n]*)\n") do
     lineNo = lineNo + 1
-    line = line:gsub("\r", "")
+    local line = raw:gsub("\r", "")
     -- a comment's # starts a word; a sharp's follows its letter (C#4)
     if comments then line = line:gsub("^#.*$", ""):gsub("%s#.*$", "") end
     local t = line:match("^%s*tempo%s+(%d+%.?%d*)%s*$")

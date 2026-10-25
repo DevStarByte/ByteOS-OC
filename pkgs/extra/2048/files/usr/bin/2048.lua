@@ -1,4 +1,12 @@
--- 2048: slide tiles with arrow keys. Q to quit. R to restart.
+--[[
+  2048 - slide the tiles, join equal numbers, reach 2048
+
+    2048                   start a game
+
+  Arrows or WASD   slide every tile that way; two equal tiles join
+  r                start again
+  q                quit (the score is printed)
+]]--
 local gpu = term.gpu
 local SIZE = 4
 local CELL_W, CELL_H = 7, 3

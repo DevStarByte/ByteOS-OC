@@ -1,7 +1,16 @@
+--[[
+  tree - a directory and everything in it, as a tree
+
+    tree                   the current directory
+    tree /etc              another one
+
+  Directories are blue; the last line counts the directories and files.
+]]--
 local args = arg or {}
 local root = args[1] or _G.PWD or "/"
 if root:sub(1, 1) ~= "/" then root = (_G.PWD or "/") .. "/" .. root end
 root = root:gsub("//+", "/")
+if not fs.isDirectory(root) then term.write("tree: " .. root .. ": no such directory\n"); return 1 end
 
 local C_DIR  = 0x66CCFF
 local C_FILE = 0xFFFFFF

@@ -1,4 +1,10 @@
--- Steam locomotive: classic Linux joke. Animates across the screen.
+--[[
+  sl - a steam locomotive drives across the screen
+
+    sl                     for when you meant to type ls
+
+  It takes three seconds and cannot be stopped: that is the joke.
+]]--
 local W = (term.size())
 local frames = {
 [[

@@ -1,3 +1,11 @@
+--[[
+  fortune - a random programmer's quote
+
+    fortune                one quote, picked at random
+
+  The quotes are in /usr/share/fortune/quotes.txt, one per line; add your
+  own there.
+]]--
 local path = "/usr/share/fortune/quotes.txt"
 if not fs.exists(path) then term.write("fortune: missing data\n"); return 1 end
 local quotes = {}

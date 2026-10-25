@@ -72,8 +72,8 @@ end
 function mm.config()
   local cfg = { minimums = {}, interval = 60 }
   local text = kernel.fs.exists(mm.CONF) and kernel.fs.readAll(mm.CONF) or ""
-  for line in text:gmatch("[^\r\n]+") do
-    line = line:gsub("^%s*#.*$", "")
+  for raw in text:gmatch("[^\r\n]+") do
+    local line = raw:gsub("^%s*#.*$", "")
     local what, count = line:match("^%s*minimum%s+(.-)%s+(%d+)%s*$")
     if what then cfg.minimums[#cfg.minimums + 1] = { what = what, count = tonumber(count) } end
     local iv = line:match("^%s*interval%s*=%s*(%d+%.?%d*)%s*$")

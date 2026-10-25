@@ -1,3 +1,8 @@
+--[[
+  lolcat - text in rainbow colours
+
+    lolcat Hello world     each letter a colour of the rainbow
+]]--
 local args = arg or {}
 local msg  = table.concat(args, " ")
 if msg == "" then msg = "ByteOS forever! Type something after lolcat." end
