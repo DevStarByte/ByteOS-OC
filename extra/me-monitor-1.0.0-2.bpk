@@ -1,0 +1,80 @@
+BPK1
+242 - .PKGINFO
+name = me-monitor
+version = 1.0.0-2
+desc = Applied Energistics 2: power, items, crafting CPUs and low-stock alerts
+depend = byteos>=1.16.0
+optdepend = libnotify: alerts as notifications (with dunst)
+backup = /etc/me-monitor.conf
+isize = 9522
+420 - .INSTALL
+function post_install()
+  print("low-stock alerts: set minimums in /etc/me-monitor.conf, then sudo systemctl enable --now me-monitor")
+end
+function post_upgrade()
+  local systemd = require("systemd")
+  if systemd.status("me-monitor").active == "active" then systemd.restart("me-monitor") end
+end
+function pre_remove()
+  local systemd = require("systemd")
+  systemd.stop("me-monitor")
+  systemd.disable("me-monitor")
+end
+346 - /etc/me-monitor.conf
+# me-monitor: items to keep an eye on (sudo systemctl enable --now me-monitor)
+#
+#   minimum LABEL COUNT     LABEL as shown in game, or the item's id
+#                           (minecraft:iron_ingot)
+#   interval = SECONDS      how often the service checks (default 60)
+#
+# minimum Iron Ingot 256
+# minimum minecraft:redstone 1000
+interval = 60
+3556 z /usr/bin/me-monitor.lua
+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1376 - /usr/bin/me-monitord.lua
+--[[
+  me-monitord - watches the minimums in /etc/me-monitor.conf (the
+  me-monitor service; see `man me-monitor`)
+
+  Every `interval` seconds (60) it compares the ME network's items with
+  their minimums. An item that runs low is written to the system log
+  (journalctl -u me-monitor) and shown as a notification when a daemon
+  (dunst) runs; once it is back above its minimum that is logged too.
+]]--
+local mm = require("memonitor")
+local cfg, gen = mm.config(), k.fs.generation()
+local alerted = {}   -- what -> true while it is low
+print(("me-monitord started: %d minimums, every %ds"):format(#cfg.minimums, cfg.interval))
+
+local function tell(text)
+  print(text)
+  local ok, notify = pcall(require, "notify")
+  if ok and notify.running() then notify.send("ME system", text, { app = "me-monitor" }) end
+end
+
+while true do
+  if k.fs.generation() ~= gen then cfg, gen = mm.config(), k.fs.generation() end
+  local p = mm.find()
+  if p then
+    local lowNow = {}
+    for _, l in ipairs(mm.low(mm.items(p), cfg)) do
+      lowNow[l.what] = true
+      if not alerted[l.what] then
+        alerted[l.what] = true
+        tell(("low on %s: %d of %d"):format(l.what, l.have, l.want))
+      end
+    end
+    for what in pairs(alerted) do
+      if not lowNow[what] then alerted[what] = nil; print(what .. " is back above its minimum") end
+    end
+  end
+  k.event.pull(cfg.interval)
+end
+3092 z /usr/lib/memonitor.lua
+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95 - /usr/lib/systemd/system/me-monitor.service
+[Unit]
+Description=ME Network Stock Alerts
+
+[Service]
+ExecStart=me-monitord
+Restart=on-failure

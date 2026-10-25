@@ -1,20 +1,20 @@
 name = cowsay
-version = 0.2.0-1
+version = 0.2.1-1
 desc = ascii-art talking cow
-isize = 446
-filename = cowsay-0.2.0-1.bpk
-csize = 564
-crc32 = df4028b5
-sha256 = dc2f41f926bc7a96a064feacdc8688d5d0d7c1a369dff6c74cf047954c3595ee
+isize = 598
+filename = cowsay-0.2.1-1.bpk
+csize = 716
+crc32 = 0a054e6e
+sha256 = 383c1c6411d4578b39864a4a7e5414e2064b7c4ed41c7e6753b1f0d82df7e784
 
 name = fortune
-version = 1.0.0-1
+version = 1.0.1-1
 desc = random pithy quotes from the data file
-isize = 1930
-filename = fortune-1.0.0-1.bpk
-csize = 2105
-crc32 = dd5da3ea
-sha256 = 5d96887c87b6aea12b02004e38f6517879857f978423f39ed25c1dfb0c89a9f9
+isize = 2124
+filename = fortune-1.0.1-1.bpk
+csize = 2299
+crc32 = 9374e4dc
+sha256 = 74acdac647b18c1bf04efe84c3854787c4f0b55f352cd89e5ebec1d6f240b550
 
 name = gitget
 version = 1.0.0-1
@@ -28,22 +28,22 @@ crc32 = 46648529
 sha256 = e146ecd338519e60b416c571e239fb246fced54a9afb6951be337f37f5547ef7
 
 name = hello
-version = 1.0.0-1
+version = 1.0.1-1
 desc = a friendly greeter package
-isize = 90
-filename = hello-1.0.0-1.bpk
-csize = 209
-crc32 = 9a8f4eb6
-sha256 = c0c73a54d56e691d13478a5aed8000b3dc0855c4ea1f4d9ead9c28ecd0b70a19
+isize = 281
+filename = hello-1.0.1-1.bpk
+csize = 402
+crc32 = d3765f9d
+sha256 = dc2e4beeb75cbc2568041b705e06c3dc5974356334467a16e412be7e591fe53a
 
 name = lolcat
-version = 1.0.0-1
+version = 1.0.1-1
 desc = cycle terminal colors across text
-isize = 461
-filename = lolcat-1.0.0-1.bpk
-csize = 591
-crc32 = d8ac361b
-sha256 = 2075abcd259a1a6874cf9a862497e2ee3737014b2aa0dba2656597d64fe19062
+isize = 570
+filename = lolcat-1.0.1-1.bpk
+csize = 700
+crc32 = 5d8d7070
+sha256 = e1b0cd8ff60fca006b2dbaa577a1da2f8322976fec9eeb05eefacf32fca8a7f1
 
 name = lshw
 version = 1.0.0-1
@@ -95,22 +95,13 @@ crc32 = 841a5952
 sha256 = d53f444f03af90c6b7e10f4b0f0567d0a2a90ed9dc9bf088b9b31dba2e60e8cc
 
 name = tree
-version = 1.0.0-1
+version = 1.0.1-1
 desc = recursive coloured directory listing
-isize = 1116
-filename = tree-1.0.0-1.bpk
-csize = 1247
-crc32 = 425f20d4
-sha256 = f9dc5cc8e6d23a3adc93696679ffec8efce4a3e0e755b8769c5cd7fb5f67e431
-
-name = uptime
-version = 1.0.0-1
-desc = print how long the system has been running
-isize = 511
-filename = uptime-1.0.0-1.bpk
-csize = 650
-crc32 = 3971d29a
-sha256 = b3bee23e91cf0e376ca2911a9453435e55177abb2580933d8d3c0c1fb07bbb7a
+isize = 1444
+filename = tree-1.0.1-1.bpk
+csize = 1575
+crc32 = 41ea52b3
+sha256 = 891ff7e1509df3534c68cf647ae3a8ba37dcaf398c3073a3f0afcd67fc013880
 
 name = xxd
 version = 1.0.0-1

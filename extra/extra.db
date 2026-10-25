@@ -1,11 +1,11 @@
 name = 2048
-version = 1.0.0-1
+version = 1.0.1-1
 desc = slide-the-tiles puzzle game
-isize = 4754
-filename = 2048-1.0.0-1.bpk
-csize = 3742
-crc32 = d6cc3ea7
-sha256 = 42718903e758d01372c7372b270fae557046a6e6ead75bd1a566a51b5c83ee8a
+isize = 4945
+filename = 2048-1.0.1-1.bpk
+csize = 3890
+crc32 = 545acd96
+sha256 = 3071ac16d93f31699228722ac64c2fbaec57b7687377a8ca280529d4e959f461
 
 name = btop
 version = 1.0.0-1
@@ -18,13 +18,13 @@ crc32 = 77df4b5b
 sha256 = 800069cfd059207c7472115a1c5b4d87c9fb1a2c32e1069184187eae4a5b6318
 
 name = cmatrix
-version = 1.0.0-1
+version = 1.0.1-1
 desc = falling green matrix rain (any key to quit)
-isize = 1434
-filename = cmatrix-1.0.0-1.bpk
-csize = 1578
-crc32 = b4249cf9
-sha256 = 062efaf5011221b988b1e34813505e2c1423a43e06ad31fefeb20f25fc19002c
+isize = 1410
+filename = cmatrix-1.0.1-1.bpk
+csize = 1554
+crc32 = 1948430b
+sha256 = cb2c2666350a49d305f84a2653eb154ecd8bead479b2379a7279202433a94a63
 
 name = dunst
 version = 1.0.0-1
@@ -39,13 +39,13 @@ crc32 = 4ce9efec
 sha256 = caa6d4a1ecf56c28964b7e511e6068bd7328af059454ee0f3bfc726af0b06619
 
 name = figlet
-version = 1.0.0-1
-desc = ascii-art big-letters renderer (demo bundle)
-isize = 5772
-filename = figlet-1.0.0-1.bpk
-csize = 3137
-crc32 = 6edfaa47
-sha256 = 72d447d776829ef786f549fac6c66f136991d6b2930939a1efcdf85d3477ca7d
+version = 1.1.0-1
+desc = big letters out of ordinary characters, with FIGlet's Standard font
+isize = 13500
+filename = figlet-1.1.0-1.bpk
+csize = 8986
+crc32 = bab9b728
+sha256 = 24af3eb55d25fb3ec3620334c869a87ae42c7e5b863a4f27b6d748db2df33618
 
 name = gzip
 version = 1.0.0-1
@@ -130,16 +130,16 @@ crc32 = cb58f6b5
 sha256 = 44bed636a35830a1d122086232288eb7fc305d6429b5451b59c8e41f6edb7002
 
 name = me-monitor
-version = 1.0.0-1
+version = 1.0.0-2
 desc = Applied Energistics 2: power, items, crafting CPUs and low-stock alerts
 depend = byteos>=1.16.0
 optdepend = libnotify: alerts as notifications (with dunst)
 backup = /etc/me-monitor.conf
-isize = 9518
-filename = me-monitor-1.0.0-1.bpk
-csize = 9326
-crc32 = 0ae7a6fa
-sha256 = adc653ceb899ee9f45d0da7753f93c6613768ca71804cf52cc17b5b4673b0a8e
+isize = 9522
+filename = me-monitor-1.0.0-2.bpk
+csize = 9330
+crc32 = 139254f5
+sha256 = 8c8cd16cb92f8a1156ecaf30e0655b9c909b348a6789bae5e2247a0b9a1a67cd
 
 name = nano
 version = 2.0.0-1
@@ -162,14 +162,14 @@ crc32 = d22122fe
 sha256 = 29c7ad67b66c920d2a325615e560de1d06c16de6f0b04d3fbcfa6c3a541f49b3
 
 name = play
-version = 1.0.0-1
+version = 1.0.0-2
 desc = play tunes on the speaker or on note blocks (play ode-to-joy, play -n "C4 E4 G4")
 depend = byteos>=1.16.0
-isize = 7250
-filename = play-1.0.0-1.bpk
-csize = 6270
-crc32 = e9c7ab69
-sha256 = 4bb8f0870a1d3b60792868e23dcf083215a7842cb31d5b00e0a85a6b20d0a038
+isize = 7254
+filename = play-1.0.0-2.bpk
+csize = 6274
+crc32 = 73aadba8
+sha256 = cb245e4afb196ce50c8b90e2664ec3d0720905710f442a334f36fcce45ae73f2
 
 name = power
 version = 1.0.0-1
@@ -233,22 +233,22 @@ crc32 = 19093363
 sha256 = d789a01247597e509c5599a6273261e1a1c038ef52c7c17809e4bafd05b7d829
 
 name = sl
-version = 1.0.0-1
+version = 1.0.1-1
 desc = steam locomotive that chugs across the screen
-isize = 1481
-filename = sl-1.0.0-1.bpk
-csize = 1340
-crc32 = cbc263aa
-sha256 = 2d46f2519adee070b66e89d6431415d3a6816b6f1dfdfb87cb06e1192a6a4e7b
+isize = 1598
+filename = sl-1.0.1-1.bpk
+csize = 1444
+crc32 = b3a4f294
+sha256 = 6ec1caa6dadbdc143dcefa117a4c2dcbfbea43fba0e4316025dc1e2d9b77ba63
 
 name = snake
-version = 1.0.0-1
+version = 1.0.1-1
 desc = classic snake game (arrows to move, q to quit)
-isize = 3152
-filename = snake-1.0.0-1.bpk
-csize = 2895
-crc32 = 240b0a7d
-sha256 = 4176cccac9e98725aed824f0a6b80e2cbb6b381c057b359cf932113c7153e330
+isize = 3271
+filename = snake-1.0.1-1.bpk
+csize = 2967
+crc32 = b3870600
+sha256 = fc1da890ea5f2d83c7cbd773be0ef413a1194225c544ee5ed6e17557ed752159
 
 name = tar
 version = 1.1.0-1

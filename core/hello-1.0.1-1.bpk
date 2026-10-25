@@ -1,0 +1,17 @@
+BPK1
+77 - .PKGINFO
+name = hello
+version = 1.0.1-1
+desc = a friendly greeter package
+isize = 281
+281 - /usr/bin/hello.lua
+--[[
+  hello - a friendly greeting
+
+    hello                  greets you by your user name
+
+  The smallest package there is: a good one to read before making your
+  own (man PKGBUILD).
+]]--
+term.write("Hello from ByteOS! Greetings, " .. (_G.USER or "stranger") .. ".\n")
+return 0
