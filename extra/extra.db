@@ -1,11 +1,11 @@
 name = 2048
-version = 1.0.1-1
+version = 1.0.2-1
 desc = slide-the-tiles puzzle game
-isize = 4945
-filename = 2048-1.0.1-1.bpk
-csize = 3890
-crc32 = 545acd96
-sha256 = 3071ac16d93f31699228722ac64c2fbaec57b7687377a8ca280529d4e959f461
+isize = 5017
+filename = 2048-1.0.2-1.bpk
+csize = 3982
+crc32 = cb673c5c
+sha256 = d9c267ce808dae084598665d64d2cc944aa21577d2e290a1e9932d19a0ddcd25
 
 name = btop
 version = 1.0.0-1
@@ -27,16 +27,16 @@ crc32 = 1948430b
 sha256 = cb2c2666350a49d305f84a2653eb154ecd8bead479b2379a7279202433a94a63
 
 name = dunst
-version = 1.0.0-1
+version = 1.0.1-1
 desc = notification pop-ups for Hyprbyte, with history and do-not-disturb
 depend = libnotify
 depend = hyprbyte>=1.2.0
 backup = /etc/dunst/dunstrc
-isize = 6508
-filename = dunst-1.0.0-1.bpk
-csize = 6154
-crc32 = 4ce9efec
-sha256 = caa6d4a1ecf56c28964b7e511e6068bd7328af059454ee0f3bfc726af0b06619
+isize = 6765
+filename = dunst-1.0.1-1.bpk
+csize = 6412
+crc32 = 9e87c587
+sha256 = 6d72ce5b48d6342717f41656b3aba2138eebf972f207eef6fb7af6cb345598c0
 
 name = figlet
 version = 1.1.0-1
@@ -68,15 +68,15 @@ crc32 = c8599d5b
 sha256 = ad95b9a06a3270a20b3eb13a14c0c09a18a078cce2cbea393ecce41ba58b0a41
 
 name = hyprbyte
-version = 1.4.0-1
+version = 1.4.1-1
 desc = tiling window manager in the spirit of Hyprland: windows, workspaces, a bar
 depend = byteos>=1.13.0
 backup = /etc/hyprbyte.conf
-isize = 42604
-filename = hyprbyte-1.4.0-1.bpk
-csize = 30706
-crc32 = 5dfd6e87
-sha256 = b7d9fc69c5581ab1f9dd06c51fc922b59fa163c798ada9cac9100f0330261818
+isize = 43970
+filename = hyprbyte-1.4.1-1.bpk
+csize = 31422
+crc32 = e38e5e49
+sha256 = f702f07d55cb104291ad78f735e0d9d273e441926582b4b680b4270bf7e5d0ed
 
 name = hypridle
 version = 1.0.0-1
@@ -111,14 +111,14 @@ crc32 = 9b00ae87
 sha256 = 0c7a5fe08f4cb6680c30c7f7d3856172a569120456dc2050a2d20ce0be8b5df0
 
 name = irc
-version = 1.0.0-1
+version = 1.0.1-1
 desc = chat on IRC through the internet card (irc -j byteos)
 depend = byteos>=1.16.0
-isize = 15808
-filename = irc-1.0.0-1.bpk
-csize = 10789
-crc32 = 9e1c1f40
-sha256 = dd4fe6648f6152aace4459adb1ddcd5d1f2290ff7cf15c4bd1653782d3453345
+isize = 16004
+filename = irc-1.0.1-1.bpk
+csize = 10953
+crc32 = cdc7692c
+sha256 = a462cd2510e46ee89a50062a545023a8a8573714d279ce2b945d7b731c0492c7
 
 name = libnotify
 version = 1.0.0-1
@@ -130,46 +130,46 @@ crc32 = cb58f6b5
 sha256 = 44bed636a35830a1d122086232288eb7fc305d6429b5451b59c8e41f6edb7002
 
 name = me-monitor
-version = 1.0.0-2
+version = 1.0.1-1
 desc = Applied Energistics 2: power, items, crafting CPUs and low-stock alerts
 depend = byteos>=1.16.0
 optdepend = libnotify: alerts as notifications (with dunst)
 backup = /etc/me-monitor.conf
-isize = 9522
-filename = me-monitor-1.0.0-2.bpk
-csize = 9330
-crc32 = 139254f5
-sha256 = 8c8cd16cb92f8a1156ecaf30e0655b9c909b348a6789bae5e2247a0b9a1a67cd
+isize = 9965
+filename = me-monitor-1.0.1-1.bpk
+csize = 9697
+crc32 = 6bc39769
+sha256 = ed61f1f65b08f83bba2c657a427b35e3679787e8e7c09aeaadd5548fc216d615
 
 name = nano
-version = 2.0.0-1
+version = 2.0.1-1
 desc = small full-screen text editor in the style of GNU nano
-isize = 13015
-filename = nano-2.0.0-1.bpk
-csize = 8511
-crc32 = 0c752dec
-sha256 = bc06f4134176cb18267234c56a8ac2a28e9f286ef2cd822677e2529708e79f6e
+isize = 13108
+filename = nano-2.0.1-1.bpk
+csize = 8567
+crc32 = 55f6e648
+sha256 = 81cc2a89c6093d84f2bf1e92ebadc6fa544f4c56504f6ece5e1028fdcf0fb458
 
 name = netfs
-version = 1.0.0-1
+version = 1.0.1-1
 desc = shared folders: use another computer's directories over the network
 depend = byteos>=1.12.1
 backup = /etc/netfs.conf
-isize = 12644
-filename = netfs-1.0.0-1.bpk
-csize = 10838
-crc32 = d22122fe
-sha256 = 29c7ad67b66c920d2a325615e560de1d06c16de6f0b04d3fbcfa6c3a541f49b3
+isize = 13570
+filename = netfs-1.0.1-1.bpk
+csize = 11466
+crc32 = 697a2214
+sha256 = b237e3376d2c09c0c0e6d2d0eec0e4f888e819df289a570a442b53f7d0c32f04
 
 name = play
-version = 1.0.0-2
+version = 1.0.1-1
 desc = play tunes on the speaker or on note blocks (play ode-to-joy, play -n "C4 E4 G4")
 depend = byteos>=1.16.0
-isize = 7254
-filename = play-1.0.0-2.bpk
-csize = 6274
-crc32 = 73aadba8
-sha256 = cb245e4afb196ce50c8b90e2664ec3d0720905710f442a334f36fcce45ae73f2
+isize = 7395
+filename = play-1.0.1-1.bpk
+csize = 6358
+crc32 = 71e51bfe
+sha256 = 8c5ccb4d19955ea72efe960f52089de14d6e98da30f52edab279c6cf9ce1d741
 
 name = power
 version = 1.0.0-1
@@ -213,24 +213,24 @@ crc32 = da3e65e1
 sha256 = ab8e3e2e0572920a4dcfe994472267b244e6816ef0aa063b11689aa0f6ec10cc
 
 name = rofi
-version = 1.0.0-1
+version = 1.0.1-1
 desc = launcher and window switcher for Hyprbyte, with fuzzy search
 depend = hyprbyte>=1.2.0
-isize = 6316
-filename = rofi-1.0.0-1.bpk
-csize = 5033
-crc32 = b781a34c
-sha256 = d1c4206b42329e5a7eac2907ddb81a76c340312651cdccc3dcf270c5cabe8147
+isize = 6523
+filename = rofi-1.0.1-1.bpk
+csize = 5193
+crc32 = eec4ab2f
+sha256 = cdc3cfa1f74b1a77afc18ab295d22d1e4abc3a3c5c06692fcd7cb2c6cb9928f7
 
 name = rsh
-version = 1.0.0-1
+version = 1.0.1-1
 desc = remote shell: run commands on another ByteOS computer
 depend = byteos>=1.12.1
-isize = 6217
-filename = rsh-1.0.0-1.bpk
-csize = 6482
-crc32 = 19093363
-sha256 = d789a01247597e509c5599a6273261e1a1c038ef52c7c17809e4bafd05b7d829
+isize = 6503
+filename = rsh-1.0.1-1.bpk
+csize = 6768
+crc32 = c7a4c615
+sha256 = 268ccef14cab54478a4ab3651f84ffe53e4acfdaf57265358050959d1ee4d3d6
 
 name = sl
 version = 1.0.1-1
@@ -242,30 +242,30 @@ crc32 = b3a4f294
 sha256 = 6ec1caa6dadbdc143dcefa117a4c2dcbfbea43fba0e4316025dc1e2d9b77ba63
 
 name = snake
-version = 1.0.1-1
+version = 1.0.2-1
 desc = classic snake game (arrows to move, q to quit)
-isize = 3271
-filename = snake-1.0.1-1.bpk
-csize = 2967
-crc32 = b3870600
-sha256 = fc1da890ea5f2d83c7cbd773be0ef413a1194225c544ee5ed6e17557ed752159
+isize = 3650
+filename = snake-1.0.2-1.bpk
+csize = 3299
+crc32 = f6b08136
+sha256 = ebfe08949db41c71e8c75ea1a2fcbc07d85caa55ad16ee41518937ba5e557fb8
 
 name = tar
-version = 1.1.0-1
+version = 1.1.1-1
 desc = pack files into ustar archives, list and unpack them (opens on a PC too)
 depend = byteos>=1.16.0
 optdepend = gzip: tar -z for .tar.gz
-isize = 18628
-filename = tar-1.1.0-1.bpk
-csize = 11921
-crc32 = eef6c5df
-sha256 = 9afc154d64c4a638faf3750f6e3dd10f0e04fcdc5446ebe9256544b39a8f36ba
+isize = 19859
+filename = tar-1.1.1-1.bpk
+csize = 12777
+crc32 = 431ac94f
+sha256 = 0fe43efe862f5289af52c50c11cf406c255e00096f588cd691b3ba2e84a19979
 
 name = vim
-version = 1.0.0-1
+version = 1.0.1-1
 desc = modal text editor in the style of Vim: normal, insert and command mode
-isize = 19369
-filename = vim-1.0.0-1.bpk
-csize = 11770
-crc32 = 1e55ef21
-sha256 = 38385f568eb8a4f890a2aa4a4fc9c95d85ec3fdb5b342298e770376a939f16d3
+isize = 19501
+filename = vim-1.0.1-1.bpk
+csize = 11854
+crc32 = e7ee1495
+sha256 = 89cf77be8a747fd0f766dfc702250736ef251f8c02734eb5ffae9a1476c52d14

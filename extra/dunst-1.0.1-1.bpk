@@ -1,0 +1,65 @@
+BPK1
+190 - .PKGINFO
+name = dunst
+version = 1.0.1-1
+desc = notification pop-ups for Hyprbyte, with history and do-not-disturb
+depend = libnotify
+depend = hyprbyte>=1.2.0
+backup = /etc/dunst/dunstrc
+isize = 6765
+114 - .INSTALL
+function post_install()
+  print("Start it with Hyprbyte: add  exec-once = dunst  to ~/.config/hyprbyte.conf")
+end
+247 - /etc/dunst/dunstrc
+# /etc/dunst/dunstrc - copy to ~/.config/dunst/dunstrc to change it
+
+# how wide the pop-ups are (columns)
+width = 36
+# seconds before one goes away (critical ones stay until clicked)
+timeout = 6
+# how many are shown at once; the rest wait
+max = 3
+4120 z /usr/bin/dunst.lua
+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1626 - /usr/bin/dunstctl.lua
+--[[
+  dunstctl - control dunst
+
+    dunstctl close             close the newest pop-up
+    dunstctl close-all         close them all
+    dunstctl history           the last notifications
+    dunstctl set-paused true|false|toggle
+                               do not disturb: hold back all but critical
+    dunstctl is-paused
+    dunstctl count             shown, waiting and in the history
+]]--
+local notify = require("notify")
+local d = package.loaded["dunst.state"]
+-- a dunst that was stopped (kill, Hyprbyte quitting) leaves its state behind
+if d then
+  local info = d.pid and k.process.info(d.pid)
+  if not (info and (info.state == "running" or info.state == "sleeping")) then d = nil end
+end
+local args = arg or {}
+local cmd = args[1] or "count"
+if cmd == "history" then
+  for _, n in ipairs(notify.history) do
+    term.write(("%s%s: %s%s\n"):format(n.app ~= "" and ("[" .. n.app .. "] ") or "", n.summary,
+      n.body, n.urgency == "critical" and " (critical)" or ""))
+  end
+  return 0
+end
+if not d then term.write("dunstctl: dunst is not running\n"); return 1 end
+if cmd == "close" then d.close()
+elseif cmd == "close-all" then d.closeAll()
+elseif cmd == "set-paused" then
+  local v = args[2]
+  if v == "toggle" then d.setPaused(not d.paused) else d.setPaused(v == "true") end
+elseif cmd == "is-paused" then term.write(tostring(d.paused) .. "\n")
+elseif cmd == "count" then
+  term.write(("shown %d, waiting %d, history %d\n"):format(#d.shown, #d.waiting, #notify.history))
+else
+  term.write("usage: dunstctl close | close-all | history | set-paused true|false|toggle | is-paused | count\n")
+  return 1
+end
+return 0
