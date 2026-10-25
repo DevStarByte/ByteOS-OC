@@ -11,6 +11,11 @@
 ]]--
 local notify = require("notify")
 local d = package.loaded["dunst.state"]
+-- a dunst that was stopped (kill, Hyprbyte quitting) leaves its state behind
+if d then
+  local info = d.pid and k.process.info(d.pid)
+  if not (info and (info.state == "running" or info.state == "sleeping")) then d = nil end
+end
 local args = arg or {}
 local cmd = args[1] or "count"
 if cmd == "history" then

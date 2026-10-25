@@ -48,7 +48,10 @@ end
 place_food()
 
 local score = 0
-local alive = true
+local alive, quit = true, false
+-- one step every STEP seconds, however many keys come in between
+local STEP = 0.12
+local nextStep = _G.computer.uptime() + STEP
 
 local function status(msg)
   gpu.setBackground(C_BG); gpu.setForeground(C_TEXT)
@@ -60,14 +63,17 @@ draw_frame()
 gpu.setForeground(C_FOOD); gpu.set(food.x, food.y, "*")
 
 while alive do
-  local ev, _, _, code = _G.computer.pullSignal(0.12)
+  -- k.event.pull, not computer.pullSignal: services keep running meanwhile
+  local ev, _, _, code = k.event.pull(math.max(0, nextStep - _G.computer.uptime()))
   if ev == "key_down" then
     if     code == KEY.up    or code == KEY.w then pending = { x =  0, y = -1 }
     elseif code == KEY.down  or code == KEY.s then pending = { x =  0, y =  1 }
     elseif code == KEY.left  or code == KEY.a then pending = { x = -1, y =  0 }
     elseif code == KEY.right or code == KEY.d then pending = { x =  1, y =  0 }
-    elseif code == KEY.q                     then alive = false; break end
-  elseif ev == "interrupted" then alive = false; break end
+    elseif code == KEY.q                     then alive, quit = false, true; break end
+  end
+  if _G.computer.uptime() < nextStep then goto continue end
+  nextStep = math.max(nextStep + STEP, _G.computer.uptime())
 
   if pending and not (pending.x == -dir.x and pending.y == -dir.y) then
     dir = pending
@@ -98,10 +104,13 @@ while alive do
   gpu.setForeground(C_HEAD); gpu.set(nx, ny, "@")
 
   status()
+  ::continue::
 end
 
-status("GAME OVER  -  press any key")
-_G.computer.pullSignal()
+if not quit then
+  status("GAME OVER  -  press any key")
+  k.event.pull(math.huge, "key_down")
+end
 gpu.setBackground(0x000000); gpu.setForeground(0xFFFFFF)
 term.clear()
 term.write(("snake: final score %d\n"):format(score))

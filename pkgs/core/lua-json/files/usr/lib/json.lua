@@ -59,7 +59,7 @@ function json.decode(text)
     pos = pos + 1 -- the opening quote
     local parts = {}
     while true do
-      local s, e = text:find('["\\%c]', pos)
+      local s, e = text:find('["\\\0-\31]', pos) -- not %c: DEL is allowed
       if not s then fail("unterminated string") end
       parts[#parts + 1] = text:sub(pos, s - 1)
       local c = text:sub(s, s)
@@ -207,7 +207,15 @@ function json.encode(value, opts)
       if v ~= v or v == math.huge or v == -math.huge then error("cannot encode " .. tostring(v), 0) end
       if math.type(v) == "integer" then put(tostring(v))
       elseif v == math.floor(v) and math.abs(v) < 2^53 then put(("%d"):format(v))
-      else put(("%.14g"):format(v)) end
+      else
+        -- the shortest that reads back as the same number
+        local out
+        for digits = 14, 17 do
+          out = ("%." .. digits .. "g"):format(v)
+          if tonumber(out) == v then break end
+        end
+        put(out)
+      end
     elseif t == "string" then put(quote(v))
     elseif t == "table" then
       if seen[v] then error("cannot encode a table that contains itself", 0) end

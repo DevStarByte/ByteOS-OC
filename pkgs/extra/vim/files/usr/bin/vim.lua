@@ -145,7 +145,7 @@ local function wordForward()
   else
     col = math.min(c, math.max(0, n - 1))
   end
-  return line
+  return line, c >= n
 end
 local function wordBack()
   local c = col
@@ -167,7 +167,7 @@ local function find(q, backward)
   local n = #lines
   for step = 1, n + 1 do
     local i
-    if backward then i = (row - 1 - (step - 1) - 1) % n + 1 else i = (row - 1 + (step - 1)) % n + 1 end
+    if backward then i = (row - 1 - (step - 1)) % n + 1 else i = (row - 1 + (step - 1)) % n + 1 end
     local line = lines[i]
     local hits, s = {}, 1
     while true do
@@ -299,9 +299,10 @@ local function normal(key, extra)
     elseif op == "d" and key == "w" then
       change()
       local line = lines[row]
-      local start, r0 = col, row
-      for _ = 1, n do wordForward() end
-      if row ~= r0 then row, col = r0, ulen(line) end
+      local start, r0, atEnd = col, row, false
+      for _ = 1, n do atEnd = select(2, wordForward()) end
+      -- the last word of a line goes up to its end (col stops on the last character)
+      if row ~= r0 or atEnd then row, col = r0, ulen(line) end
       register = { text = usub(line, start + 1, col), linewise = false }
       lines[row] = usub(line, 1, start) .. usub(line, col + 1)
       col = start

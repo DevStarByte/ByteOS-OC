@@ -21,9 +21,12 @@ end
 while true do
   if k.fs.generation() ~= gen then cfg, gen = mm.config(), k.fs.generation() end
   local p = mm.find()
-  if p then
+  local items, readable
+  if p then items, readable = mm.items(p) end
+  -- an unpowered network has not run out of everything: no alerts then
+  if readable then
     local lowNow = {}
-    for _, l in ipairs(mm.low(mm.items(p), cfg)) do
+    for _, l in ipairs(mm.low(items, cfg)) do
       lowNow[l.what] = true
       if not alerted[l.what] then
         alerted[l.what] = true

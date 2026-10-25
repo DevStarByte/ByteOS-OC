@@ -135,8 +135,8 @@ newboard(); spawn(); spawn()
 draw()
 
 while true do
-  local ev, _, _, code = _G.computer.pullSignal()
-  if ev == "interrupted" then break end
+  -- k.event.pull, not computer.pullSignal: services keep running meanwhile
+  local ev, _, _, code = k.event.pull()
   if ev == "key_down" then
     local dir
     if     code == KEY.up    or code == KEY.w then dir = "up"
@@ -153,7 +153,7 @@ while true do
         local W, H = term.size()
         gpu.setForeground(0xFF5555)
         gpu.set(2, H, ("GAME OVER  final score %d  -  press any key"):format(score))
-        _G.computer.pullSignal()
+        k.event.pull(math.huge, "key_down") -- not the key_up of the last move
         break
       end
     end

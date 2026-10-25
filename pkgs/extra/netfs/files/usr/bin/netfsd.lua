@@ -3,7 +3,8 @@
 
   The folders are listed in /etc/netfs.conf, each as ro (read only) or rw.
   Other computers mount them with netfs. Paths are kept inside the share:
-  .. never leads out of it.
+  neither .. nor a symbolic link leads out of it, and /etc/shadow is never
+  shared.
 ]]--
 local net = require("net")
 local CONF, CHUNK = "/etc/netfs.conf", 4096
@@ -17,16 +18,32 @@ local function shares()
   return out
 end
 
--- the real path of `path` inside the share; nothing above its directory
-local function inside(share, path)
+local function under(p, dir) return dir == "/" or p == dir or p:sub(1, #dir + 1) == dir .. "/" end
+-- every link in p followed (ByteOS 1.17 and later have links)
+local function real(p) if fs.realpath then return fs.realpath(p) end return p end
+
+-- the real path of `path` inside the share, and whether it is the share
+-- itself; an error when it would lead out of it. \ counts as / (the
+-- kernel treats it so). With keepLast a link at the end is not followed
+-- (remove and rename act on the link itself).
+local function inside(share, path, keepLast)
   local parts = {}
-  for part in tostring(path):gmatch("[^/]+") do
+  for part in tostring(path):gmatch("[^/\\]+") do
     if part == ".." then table.remove(parts)
     elseif part ~= "." then parts[#parts + 1] = part end
   end
-  local real = (share.dir .. "/" .. table.concat(parts, "/")):gsub("/+", "/")
-  if real == "/etc/shadow" then real = "/nonexistent" end -- even a share of / keeps passwords
-  return real, #parts == 0
+  local base = real(share.dir) or share.dir
+  local p
+  if keepLast and #parts > 0 then
+    local last = table.remove(parts)
+    local dir = real(share.dir .. "/" .. table.concat(parts, "/"))
+    p = dir and (dir .. "/" .. last):gsub("/+", "/") or nil
+  else
+    p = real((share.dir .. "/" .. table.concat(parts, "/"):gsub("/+", "/")))
+  end
+  -- even a share of / keeps the passwords
+  if not p or not under(p, base) or p == "/etc/shadow" then error("outside the share", 0) end
+  return p, p == base
 end
 
 local ops = {}
@@ -66,13 +83,13 @@ function writes.write(s, path, data, append)
 end
 function writes.mkdir(s, path) return fs.makeDirectory(inside(s, path)) and true or false, "cannot create " .. tostring(path) end
 function writes.remove(s, path)
-  local real, top = inside(s, path)
+  local p, top = inside(s, path, true)
   if top then return false, "the share itself cannot be removed" end
-  if not fs.exists(real) then return false, "no such file" end
-  return fs.remove(real) and true or false, "cannot remove " .. tostring(path)
+  if not fs.exists(p) then return false, "no such file" end
+  return fs.remove(p) and true or false, "cannot remove " .. tostring(path)
 end
 function writes.rename(s, a, b)
-  local ok, err = fs.rename(inside(s, a), inside(s, b))
+  local ok, err = fs.rename(inside(s, a, true), inside(s, b, true))
   return ok and true or false, err
 end
 
@@ -86,9 +103,12 @@ local function handle(from, kind, id, name, op, ...)
   local s = shares()[tostring(name)]
   local reply
   if not s then reply = { false, "no share " .. tostring(name) }
-  elseif ops[op] then reply = { ops[op](s, ...) }
-  elseif writes[op] then
-    if s.mode ~= "rw" then reply = { false, "read-only share" } else reply = { writes[op](s, ...) } end
+  elseif ops[op] or writes[op] then
+    if writes[op] and s.mode ~= "rw" then reply = { false, "read-only share" }
+    else
+      reply = table.pack(pcall(ops[op] or writes[op], s, ...))
+      if not reply[1] then reply = { false, tostring(reply[2]) } else table.remove(reply, 1) end
+    end
   else reply = { false, "unknown operation " .. tostring(op) } end
   net.send(from, "netfs-reply", id, table.unpack(reply))
 end

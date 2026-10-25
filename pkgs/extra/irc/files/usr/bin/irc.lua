@@ -263,8 +263,11 @@ local quitting
 local function say(to, text)
   -- IRC lines end at 512 bytes: send long text in pieces
   while #text > 0 do
-    local piece = text:sub(1, 400)
-    text = text:sub(401)
+    -- cut before a character, not inside one (UTF-8)
+    local cut = math.min(#text, 400)
+    while cut > 1 and cut < #text and text:byte(cut + 1) & 0xC0 == 0x80 do cut = cut - 1 end
+    local piece = text:sub(1, cut)
+    text = text:sub(cut + 1)
     send("PRIVMSG " .. to .. " :" .. piece)
     if isChannel(to) then
       add({ { to ~= target and (to .. " ") or "", T.dim }, { "<" .. me .. "> ", T.bright }, { piece, T.fg } })
@@ -279,7 +282,7 @@ function COMMANDS.join(a)
   local ch = a:match("^(%S+)")
   if not ch then return info("usage: /join #channel") end
   if not isChannel(ch) then ch = "#" .. ch end
-  if joined(ch) then target = ch; dirty = true else send("JOIN " .. a:gsub("^%S+", ch)) end
+  if joined(ch) then target = ch; dirty = true else send("JOIN " .. ch .. a:match("^%S+(.*)$")) end
 end
 function COMMANDS.part(a)
   local ch, msg = a:match("^(%S*)%s*(.*)$")

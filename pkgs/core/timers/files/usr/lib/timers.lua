@@ -63,7 +63,8 @@ local function calendar(text)
   return cal
 end
 
--- local minute-of-day and weekday for clock time t
+-- local minute-of-day and weekday for clock time t, and the local minute
+-- as one number (the same for both 02:30s of the night the clocks go back)
 local function localTime(t)
   local okc, clock = pcall(require, "clock")
   local off = 0
@@ -72,14 +73,17 @@ local function localTime(t)
     if real then off = select(2, clock.zone(t)) end
   end
   local lt = t + off
-  return lt % 86400 // 60, (lt // 86400 + 4) % 7 -- 1970-01-01 was a Thursday
+  return lt % 86400 // 60, (lt // 86400 + 4) % 7, lt // 60 -- 1970-01-01 was a Thursday
 end
 
+-- clock time, and whether it is the real time (else the world's, which
+-- runs 72 times as fast: a Minecraft day is 20 minutes)
 local function now()
   local okc, clock = pcall(require, "clock")
-  if okc then return (clock.now()) end
-  return math.floor(os.time())
+  if okc then return clock.now() end
+  return math.floor(os.time()), false
 end
+local WORLD_SPEED = 72
 
 local function matches(cal, t)
   local minute, wday = localTime(t)
@@ -152,11 +156,12 @@ function timers.nextRun(u)
   local at = dueAt(u, st)
   if at then best = math.max(0, at - computer.uptime()) end
   if u.calendar then
-    local t = now()
+    local t, real = now()
     local start = t - t % 60 + 60
     for i = 0, 8 * 1440 do
       if matches(u.calendar, start + i * 60) then
         local s = start + i * 60 - t
+        if not real then s = s / WORLD_SPEED end
         if not best or s < best then best = s end
         break
       end
@@ -169,7 +174,6 @@ end
 function timers.tick(report)
   local systemd = require("systemd")
   local up, t = computer.uptime(), now()
-  local minute = t // 60
   for _, u in ipairs(timers.load()) do
     if timers.isEnabled(u.name) and not u.error then
       local st = timers.state[u.name] or { loaded = up }
@@ -177,8 +181,16 @@ function timers.tick(report)
       local due = false
       local at = dueAt(u, st)
       if at and up >= at then due = true end
-      if u.calendar and st.minute ~= minute and matches(u.calendar, t) then
-        st.minute, due = minute, true
+      if u.calendar then
+        -- every minute since the last look: a tick 5 s after the last one
+        -- is 6 minutes later in world time (not more than 15: no catching
+        -- up on a whole night after the clock was set)
+        local from = st.looked and math.max(st.looked // 60 + 1, t // 60 - 15) or t // 60
+        for m = from, t // 60 do
+          local key = select(3, localTime(m * 60))
+          if st.minute ~= key and matches(u.calendar, m * 60) then st.minute, due = key, true end
+        end
+        st.looked = t
       end
       if due then
         st.last, st.lastClock = up, t

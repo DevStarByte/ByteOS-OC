@@ -1,6 +1,6 @@
 return {
   name    = "rsh",
-  version = "1.0.0",
+  version = "1.0.1",
   rel     = 1,
   desc    = "remote shell: run commands on another ByteOS computer",
   depends = { "byteos>=1.12.1" },

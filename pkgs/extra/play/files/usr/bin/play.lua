@@ -103,6 +103,7 @@ local function parse(src, comments)
     if comments then line = line:gsub("^#.*$", ""):gsub("%s#.*$", "") end
     local t = line:match("^%s*tempo%s+(%d+%.?%d*)%s*$")
     if t then
+      if tonumber(t) <= 0 then return nil, (comments and (file .. ", line " .. lineNo .. ": ") or "") .. "the tempo must be more than 0" end
       tempo = tempo or tonumber(t)
     else
       for word in line:gmatch("%S+") do

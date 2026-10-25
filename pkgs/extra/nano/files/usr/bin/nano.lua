@@ -153,7 +153,8 @@ local function search()
   local n = #lines
   for step = 0, n do
     local i = (row - 1 + step) % n + 1
-    local from = (step == 0) and (col + 2) or 1
+    -- the byte after the cursor's character (col counts characters)
+    local from = (step == 0) and (#usub(lines[i], 1, col + 1) + 1) or 1
     local hit = lines[i]:find(q, from, true)
     if hit then
       if step == n and i == row then status = "This is the only occurrence" end

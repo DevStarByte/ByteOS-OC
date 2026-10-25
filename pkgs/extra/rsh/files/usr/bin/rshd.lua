@@ -46,9 +46,14 @@ local function handle(from, id, user, password, cwd, line)
   end })
   if not pid then return net.send(from, "rsh-reply", id, false, tostring(err)) end
   k.process.spawn(function()
-    k.event.pull(LIMIT)
-    local info = k.process.info(pid)
-    if info and info.state == "running" then k.process.kill(pid) end
+    -- any signal ends a pull early: wait out the whole limit, or the end
+    local function alive()
+      local info = k.process.info(pid)
+      return info and (info.state == "running" or info.state == "sleeping")
+    end
+    local deadline = computer.uptime() + LIMIT
+    while alive() and computer.uptime() < deadline do k.event.pull(deadline - computer.uptime()) end
+    if alive() then k.process.kill(pid) end
   end, { name = "rsh watchdog" })
 end
 

@@ -72,7 +72,7 @@ local MODNAME = MODS[tostring(conf.mod):lower()] and tostring(conf.mod):lower() 
 local MOD = MODS[MODNAME]
 
 -- ---- state (hyprctl and the other programs see it) ---------------------------------------
-local state = { workspaces = {}, active = 1, queue = {}, history = {}, version = "1.4.0",
+local state = { workspaces = {}, active = 1, queue = {}, history = {}, version = "1.4.1",
                 conf = conf, layers = {}, grabs = {}, lastInput = computer.uptime() }
 for i = 1, 9 do state.workspaces[i] = { list = {}, focus = 1, fullscreen = false } end
 package.loaded["hyprbyte.state"] = state
@@ -205,8 +205,9 @@ local function overlays()
         local ok, px, py, pw, ph = pcall(l.place, SW, SH)
         if ok then x, y, w, h = px, py, pw, ph else w = nil end
       end
-      if w and h and w > 0 and h > 0 then out[#out + 1] = { l = l, rect = { x, y, w, h } } end
-    end
+      if w and h and w > 0 and h > 0 then out[#out + 1] = { l = l, rect = { x, y, w, h } }
+      else l.rect = nil end -- nothing shown: its old place takes no clicks
+    elseif l.anchor == "overlay" then l.rect = nil end
   end
   return out
 end
@@ -435,20 +436,45 @@ local function focusWindow(id)
   end
 end
 
--- Mod+D without rofi: a box in the middle that asks for a command line
+-- Mod+D without rofi: a box in the middle that asks for a command line. A
+-- layer with the keyboard, not term.read: the windows, hypridle and a lock
+-- screen keep going while it is open
 local function launcher()
-  local w = math.min(SW - 4, 50)
-  local x, y = (SW - w) // 2 + 1, SH // 3
-  border({ rect = { x, y, w, 3 }, title = "run" }, true)
-  screen.setBackground(T.bg); screen.fill(x + 1, y + 1, w - 2, 1, " ")
-  term.setCursor(x + 2, y + 1)
-  term.setForeground(T.bright)
-  local line = term.read({ history = state.history }) or ""
-  term.setForeground(T.fg)
-  line = line:gsub("^%s+", ""):gsub("%s+$", "")
-  held, swallowed = {}, {} -- the keys let go of while typing went to the box
-  layout()
-  if line ~= "" then open(line) end
+  local input, hidx = "", #state.history + 1
+  local box
+  box = {
+    namespace = "hyprbyte-run", anchor = "overlay",
+    place = function(W, H)
+      local w = math.min(W - 4, 50)
+      return (W - w) // 2 + 1, H // 3, w, 3
+    end,
+    draw = function(gpu, x, y, w)
+      border({ rect = { x, y, w, 3 }, title = "run" }, true)
+      gpu.setBackground(T.bg); gpu.fill(x + 1, y + 1, w - 2, 1, " ")
+      local text = input
+      if term.ulen(text) > w - 5 then text = term.usub(text, -(w - 5)) end
+      gpu.setForeground(T.bright); gpu.set(x + 2, y + 1, text .. "▏")
+      gpu.setForeground(T.fg)
+    end,
+    key = function(ev, _, ch, code)
+      if ev ~= "key_down" then return end
+      if code == 1 then state.removeLayer(box)                       -- Esc
+      elseif code == 28 or code == 156 then                          -- Enter
+        state.removeLayer(box)
+        local line = input:gsub("^%s+", ""):gsub("%s+$", "")
+        if line ~= "" then
+          if state.history[#state.history] ~= line then state.history[#state.history + 1] = line end
+          open(line)
+        end
+      elseif code == 200 and hidx > 1 then hidx = hidx - 1; input = state.history[hidx]
+      elseif code == 208 and hidx <= #state.history then
+        hidx = hidx + 1; input = state.history[hidx] or ""
+      elseif code == 14 then input = term.usub(input, 1, -2)        -- Backspace
+      elseif ch and ch >= 32 and ch ~= 127 then input = input .. (unicode and unicode.char or utf8.char)(math.floor(ch)) end
+    end,
+  }
+  state.addLayer(box)
+  state.grab(box)
 end
 
 -- ---- dispatchers (keys, hyprctl dispatch, other programs) ---------------------------
@@ -546,7 +572,8 @@ local function handle(sig)
     return
   end
   if ev == "key_down" or ev == "key_up" then
-    if MOD[code] then return end
+    -- with mod = ctrl the window still needs to see Ctrl (Ctrl+C, ^A ...)
+    if MOD[code] and MODNAME ~= "ctrl" then return end
     if ev == "key_down" and held_(MOD) then
       local fn = binds[combo(true, held_(SHIFT), MODNAME ~= "ctrl" and held_(CTRL), code)]
       if fn then swallowed[code] = true; fn(); return end

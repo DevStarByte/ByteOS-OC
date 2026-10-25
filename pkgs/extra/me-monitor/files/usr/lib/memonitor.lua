@@ -4,8 +4,9 @@
 
     mm.find()           -> proxy, kind | nil   (an ME controller, else an
                            ME interface, connected by cable or adapter)
-    mm.items(p)         -> { { label, name, size }... } summed by label,
-                           most first
+    mm.items(p)         -> { { label, name, size, ids }... } summed by
+                           label, most first (ids: id -> size), and false
+                           when the network could not be read
     mm.power(p)         -> { stored, max, usage, injection } (AE, AE/t)
     mm.cpus(p)          -> { { name, busy, storage }... }
     mm.config()         -> { minimums = { { what, count }... }, interval }
@@ -35,21 +36,25 @@ end
 
 function mm.items(p)
   local sums, order = {}, {}
-  for _, it in ipairs(call(p, "getItemsInNetwork") or {}) do
+  local list = call(p, "getItemsInNetwork")
+  for _, it in ipairs(list or {}) do
     local label = it.label or it.name or "?"
     local s = sums[label]
     if not s then
-      s = { label = label, name = it.name or "?", size = 0, craftable = false }
+      s = { label = label, name = it.name or "?", size = 0, craftable = false, ids = {} }
       sums[label] = s; order[#order + 1] = s
     end
-    s.size = s.size + (tonumber(it.size) or 0)
+    local n, id = tonumber(it.size) or 0, (it.name or "?"):lower()
+    s.size = s.size + n
+    -- different items may share a label: an id minimum counts its own
+    s.ids[id] = (s.ids[id] or 0) + n
     s.craftable = s.craftable or it.isCraftable == true
   end
   table.sort(order, function(a, b)
     if a.size ~= b.size then return a.size > b.size end
     return a.label < b.label
   end)
-  return order
+  return order, type(list) == "table"
 end
 
 function mm.power(p)
@@ -87,9 +92,8 @@ function mm.low(items, cfg)
   for _, m in ipairs(cfg.minimums) do
     local have, byName, want = 0, m.what:find(":", 1, true), m.what:lower()
     for _, it in ipairs(items) do
-      if (byName and it.name:lower() == want) or (not byName and it.label:lower() == want) then
-        have = have + it.size
-      end
+      if byName then have = have + (it.ids and it.ids[want] or 0)
+      elseif it.label:lower() == want then have = have + it.size end
     end
     if have < m.count then out[#out + 1] = { what = m.what, have = have, want = m.count } end
   end

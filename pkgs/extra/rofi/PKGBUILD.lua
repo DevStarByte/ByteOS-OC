@@ -1,6 +1,6 @@
 return {
   name    = "rofi",
-  version = "1.0.0",
+  version = "1.0.1",
   rel     = 1,
   desc    = "launcher and window switcher for Hyprbyte, with fuzzy search",
   depends = { "hyprbyte>=1.2.0" },

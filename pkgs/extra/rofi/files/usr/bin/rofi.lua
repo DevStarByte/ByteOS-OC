@@ -47,6 +47,7 @@ end
 
 -- ---- fuzzy filter --------------------------------------------------------------------
 local input, selected, top, shown = "", 1, 1, {}
+local visible = 0 -- list rows on the screen (draw sets it)
 local function score(label, q)
   if q == "" then return 1 end
   local l, s = label:lower(), q:lower()
@@ -123,6 +124,7 @@ layer = {
     gpu.set(x + 4, y + 1, text .. "▏")
     gpu.setForeground(T.dim); gpu.set(x + 1, y + 2, string.rep("─", w - 2))
     local rows = h - 4
+    visible = rows
     if selected < top then top = selected end
     if selected >= top + rows then top = selected - rows + 1 end
     for i = 0, rows - 1 do
@@ -149,6 +151,8 @@ layer = {
     end
   end,
   click = function(_, y)
+    -- only the list's rows (the 4th row on): not the input line or the border
+    if y < 4 or y - 4 >= visible then return end
     local i = top + y - 4
     if shown[i] then selected = i; accept() end
   end,

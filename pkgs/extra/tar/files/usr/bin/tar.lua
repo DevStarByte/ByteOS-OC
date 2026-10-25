@@ -18,8 +18,10 @@
   owner and group. Unpacking as root gives owners back, and a mode only
   where it is stricter than the place's default (a 600 file stays 600, a
   777 directory from /tmp does not make a home directory 777).
-  A leading / is taken off the names, and a member with .. in its path is
-  skipped, so an archive cannot write outside where it is unpacked.
+  A leading / is taken off the names, a member with .. in its path is
+  skipped, and symbolic links are made last (after every file), so an
+  archive cannot write outside where it is unpacked, not even through a
+  link of its own.
   gzip (-z) is the only compression (no -j, -J).
 ]]--
 local args = arg or {}
@@ -116,6 +118,7 @@ local function header(name, kind, size, meta, mtime, link)
     if not cut then return nil, "name too long" end
     prefix, name = name:sub(1, cut - 1), name:sub(cut + 1)
   end
+  if link and #link > 100 then return nil, "link target too long" end
   local t = idTables()
   local h = field(name, 100) .. oct(meta.mode, 8) .. oct(t.uid[meta.owner] or 0, 8) .. oct(t.gid[meta.group] or 0, 8)
     .. oct(size, 12) .. oct(mtime, 12) .. "        " .. kind .. field(link or "", 100) .. "ustar\0" .. "00"
@@ -269,12 +272,15 @@ local function reader()
     if not deflate then return nil, e end
     local done = false
     local unpack = coroutine.wrap(function()
-      local ok, err = deflate.gunzip(raw, function(s) coroutine.yield(s) end)
+      local ok, err = deflate.gunzip(raw, function(s) coroutine.yield(s) end,
+        function() coroutine.yield(false) end)
       if not ok then error(archive .. ": " .. err, 0) end
     end)
     fetch = function()
       if done then return nil end
       local c = unpack()
+      -- false: a pause on a long unpacking, for the other processes
+      while c == false do k.event.pull(0); c = unpack() end
       if c == nil then done = true end
       return c
     end
@@ -297,7 +303,7 @@ end
 local function walk(fn)
   local read, e = reader()
   if not read then shell.err("tar", e); return 2 end
-  local long, pax = nil, {}
+  local long, longLink, pax = nil, nil, {}
   while true do
     local h = read(512)
     if h == "" or h == ZERO then break end
@@ -329,6 +335,7 @@ local function walk(fn)
       data(function(c) parts[#parts + 1] = c end)
       local text = table.concat(parts)
       if entry.kind == "L" then long = cstr(text)
+      elseif entry.kind == "K" then longLink = cstr(text)
       elseif entry.kind == "x" then
         for key, value in text:gmatch("%d+ ([^=]+)=([^\n]*)\n") do
           if key == "path" then pax.name = value elseif key == "linkpath" then pax.link = value end
@@ -336,8 +343,8 @@ local function walk(fn)
       end
     else
       entry.name = pax.name or long or entry.name
-      entry.link = pax.link or entry.link
-      long, pax = nil, {}
+      entry.link = pax.link or longLink or entry.link
+      long, longLink, pax = nil, nil, {}
       if entry.kind == "5" then entry.name = entry.name:gsub("/+$", "") end
       fn(entry, data)
       data() -- whatever fn did not read
@@ -370,6 +377,8 @@ end
 local function extract()
   local root = k.user() == "root"
   local warned = false
+  -- symbolic links come last: no member may be written through one
+  local links = {}
   local function restore(path, entry)
     if not root then return end
     local st, t = fs.stat(path), idTables()
@@ -401,16 +410,19 @@ local function extract()
       restore(dest, entry)
     elseif entry.kind == "2" then
       if not fs.link then fail(name .. ": symbolic links are not supported here, skipped"); return end
-      if fs.readlink(dest) or (fs.exists(dest) and not fs.isDirectory(dest)) then fs.remove(dest) end
-      local ok, e = fs.link(entry.link, dest)
-      if not ok then fail(name .. ": " .. tostring(e)) end
+      links[#links + 1] = { name = name, dest = dest, link = entry.link }
     elseif entry.kind == "0" or entry.kind == "7" or entry.kind == "1" then
       if fs.isDirectory(dest) and not (fs.readlink and fs.readlink(dest)) then fail(name .. ": a directory is in the way"); return end
+      if entry.kind == "1" then
+        -- a hard link becomes a copy of the member it points to: one in here
+        for seg in entry.link:gmatch("[^/]+") do
+          if seg == ".." then fail(name .. ": links to " .. entry.link .. ", outside the archive, skipped"); return end
+        end
+      end
       if fs.readlink and fs.readlink(dest) then fs.remove(dest) end
       local f, e = fs.open(dest, "w")
       if not f then fail(name .. ": " .. tostring(e)); return end
       if entry.kind == "1" then
-        -- a hard link: a copy of the member it points to
         local text = fs.readAll(shell.normalize(base .. "/" .. entry.link:gsub("^/+", "")))
         if text then f:write(text) else fail(name .. ": link target " .. entry.link .. " not unpacked") end
       else
@@ -422,10 +434,21 @@ local function extract()
       fail(name .. ": unsupported kind of member '" .. entry.kind .. "', skipped")
     end
   end
-  if root and fs.permsBatch then
-    return fs.permsBatch(walk, each)
+  local result
+  if root and fs.permsBatch then result = fs.permsBatch(walk, each) else result = walk(each) end
+  -- the links, none inside another one made here
+  local made = {}
+  for _, l in ipairs(links) do
+    local through
+    for p in pairs(made) do if l.dest:sub(1, #p + 1) == p .. "/" then through = p end end
+    if through then fail(l.name .. ": inside the link " .. through .. ", skipped")
+    else
+      if fs.readlink(l.dest) or (fs.exists(l.dest) and not fs.isDirectory(l.dest)) then fs.remove(l.dest) end
+      local ok, e = fs.link(l.link, l.dest)
+      if ok then made[l.dest] = true else fail(l.name .. ": " .. tostring(e)) end
+    end
   end
-  return walk(each)
+  return rc ~= 0 and rc or result
 end
 
 if mode == "c" then return create() end

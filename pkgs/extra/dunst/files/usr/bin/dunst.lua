@@ -24,7 +24,7 @@ for _, path in ipairs({ "/etc/dunst/dunstrc", (_G.HOME or "/") .. "/.config/duns
   end
 end
 
-local d = { shown = {}, waiting = {}, paused = false }
+local d = { shown = {}, waiting = {}, paused = false, pid = k.process.current() }
 package.loaded["dunst.state"] = d
 local COLOR = { low = T.dim, normal = T.accent, critical = T.red }
 

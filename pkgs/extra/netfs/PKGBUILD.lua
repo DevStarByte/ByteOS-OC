@@ -1,6 +1,6 @@
 return {
   name    = "netfs",
-  version = "1.0.0",
+  version = "1.0.1",
   rel     = 1,
   desc    = "shared folders: use another computer's directories over the network",
   depends = { "byteos>=1.12.1" },

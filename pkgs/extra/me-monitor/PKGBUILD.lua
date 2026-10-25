@@ -1,7 +1,7 @@
 return {
   name       = "me-monitor",
-  version    = "1.0.0",
-  rel        = 2,
+  version    = "1.0.1",
+  rel        = 1,
   desc       = "Applied Energistics 2: power, items, crafting CPUs and low-stock alerts",
   depends    = { "byteos>=1.16.0" },
   optdepends = { "libnotify: alerts as notifications (with dunst)" },
