@@ -57,7 +57,7 @@ alice@byteos ~> xxd -r -p data.hex > copy.bin    # and back
 
 ### tree
 
-`core` · 1.0.0
+`core` · 1.0.1
 
 A recursive, coloured listing of a directory and everything below it.
 
@@ -81,13 +81,6 @@ alice@byteos ~> lua -e 'local json = require("json"); print(json.encode({ a = 1,
 ```
 
 See [Lua](../using/lua.md) for writing Lua on ByteOS.
-
-### uptime
-
-`core` · 1.0.0
-
-How long the computer has been running. ByteOS has had its own `uptime` command since
-1.17.0, which comes first, so this package is no longer needed.
 
 ## The internet
 
@@ -304,7 +297,7 @@ alice@byteos ~> play -n "C4 E4 G4 C5*2"
 
 ### snake and 2048
 
-`extra` · 1.0.0 each
+`extra` · 1.0.1 each
 
 Classic games. **snake**: steer with the arrow keys (or WASD), ++q++ quits. **2048**:
 slide the tiles with the arrow keys, ++r++ restarts, ++q++ quits.
@@ -316,10 +309,11 @@ alice@byteos ~> snake
 
 ### cowsay, lolcat, figlet, fortune
 
-`core` (`figlet`: `extra`) · `cowsay` 0.2.0, the others 1.0.0
+`core` (`figlet`: `extra`) · `cowsay` 0.2.1, `figlet` 1.1.0, the others 1.0.1
 
 Text toys: `cowsay` puts your words in a cow's speech bubble, `lolcat` prints them in
-rainbow colours, `figlet` in big block letters, and `fortune` shows a random quote.
+rainbow colours, `figlet` in big letters made of ordinary characters (FIGlet's
+Standard font; `-c` centres, `echo hi | figlet` works too), and `fortune` shows a random quote.
 
 ```sh
 alice@byteos ~> sudo pacman -S cowsay lolcat figlet fortune
@@ -330,7 +324,7 @@ alice@byteos ~> fortune
 
 ### sl, cmatrix, hello
 
-`extra` (`hello`: `core`) · 1.0.0
+`extra` (`hello`: `core`) · 1.0.1
 
 `sl` sends a steam locomotive across the screen (the classic punishment for typing `sl`
 instead of `ls`), `cmatrix` shows falling green "Matrix" rain until you press a key, and

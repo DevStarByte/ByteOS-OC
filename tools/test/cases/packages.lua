@@ -415,6 +415,56 @@ test("vim edits like Vim: modes, operators, undo, :s and search", function()
   eq(file("/tmp/v.txt"), "abcdef\n")
 end)
 
+-- ---- the small ones: toys and games ----------------------------------------------
+
+test("cowsay, lolcat, fortune, hello and tree", function()
+  lacks(run(P .. "-S cowsay lolcat fortune hello tree"), "error")
+  local out = run("cowsay moo moo")
+  has(out, "< moo moo >"); has(out, "(oo)")
+  has(run("lolcat hi"), "hi")
+  ok(file("/usr/share/fortune/quotes.txt"):find(run("fortune"):match("^%s*(.-)%s*$"), 1, true), "a line of the quotes")
+  has(run("hello"), "Greetings, root")
+  put("/tmp/t/a/b.txt", "x"); put("/tmp/t/c.txt", "x")
+  out = run("tree /tmp/t")
+  has(out, "|-- a/"); has(out, "|   `-- b.txt"); has(out, "`-- c.txt"); has(out, "1 directories, 2 files")
+  local _, rc = run("tree /tmp/nothing")
+  eq(rc, 1)
+  -- each one has a manual page
+  for _, n in ipairs({ "cowsay", "lolcat", "fortune", "hello", "tree" }) do
+    has(run("man " .. n), n .. " - ")
+  end
+end)
+
+test("figlet draws with the Standard font like FIGlet", function()
+  lacks(run(P .. "-S figlet"), "error")
+  eq(run("figlet ByteOS"), table.concat({
+    " ____        _        ___  ____",
+    "| __ ) _   _| |_ ___ / _ \\/ ___|",
+    "|  _ \\| | | | __/ _ \\ | | \\___ \\",
+    "| |_) | |_| | ||  __/ |_| |___) |",
+    "|____/ \\__, |\\__\\___|\\___/|____/",
+    "       |___/", "" }, "\n"))
+  -- words go on a new line when the screen is too narrow; -c centres
+  local out = run("figlet -w 30 -c Hi there")
+  has(out, "          | | | (_)\n"); has(out, "| __| '_ \\ / _ \\ '__/ _ \\")
+  has(run("echo hi | figlet"), "| '_ \\| |")
+  has(run("figlet -f nope x"), "no font /usr/share/figlet/nope.flf")
+  has(run("man figlet"), "figlet - big letters")
+end)
+
+test("the games start and quit on q", function()
+  lacks(run(P .. "-S 2048 snake cmatrix sl"), "error")
+  local Q = { "key_down", "kb", 113, 16 }
+  signals({ { "key_down", "kb", 0, 203 }, Q })    -- left, then q
+  has(run("2048"), "2048: final score")
+  signals({ Q, Q })                               -- q, and the key after GAME OVER
+  has(run("snake"), "snake: final score 0")
+  signals({ Q })
+  eq(select(2, run("cmatrix")), 0)
+  eq(select(2, run("sl")), 0)
+  for _, n in ipairs({ "2048", "snake", "cmatrix", "sl" }) do has(run("man " .. n), n .. " - ") end
+end)
+
 -- tar (extra/tar): packing, listing, unpacking, ustar compatibility
 local function sh(c) return os.execute(c) == true end
 
