@@ -55,9 +55,9 @@ end
 
 local text = stdin.read("a") or ""
 local out, last = {}, nil
-for c in text:gmatch(".") do
-  if not (del and inSet1[c]) then
-    c = map[c] or c
+for ch in text:gmatch(".") do
+  if not (del and inSet1[ch]) then
+    local c = map[ch] or ch
     if not (squeeze and squeezeSet[c] and c == last) then out[#out + 1] = c end
     last = c
   end

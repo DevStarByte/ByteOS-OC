@@ -1,8 +1,8 @@
 NAME="ByteOS"
-PRETTY_NAME="ByteOS 1.17.1"
+PRETTY_NAME="ByteOS 1.17.2"
 ID=byteos
 ID_LIKE=arch
-VERSION_ID=1.17.1
+VERSION_ID=1.17.2
 BUILD_ID=rolling
 ANSI_COLOR="38;2;85;170;255"
 HOME_URL="https://github.com/DevStarByte/ByteOS-OC"
